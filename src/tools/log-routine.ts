@@ -128,9 +128,9 @@ Parameters:
 
         // Create session_exercise
         const { rows: [se] } = await pool.query(
-          `INSERT INTO session_exercises (session_id, exercise_id, sort_order, superset_group)
-           VALUES ($1, $2, $3, $4) RETURNING id`,
-          [session.id, dex.exercise_id, dex.sort_order, dex.superset_group]
+          `INSERT INTO session_exercises (session_id, exercise_id, sort_order, superset_group, rest_seconds)
+           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+          [session.id, dex.exercise_id, dex.sort_order, dex.superset_group, dex.rest_seconds || null]
         );
 
         // Insert sets

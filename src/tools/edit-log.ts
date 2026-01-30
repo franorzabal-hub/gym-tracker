@@ -31,6 +31,7 @@ Parameters:
           weight: z.number().optional(),
           rpe: z.number().optional(),
           set_type: z.string().optional(),
+          notes: z.string().optional(),
         })
         .optional(),
       set_numbers: z.array(z.number().int()).optional(),
@@ -134,6 +135,10 @@ Parameters:
       if (updates.set_type !== undefined) {
         params.push(updates.set_type);
         setClauses.push(`set_type = $${params.length}`);
+      }
+      if (updates.notes !== undefined) {
+        params.push(updates.notes);
+        setClauses.push(`notes = $${params.length}`);
       }
 
       let setFilter = "";

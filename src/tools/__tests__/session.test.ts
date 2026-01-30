@@ -113,6 +113,11 @@ describe("session tools", () => {
             total_sets: "20",
             total_volume_kg: "5000",
           }],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            { name: "Bench Press", superset_group: null, sets: [{ set_number: 1, reps: 8, weight: 80, rpe: 8, set_type: "working" }] },
+          ],
         });
 
       const result = await endHandler({ notes: "Great workout" });

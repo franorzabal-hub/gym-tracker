@@ -172,6 +172,30 @@ Returns the session info and the exercises planned for that day (if any).`,
         [sessionId]
       );
 
+      // Get exercises grouped by superset
+      const { rows: exerciseDetails } = await pool.query(
+        `SELECT e.name, se.superset_group,
+           json_agg(json_build_object(
+             'set_number', st.set_number, 'reps', st.reps, 'weight', st.weight, 'rpe', st.rpe, 'set_type', st.set_type
+           ) ORDER BY st.set_number) as sets
+         FROM session_exercises se
+         JOIN exercises e ON e.id = se.exercise_id
+         LEFT JOIN sets st ON st.session_exercise_id = se.id
+         WHERE se.session_id = $1
+         GROUP BY se.id, e.name, se.superset_group, se.sort_order
+         ORDER BY se.sort_order`,
+        [sessionId]
+      );
+
+      // Group exercises by superset_group for display
+      const supersets: Record<number, string[]> = {};
+      for (const ex of exerciseDetails) {
+        if (ex.superset_group != null) {
+          if (!supersets[ex.superset_group]) supersets[ex.superset_group] = [];
+          supersets[ex.superset_group].push(ex.name);
+        }
+      }
+
       return {
         content: [
           {
@@ -182,6 +206,12 @@ Returns the session info and the exercises planned for that day (if any).`,
               exercises_count: Number(summary.exercises_count),
               total_sets: Number(summary.total_sets),
               total_volume_kg: Math.round(Number(summary.total_volume_kg)),
+              exercises: exerciseDetails.map((e: any) => ({
+                name: e.name,
+                superset_group: e.superset_group,
+                sets: e.sets,
+              })),
+              supersets: Object.keys(supersets).length > 0 ? supersets : undefined,
             }),
           },
         ],

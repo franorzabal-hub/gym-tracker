@@ -22,14 +22,14 @@ describe("resolveExercise", () => {
 
   it("resolves by exact name match", async () => {
     mockQuery.mockResolvedValueOnce({
-      rows: [{ id: 1, name: "Bench Press" }],
+      rows: [{ id: 1, name: "Bench Press", muscle_group: "chest", equipment: "barbell" }],
     });
 
     const result = await resolveExercise("Bench Press");
 
     expect(result).toEqual({ id: 1, name: "Bench Press", isNew: false });
     expect(mockQuery).toHaveBeenCalledWith(
-      "SELECT id, name FROM exercises WHERE LOWER(name) = $1",
+      "SELECT id, name, muscle_group, equipment FROM exercises WHERE LOWER(name) = $1",
       ["bench press"]
     );
   });

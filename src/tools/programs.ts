@@ -38,7 +38,7 @@ Actions:
 - "create": Create a new program with days and exercises (auto-activates it)
 - "update": Modify the current version (creates a new version). Pass the full updated days array + change_description.
 - "activate": Set a program as the active one (deactivates all others). Only one program can be active.
-- "delete": Deactivate a program (soft delete, keeps history)
+- "delete": Deactivate a program (soft delete). Use hard_delete=true to permanently remove with all versions/days/exercises (irreversible).
 - "history": List all versions of a program with dates and change descriptions
 
 For "create" and "update", pass the "days" array with day_label, weekdays (ISO: 1=Mon..7=Sun), and exercises.
@@ -50,8 +50,9 @@ For "activate", pass the program name.`,
       description: z.string().optional(),
       days: z.array(daySchema).optional(),
       change_description: z.string().optional(),
+      hard_delete: z.boolean().optional(),
     },
-    async ({ action, name, description, days, change_description }) => {
+    async ({ action, name, description, days, change_description, hard_delete }) => {
       if (action === "list") {
         const { rows } = await pool.query(
           `SELECT p.id, p.name, p.description, p.is_active,
@@ -367,6 +368,31 @@ For "activate", pass the program name.`,
             isError: true,
           };
         }
+
+        if (hard_delete) {
+          const del = await pool.query(
+            "DELETE FROM programs WHERE LOWER(name) = LOWER($1) RETURNING name",
+            [name]
+          );
+          if (del.rows.length === 0) {
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: `Program "${name}" not found` }) }],
+              isError: true,
+            };
+          }
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  deleted: del.rows[0].name,
+                  message: `"${del.rows[0].name}" has been permanently deleted with all versions, days, and exercise assignments. This is irreversible.`,
+                }),
+              },
+            ],
+          };
+        }
+
         const del = await pool.query(
           "UPDATE programs SET is_active = FALSE WHERE LOWER(name) = LOWER($1) RETURNING name",
           [name]
@@ -383,7 +409,7 @@ For "activate", pass the program name.`,
               type: "text" as const,
               text: JSON.stringify({
                 deactivated: del.rows[0].name,
-                message: `"${del.rows[0].name}" has been deactivated. Use "activate" to reactivate it. History is preserved.`,
+                message: `"${del.rows[0].name}" has been deactivated. Use "activate" to reactivate it, or use hard_delete=true to permanently remove.`,
               }),
             },
           ],

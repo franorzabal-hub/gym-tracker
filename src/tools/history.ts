@@ -52,7 +52,8 @@ Examples:
                     'reps', st.reps,
                     'weight', st.weight,
                     'rpe', st.rpe,
-                    'set_type', st.set_type
+                    'set_type', st.set_type,
+                    'notes', st.notes
                   ) ORDER BY st.set_number
                 )
                 FROM sets st WHERE st.session_exercise_id = se.id
