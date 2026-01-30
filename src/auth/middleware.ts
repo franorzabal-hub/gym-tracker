@@ -1,24 +1,12 @@
-import type { Request, Response, NextFunction } from "express";
-import { jwtVerify, createRemoteJWKSet } from "jose";
+import type { Request } from "express";
 import pool from "../db/connection.js";
-import { WORKOS_CLIENT_ID } from "./workos.js";
+import { accessTokens } from "./oauth-routes.js";
 
 export class AuthError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "AuthError";
   }
-}
-
-let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
-
-function getJWKS() {
-  if (!jwks) {
-    jwks = createRemoteJWKSet(
-      new URL("https://api.workos.com/sso/jwks/")
-    );
-  }
-  return jwks;
 }
 
 export async function authenticateToken(req: Request): Promise<number> {
@@ -29,16 +17,12 @@ export async function authenticateToken(req: Request): Promise<number> {
 
   const token = authHeader.slice(7);
 
-  const { payload } = await jwtVerify(token, getJWKS(), {
-    audience: WORKOS_CLIENT_ID,
-  });
-
-  const externalId = payload.sub;
-  if (!externalId) {
-    throw new AuthError("Token missing sub claim");
+  // Look up token in our store
+  const stored = accessTokens.get(token);
+  if (!stored || stored.expiresAt < Date.now()) {
+    if (stored) accessTokens.delete(token);
+    throw new AuthError("Invalid or expired token");
   }
-
-  const email = (payload as any).email || null;
 
   // Upsert user
   const { rows } = await pool.query(
@@ -47,7 +31,7 @@ export async function authenticateToken(req: Request): Promise<number> {
      ON CONFLICT (external_id)
      DO UPDATE SET email = COALESCE($2, users.email), last_login = NOW()
      RETURNING id`,
-    [externalId, email]
+    [stored.workosUserId, stored.email]
   );
 
   return rows[0].id;

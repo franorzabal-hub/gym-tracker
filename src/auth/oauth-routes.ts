@@ -5,8 +5,11 @@ import { workos, WORKOS_CLIENT_ID, BASE_URL } from "./workos.js";
 const router = Router();
 
 // In-memory stores
-const authCodes = new Map<string, { accessToken: string; expiresAt: number }>();
+const authCodes = new Map<string, { workosUserId: string; email: string | null; expiresAt: number }>();
+const accessTokens = new Map<string, { workosUserId: string; email: string | null; expiresAt: number }>();
 const dynamicClients = new Map<string, { client_id: string; redirect_uris: string[]; created_at: number }>();
+
+export { accessTokens };
 
 // Cleanup expired codes every 5 minutes
 setInterval(() => {
@@ -103,18 +106,20 @@ router.get("/callback", async (req, res) => {
     const { redirect_uri, state, code_challenge, code_challenge_method } =
       JSON.parse(Buffer.from(internalState as string, "base64url").toString());
 
-    // Exchange WorkOS code for user + access token
+    // Exchange WorkOS code for user info
     const authResponse = await workos.userManagement.authenticateWithCode({
       code: workosCode as string,
       clientId: WORKOS_CLIENT_ID,
     });
 
-    const accessToken = authResponse.accessToken;
+    const workosUserId = authResponse.user.id;
+    const email = authResponse.user.email || null;
 
     // Generate a short-lived auth code for the MCP client
     const mcpCode = crypto.randomBytes(32).toString("hex");
     authCodes.set(mcpCode, {
-      accessToken,
+      workosUserId,
+      email,
       expiresAt: Date.now() + 5 * 60 * 1000, // 5 min
     });
 
@@ -154,10 +159,18 @@ router.post("/token", async (req, res) => {
   // Delete used code (one-time use)
   authCodes.delete(code);
 
+  // Generate our own opaque access token
+  const opaqueToken = crypto.randomBytes(32).toString("hex");
+  accessTokens.set(opaqueToken, {
+    workosUserId: stored.workosUserId,
+    email: stored.email,
+    expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+  });
+
   res.json({
-    access_token: stored.accessToken,
+    access_token: opaqueToken,
     token_type: "Bearer",
-    expires_in: 3600,
+    expires_in: 86400,
   });
 });
 
