@@ -23,26 +23,31 @@ export async function getLatestVersion(programId: number) {
 }
 
 export async function getProgramDaysWithExercises(versionId: number) {
-  const { rows: days } = await pool.query(
-    `SELECT id, day_label, weekdays, sort_order
-     FROM program_days WHERE version_id = $1 ORDER BY sort_order`,
+  const { rows } = await pool.query(
+    `SELECT pd.id, pd.day_label, pd.weekdays, pd.sort_order,
+       COALESCE(json_agg(
+         json_build_object(
+           'id', pde.id,
+           'exercise_name', e.name,
+           'exercise_id', e.id,
+           'target_sets', pde.target_sets,
+           'target_reps', pde.target_reps,
+           'target_weight', pde.target_weight,
+           'target_rpe', pde.target_rpe,
+           'sort_order', pde.sort_order,
+           'superset_group', pde.superset_group,
+           'notes', pde.notes
+         ) ORDER BY pde.sort_order
+       ) FILTER (WHERE pde.id IS NOT NULL), '[]') as exercises
+     FROM program_days pd
+     LEFT JOIN program_day_exercises pde ON pde.day_id = pd.id
+     LEFT JOIN exercises e ON e.id = pde.exercise_id
+     WHERE pd.version_id = $1
+     GROUP BY pd.id
+     ORDER BY pd.sort_order`,
     [versionId]
   );
-
-  for (const day of days) {
-    const { rows: exercises } = await pool.query(
-      `SELECT pde.id, e.name as exercise_name, e.id as exercise_id,
-         pde.target_sets, pde.target_reps, pde.target_weight, pde.target_rpe,
-         pde.sort_order, pde.superset_group, pde.notes
-       FROM program_day_exercises pde
-       JOIN exercises e ON e.id = pde.exercise_id
-       WHERE pde.day_id = $1 ORDER BY pde.sort_order`,
-      [day.id]
-    );
-    day.exercises = exercises;
-  }
-
-  return days;
+  return rows;
 }
 
 export async function inferTodayDay(programId: number) {

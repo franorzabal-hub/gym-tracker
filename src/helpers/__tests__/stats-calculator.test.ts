@@ -95,13 +95,10 @@ describe("checkPRs", () => {
   });
 
   it("detects new max weight PR", async () => {
-    // No existing PRs
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ value: 90 }] }) // current max_weight
+      .mockResolvedValueOnce({ rows: [{ record_type: "max_weight", value: 90 }, { record_type: "estimated_1rm", value: 100 }] }) // bulk load PRs
       .mockResolvedValueOnce({ rows: [] }) // upsert max_weight
-      .mockResolvedValueOnce({ rows: [{ value: 0 }] }) // max_reps_at_weight
-      .mockResolvedValueOnce({ rows: [] }) // upsert reps
-      .mockResolvedValueOnce({ rows: [{ value: 100 }] }) // current e1rm
+      .mockResolvedValueOnce({ rows: [] }) // upsert max_reps
       .mockResolvedValueOnce({ rows: [] }); // upsert e1rm
 
     const prs = await checkPRs(1, [
@@ -117,10 +114,8 @@ describe("checkPRs", () => {
 
   it("detects new estimated 1RM PR", async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ value: 120 }] }) // current max_weight (not beaten)
-      .mockResolvedValueOnce({ rows: [{ value: 0 }] }) // max_reps_at_weight
-      .mockResolvedValueOnce({ rows: [] }) // upsert reps
-      .mockResolvedValueOnce({ rows: [{ value: 100 }] }) // current e1rm (beaten)
+      .mockResolvedValueOnce({ rows: [{ record_type: "max_weight", value: 120 }, { record_type: "estimated_1rm", value: 100 }] }) // bulk load PRs
+      .mockResolvedValueOnce({ rows: [] }) // upsert max_reps
       .mockResolvedValueOnce({ rows: [] }); // upsert e1rm
 
     const prs = await checkPRs(1, [
@@ -137,15 +132,18 @@ describe("checkPRs", () => {
   });
 
   it("skips sets with no weight", async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] }); // bulk load PRs (empty)
+
     const prs = await checkPRs(1, [
       { reps: 10, weight: null, set_id: 42 },
     ]);
 
     expect(prs).toEqual([]);
-    expect(mockQuery).not.toHaveBeenCalled();
   });
 
   it("skips sets with zero weight", async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] }); // bulk load PRs (empty)
+
     const prs = await checkPRs(1, [
       { reps: 10, weight: 0, set_id: 42 },
     ]);
@@ -156,20 +154,13 @@ describe("checkPRs", () => {
   it("deduplicates PRs by record type (keeps best)", async () => {
     // Two sets, both beat max_weight
     mockQuery
-      // Set 1: weight 100
-      .mockResolvedValueOnce({ rows: [{ value: 80 }] }) // max_weight check
-      .mockResolvedValueOnce({ rows: [] }) // upsert
-      .mockResolvedValueOnce({ rows: [{ value: 0 }] }) // max_reps
-      .mockResolvedValueOnce({ rows: [] }) // upsert
-      .mockResolvedValueOnce({ rows: [{ value: 90 }] }) // e1rm check
-      .mockResolvedValueOnce({ rows: [] }) // upsert
-      // Set 2: weight 110
-      .mockResolvedValueOnce({ rows: [{ value: 100 }] }) // max_weight (already updated to 100 from set 1)
-      .mockResolvedValueOnce({ rows: [] }) // upsert
-      .mockResolvedValueOnce({ rows: [{ value: 0 }] }) // max_reps
-      .mockResolvedValueOnce({ rows: [] }) // upsert
-      .mockResolvedValueOnce({ rows: [{ value: 116.7 }] }) // e1rm
-      .mockResolvedValueOnce({ rows: [] }); // upsert
+      .mockResolvedValueOnce({ rows: [{ record_type: "max_weight", value: 80 }, { record_type: "estimated_1rm", value: 90 }] }) // bulk load PRs
+      .mockResolvedValueOnce({ rows: [] }) // upsert max_weight (100)
+      .mockResolvedValueOnce({ rows: [] }) // upsert max_reps_at_100
+      .mockResolvedValueOnce({ rows: [] }) // upsert e1rm
+      .mockResolvedValueOnce({ rows: [] }) // upsert max_weight (110)
+      .mockResolvedValueOnce({ rows: [] }) // upsert max_reps_at_110
+      .mockResolvedValueOnce({ rows: [] }); // upsert e1rm
 
     const prs = await checkPRs(1, [
       { reps: 5, weight: 100, set_id: 1 },

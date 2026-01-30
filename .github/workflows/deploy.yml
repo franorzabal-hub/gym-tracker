@@ -27,6 +27,7 @@ jobs:
       contents: read
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,11 +42,11 @@ jobs:
           gcloud run deploy gym-tracker \
             --source . \
             --region us-central1 \
-            --allow-unauthenticated \
+            --no-allow-unauthenticated \
             --port 3001 \
             --memory 256Mi \
             --cpu 1 \
             --min-instances 0 \
             --max-instances 1 \
-            --set-env-vars "DATABASE_URL=$DATABASE_URL" \
+            --set-env-vars "DATABASE_URL=$DATABASE_URL,ALLOWED_ORIGINS=$ALLOWED_ORIGINS" \
             --quiet

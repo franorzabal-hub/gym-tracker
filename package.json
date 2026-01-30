@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "tsc && vite build",
+    "build": "tsc",
     "serve": "node dist/server.js",
     "migrate": "tsx src/db/migrate.ts",
     "test": "vitest run",
@@ -25,8 +25,6 @@
     "@types/pg": "^8.11.10",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vite": "^6.0.0",
-    "vite-plugin-singlefile": "^2.0.3",
     "vitest": "^4.0.18"
   }
 }

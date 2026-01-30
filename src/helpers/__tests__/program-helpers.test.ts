@@ -72,19 +72,18 @@ describe("getProgramDaysWithExercises", () => {
   });
 
   it("returns days with their exercises", async () => {
-    mockQuery
-      .mockResolvedValueOnce({
-        rows: [
-          { id: 1, day_label: "Push", weekdays: [1, 4], sort_order: 0 },
-          { id: 2, day_label: "Pull", weekdays: [2, 5], sort_order: 1 },
-        ],
-      })
-      .mockResolvedValueOnce({
-        rows: [{ id: 10, exercise_name: "Bench Press", exercise_id: 1, target_sets: 4, target_reps: 8 }],
-      })
-      .mockResolvedValueOnce({
-        rows: [{ id: 20, exercise_name: "Barbell Row", exercise_id: 5, target_sets: 4, target_reps: 8 }],
-      });
+    mockQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 1, day_label: "Push", weekdays: [1, 4], sort_order: 0,
+          exercises: [{ id: 10, exercise_name: "Bench Press", exercise_id: 1, target_sets: 4, target_reps: 8, target_weight: null, target_rpe: null, sort_order: 0, superset_group: null, notes: null }],
+        },
+        {
+          id: 2, day_label: "Pull", weekdays: [2, 5], sort_order: 1,
+          exercises: [{ id: 20, exercise_name: "Barbell Row", exercise_id: 5, target_sets: 4, target_reps: 8, target_weight: null, target_rpe: null, sort_order: 0, superset_group: null, notes: null }],
+        },
+      ],
+    });
 
     const result = await getProgramDaysWithExercises(1);
     expect(result).toHaveLength(2);

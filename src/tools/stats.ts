@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
-import { resolveExercise } from "../helpers/exercise-resolver.js";
+import { findExercise } from "../helpers/exercise-resolver.js";
 import { estimateE1RM } from "../helpers/stats-calculator.js";
 
 export function registerStatsTool(server: McpServer) {
@@ -21,7 +21,18 @@ Examples:
         .default("3months"),
     },
     async ({ exercise, period }) => {
-      const resolved = await resolveExercise(exercise);
+      const resolved = await findExercise(exercise);
+      if (!resolved) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: `Exercise "${exercise}" not found` }),
+            },
+          ],
+          isError: true,
+        };
+      }
 
       // Date filters (different aliases depending on query context)
       let setsDateFilter: string;

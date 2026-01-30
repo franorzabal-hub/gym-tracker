@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
-import { resolveExercise } from "../helpers/exercise-resolver.js";
+import { findExercise } from "../helpers/exercise-resolver.js";
 
 export function registerEditLogTool(server: McpServer) {
   server.tool(
@@ -37,16 +37,40 @@ Parameters:
       set_numbers: z.array(z.number().int()).optional(),
     },
     async ({ exercise, session, action, updates, set_numbers }) => {
-      const resolved = await resolveExercise(exercise);
+      const resolved = await findExercise(exercise);
+      if (!resolved) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: `Exercise "${exercise}" not found` }),
+            },
+          ],
+          isError: true,
+        };
+      }
 
       // Find the session
+      const queryParams: any[] = [resolved.id];
       let sessionFilter: string;
-      if (session === "today") {
+      if (!session || session === "today") {
         sessionFilter = "AND DATE(s.started_at) = CURRENT_DATE";
       } else if (session === "last") {
         sessionFilter = "";
       } else {
-        sessionFilter = `AND DATE(s.started_at) = '${session}'`;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(session)) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ error: "Invalid date format. Use YYYY-MM-DD" }),
+              },
+            ],
+            isError: true,
+          };
+        }
+        queryParams.push(session);
+        sessionFilter = `AND DATE(s.started_at) = $${queryParams.length}`;
       }
 
       const { rows: sessionExercises } = await pool.query(
@@ -56,7 +80,7 @@ Parameters:
          WHERE se.exercise_id = $1 ${sessionFilter}
          ORDER BY s.started_at DESC
          LIMIT 1`,
-        [resolved.id]
+        queryParams
       );
 
       if (sessionExercises.length === 0) {

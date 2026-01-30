@@ -17,7 +17,11 @@ import { registerEditLogTool } from "./src/tools/edit-log.js";
 import { registerTemplatesTool } from "./src/tools/templates.js";
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(",")
+    : [],
+}));
 app.use(express.json());
 
 // Health check

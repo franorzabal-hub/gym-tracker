@@ -6,6 +6,46 @@ export interface ResolvedExercise {
   isNew: boolean;
 }
 
+export async function findExercise(input: string): Promise<ResolvedExercise | null> {
+  const normalized = input.trim().toLowerCase();
+
+  // 1. Exact name match
+  const exact = await pool.query(
+    "SELECT id, name FROM exercises WHERE LOWER(name) = $1",
+    [normalized]
+  );
+  if (exact.rows.length > 0) {
+    return { id: exact.rows[0].id, name: exact.rows[0].name, isNew: false };
+  }
+
+  // 2. Alias match
+  const alias = await pool.query(
+    `SELECT e.id, e.name FROM exercise_aliases a
+     JOIN exercises e ON e.id = a.exercise_id
+     WHERE LOWER(a.alias) = $1`,
+    [normalized]
+  );
+  if (alias.rows.length > 0) {
+    return { id: alias.rows[0].id, name: alias.rows[0].name, isNew: false };
+  }
+
+  // 3. Partial match (ILIKE)
+  const partial = await pool.query(
+    `SELECT id, name FROM exercises WHERE name ILIKE $1
+     UNION
+     SELECT e.id, e.name FROM exercise_aliases a
+     JOIN exercises e ON e.id = a.exercise_id
+     WHERE a.alias ILIKE $1
+     LIMIT 1`,
+    [`%${normalized}%`]
+  );
+  if (partial.rows.length > 0) {
+    return { id: partial.rows[0].id, name: partial.rows[0].name, isNew: false };
+  }
+
+  return null;
+}
+
 export async function resolveExercise(
   input: string,
   muscleGroup?: string,

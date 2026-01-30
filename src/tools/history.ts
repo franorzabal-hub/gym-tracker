@@ -26,6 +26,7 @@ Examples:
     },
     async ({ period, exercise, program_day }) => {
       // Build date filter
+      const params: any[] = [];
       let dateFilter: string;
       if (period === "today") {
         dateFilter = "s.started_at >= CURRENT_DATE";
@@ -36,13 +37,14 @@ Examples:
       } else if (period === "year") {
         dateFilter = "s.started_at >= CURRENT_DATE - INTERVAL '365 days'";
       } else {
-        dateFilter = `s.started_at >= CURRENT_DATE - INTERVAL '${period} days'`;
+        params.push(period);
+        dateFilter = `s.started_at >= CURRENT_DATE - make_interval(days => $${params.length})`;
       }
 
       let sql = `
         SELECT s.id as session_id, s.started_at, s.ended_at,
           pd.day_label as program_day,
-          json_agg(
+          COALESCE(json_agg(
             json_build_object(
               'exercise', e.name,
               'sets', (
@@ -59,15 +61,13 @@ Examples:
                 FROM sets st WHERE st.session_exercise_id = se.id
               )
             ) ORDER BY se.sort_order
-          ) as exercises
+          ) FILTER (WHERE se.id IS NOT NULL), '[]') as exercises
         FROM sessions s
         LEFT JOIN program_days pd ON pd.id = s.program_day_id
         LEFT JOIN session_exercises se ON se.session_id = s.id
         LEFT JOIN exercises e ON e.id = se.exercise_id
         WHERE ${dateFilter}
       `;
-
-      const params: any[] = [];
 
       if (exercise) {
         params.push(`%${exercise}%`);

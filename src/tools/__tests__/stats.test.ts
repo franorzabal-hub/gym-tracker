@@ -9,7 +9,7 @@ vi.mock("../../db/connection.js", () => ({
 }));
 
 vi.mock("../../helpers/exercise-resolver.js", () => ({
-  resolveExercise: vi.fn().mockResolvedValue({ id: 1, name: "Bench Press", isNew: false }),
+  findExercise: vi.fn().mockResolvedValue({ id: 1, name: "Bench Press", isNew: false }),
 }));
 
 vi.mock("../../helpers/stats-calculator.js", () => ({

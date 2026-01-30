@@ -24,19 +24,24 @@ export async function checkPRs(
   exerciseId: number,
   newSets: Array<{ reps: number; weight?: number | null; set_id: number }>
 ): Promise<PRCheck[]> {
+  // Pre-load all current PRs in one query
+  const { rows: currentPRs } = await pool.query(
+    `SELECT record_type, value FROM personal_records WHERE exercise_id = $1`,
+    [exerciseId]
+  );
+  const prMap = new Map(currentPRs.map((r) => [r.record_type, Number(r.value)]));
+
   const prs: PRCheck[] = [];
+  const upserts: Array<{ type: string; value: number; setId: number }> = [];
 
   for (const set of newSets) {
     if (!set.weight || set.weight <= 0) continue;
 
     // Check max weight
-    const maxWeight = await pool.query(
-      `SELECT value FROM personal_records WHERE exercise_id = $1 AND record_type = 'max_weight'`,
-      [exerciseId]
-    );
-    const currentMax = maxWeight.rows[0]?.value || 0;
+    const currentMax = prMap.get("max_weight") || 0;
     if (set.weight > currentMax) {
-      await upsertPR(exerciseId, "max_weight", set.weight, set.set_id);
+      prMap.set("max_weight", set.weight);
+      upserts.push({ type: "max_weight", value: set.weight, setId: set.set_id });
       prs.push({
         record_type: "max_weight",
         value: set.weight,
@@ -45,36 +50,30 @@ export async function checkPRs(
     }
 
     // Check max reps at this weight
-    const maxReps = await pool.query(
-      `SELECT value FROM personal_records
-       WHERE exercise_id = $1 AND record_type = $2`,
-      [exerciseId, `max_reps_at_${set.weight}`]
-    );
-    const currentMaxReps = maxReps.rows[0]?.value || 0;
+    const repsKey = `max_reps_at_${set.weight}`;
+    const currentMaxReps = prMap.get(repsKey) || 0;
     if (set.reps > currentMaxReps) {
-      await upsertPR(
-        exerciseId,
-        `max_reps_at_${set.weight}`,
-        set.reps,
-        set.set_id
-      );
+      prMap.set(repsKey, set.reps);
+      upserts.push({ type: repsKey, value: set.reps, setId: set.set_id });
     }
 
     // Check estimated 1RM
     const e1rm = estimateE1RM(set.weight, set.reps);
-    const maxE1rm = await pool.query(
-      `SELECT value FROM personal_records WHERE exercise_id = $1 AND record_type = 'estimated_1rm'`,
-      [exerciseId]
-    );
-    const currentE1rm = maxE1rm.rows[0]?.value || 0;
+    const currentE1rm = prMap.get("estimated_1rm") || 0;
     if (e1rm > currentE1rm) {
-      await upsertPR(exerciseId, "estimated_1rm", e1rm, set.set_id);
+      prMap.set("estimated_1rm", e1rm);
+      upserts.push({ type: "estimated_1rm", value: e1rm, setId: set.set_id });
       prs.push({
         record_type: "estimated_1rm",
         value: e1rm,
         previous: currentE1rm || undefined,
       });
     }
+  }
+
+  // Batch upsert all new PRs
+  for (const { type, value, setId } of upserts) {
+    await upsertPR(exerciseId, type, value, setId);
   }
 
   // Deduplicate by record_type (keep only the best per type)
