@@ -60,7 +60,12 @@ Parameters:
         );
         dayRow = rows[0];
       } else {
-        dayRow = await inferTodayDay(activeProgram.id);
+        // Infer from weekday using user's timezone
+        const { rows: profileRows } = await pool.query(
+          "SELECT data->>'timezone' as timezone FROM user_profile LIMIT 1"
+        );
+        const timezone = profileRows[0]?.timezone || undefined;
+        dayRow = await inferTodayDay(activeProgram.id, timezone);
       }
 
       if (!dayRow) {

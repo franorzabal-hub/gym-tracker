@@ -50,11 +50,20 @@ export async function getProgramDaysWithExercises(versionId: number) {
   return rows;
 }
 
-export async function inferTodayDay(programId: number) {
+export async function inferTodayDay(programId: number, timezone?: string) {
   const version = await getLatestVersion(programId);
   if (!version) return null;
 
-  const isoWeekday = new Date().getDay() || 7; // JS: 0=Sun → ISO: 7=Sun
+  let isoWeekday: number;
+  if (timezone) {
+    // Get the weekday in the user's timezone
+    const now = new Date();
+    const localDay = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: timezone }).format(now);
+    const dayMap: Record<string, number> = { 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 7 };
+    isoWeekday = dayMap[localDay] || (now.getDay() || 7);
+  } else {
+    isoWeekday = new Date().getDay() || 7; // JS: 0=Sun → ISO: 7=Sun
+  }
 
   const { rows } = await pool.query(
     `SELECT id, day_label, weekdays, sort_order

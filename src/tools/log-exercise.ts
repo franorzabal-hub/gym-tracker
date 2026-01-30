@@ -19,23 +19,75 @@ const exerciseEntrySchema = z.object({
   muscle_group: z.string().optional(),
   equipment: z.string().optional(),
   set_notes: z.union([z.string(), z.array(z.string())]).optional(),
+  drop_percent: z.number().min(1).max(50).optional(),
 });
 
 type ExerciseEntry = z.infer<typeof exerciseEntrySchema>;
 
 async function logSingleExercise(sessionId: number, entry: ExerciseEntry) {
-  const { exercise, sets, reps, weight, rpe, set_type, notes, rest_seconds, superset_group, muscle_group, equipment, set_notes } = entry;
+  const { exercise, sets, reps, weight, rpe, set_type, notes, rest_seconds, superset_group, muscle_group, equipment, set_notes, drop_percent } = entry;
 
   // Resolve exercise (pass metadata for auto-create or fill)
   const resolved = await resolveExercise(exercise, muscle_group, equipment);
 
-  // Create session_exercise
-  const { rows: [se] } = await pool.query(
-    `INSERT INTO session_exercises (session_id, exercise_id, sort_order, notes, rest_seconds, superset_group)
-     VALUES ($1, $2, COALESCE((SELECT MAX(sort_order) + 1 FROM session_exercises WHERE session_id = $1), 0), $3, $4, $5)
-     RETURNING id`,
-    [sessionId, resolved.id, notes || null, rest_seconds || null, superset_group || null]
+  // Check if session_exercise already exists for this exercise in this session
+  const { rows: existingRows } = await pool.query(
+    `SELECT se.id, COALESCE(MAX(s.set_number), 0) AS max_set_number
+     FROM session_exercises se
+     LEFT JOIN sets s ON s.session_exercise_id = se.id
+     WHERE se.session_id = $1 AND se.exercise_id = $2
+     GROUP BY se.id
+     LIMIT 1`,
+    [sessionId, resolved.id]
   );
+
+  let se: { id: number };
+  let startSetNumber: number;
+
+  if (existingRows.length > 0) {
+    // Reuse existing session_exercise
+    se = { id: existingRows[0].id };
+    startSetNumber = parseInt(existingRows[0].max_set_number, 10);
+
+    // Update notes/rest_seconds/superset_group if currently null and new values provided
+    const updates: string[] = [];
+    const updateValues: unknown[] = [];
+    let paramIdx = 1;
+
+    if (notes) {
+      updates.push(`notes = COALESCE(notes, $${paramIdx})`);
+      updateValues.push(notes);
+      paramIdx++;
+    }
+    if (rest_seconds) {
+      updates.push(`rest_seconds = COALESCE(rest_seconds, $${paramIdx})`);
+      updateValues.push(rest_seconds);
+      paramIdx++;
+    }
+    if (superset_group) {
+      updates.push(`superset_group = COALESCE(superset_group, $${paramIdx})`);
+      updateValues.push(superset_group);
+      paramIdx++;
+    }
+
+    if (updates.length > 0) {
+      updateValues.push(se.id);
+      await pool.query(
+        `UPDATE session_exercises SET ${updates.join(", ")} WHERE id = $${paramIdx}`,
+        updateValues
+      );
+    }
+  } else {
+    // Create new session_exercise
+    const { rows: [newSe] } = await pool.query(
+      `INSERT INTO session_exercises (session_id, exercise_id, sort_order, notes, rest_seconds, superset_group)
+       VALUES ($1, $2, COALESCE((SELECT MAX(sort_order) + 1 FROM session_exercises WHERE session_id = $1), 0), $3, $4, $5)
+       RETURNING id`,
+      [sessionId, resolved.id, notes || null, rest_seconds || null, superset_group || null]
+    );
+    se = newSe;
+    startSetNumber = 0;
+  }
 
   // Determine reps per set
   const repsArray = Array.isArray(reps)
@@ -62,15 +114,20 @@ async function logSingleExercise(sessionId: number, entry: ExerciseEntry) {
 
   for (let i = 0; i < repsArray.length; i++) {
     const setNote = notesArray[i] || null;
+    // Calculate weight for drop sets
+    let setWeight = weight || null;
+    if (set_type === 'drop' && weight && drop_percent) {
+      setWeight = Math.round((weight * (1 - (i * drop_percent / 100))) * 10) / 10;
+    }
     const { rows: [inserted] } = await pool.query(
       `INSERT INTO sets (session_exercise_id, set_number, set_type, reps, weight, rpe, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [se.id, i + 1, set_type, repsArray[i], weight || null, rpe || null, setNote]
+      [se.id, startSetNumber + i + 1, set_type, repsArray[i], setWeight, rpe || null, setNote]
     );
     loggedSets.push({
-      set_number: i + 1,
+      set_number: startSetNumber + i + 1,
       reps: repsArray[i],
-      weight: weight || undefined,
+      weight: setWeight || undefined,
       rpe: rpe || undefined,
       set_type,
       notes: setNote || undefined,
@@ -91,8 +148,10 @@ async function logSingleExercise(sessionId: number, entry: ExerciseEntry) {
   return {
     exercise_name: resolved.name,
     is_new_exercise: resolved.isNew,
-    logged_sets: loggedSets.map(({ set_id, ...rest }) => rest),
+    logged_sets: loggedSets,
     new_prs: newPRs.length > 0 ? newPRs : undefined,
+    rest_seconds: rest_seconds || undefined,
+    rest_reminder: rest_seconds ? `Rest ${rest_seconds}s before next set` : undefined,
   };
 }
 
@@ -117,6 +176,7 @@ Single exercise mode:
 - muscle_group: optional muscle group for the exercise (used to fill metadata if missing)
 - equipment: optional equipment type (used to fill metadata if missing)
 - set_notes: optional notes per set. A single string applies to all sets, or an array of strings (one per set).
+- drop_percent: optional percentage to decrease weight per set for drop sets (1-50). When set_type is "drop" and drop_percent is provided, weight automatically decreases each set. E.g. weight=100, drop_percent=10 produces sets at 100, 90, 80, etc.
 
 Bulk mode:
 - exercises: array of exercise entries (each with the same fields as above). Logs multiple exercises in one call.
@@ -137,6 +197,7 @@ Returns the logged sets and any new personal records achieved.`,
       muscle_group: z.string().optional(),
       equipment: z.string().optional(),
       set_notes: z.union([z.string(), z.array(z.string())]).optional(),
+      drop_percent: z.number().min(1).max(50).optional(),
       exercises: z.array(exerciseEntrySchema).optional(),
     },
     async (params) => {
@@ -197,6 +258,7 @@ Returns the logged sets and any new personal records achieved.`,
         muscle_group: params.muscle_group,
         equipment: params.equipment,
         set_notes: params.set_notes,
+        drop_percent: params.drop_percent,
       });
 
       return {

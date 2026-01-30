@@ -50,6 +50,7 @@ Examples:
               'sets', (
                 SELECT json_agg(
                   json_build_object(
+                    'set_id', st.id,
                     'set_number', st.set_number,
                     'reps', st.reps,
                     'weight', st.weight,
