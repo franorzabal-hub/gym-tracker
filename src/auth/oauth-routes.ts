@@ -4,8 +4,9 @@ import { workos, WORKOS_CLIENT_ID, BASE_URL } from "./workos.js";
 
 const router = Router();
 
-// In-memory code store (short-lived auth codes)
+// In-memory stores
 const authCodes = new Map<string, { accessToken: string; expiresAt: number }>();
+const dynamicClients = new Map<string, { client_id: string; redirect_uris: string[]; created_at: number }>();
 
 // Cleanup expired codes every 5 minutes
 setInterval(() => {
@@ -34,6 +35,29 @@ router.get("/.well-known/oauth-authorization-server", (_req, res) => {
     grant_types_supported: ["authorization_code"],
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none"],
+    registration_endpoint: `${BASE_URL}/register`,
+  });
+});
+
+// Dynamic Client Registration (RFC 7591)
+router.post("/register", (req, res) => {
+  const { client_name, redirect_uris, grant_types, response_types, token_endpoint_auth_method } = req.body;
+
+  const clientId = `client_${crypto.randomBytes(16).toString("hex")}`;
+
+  dynamicClients.set(clientId, {
+    client_id: clientId,
+    redirect_uris: redirect_uris || [],
+    created_at: Date.now(),
+  });
+
+  res.status(201).json({
+    client_id: clientId,
+    client_name: client_name || "MCP Client",
+    redirect_uris: redirect_uris || [],
+    grant_types: grant_types || ["authorization_code"],
+    response_types: response_types || ["code"],
+    token_endpoint_auth_method: token_endpoint_auth_method || "none",
   });
 });
 
