@@ -8,6 +8,7 @@ import {
   getProgramDaysWithExercises,
   cloneVersion,
 } from "../helpers/program-helpers.js";
+import { getUserId } from "../context/user-context.js";
 
 const dayExerciseSchema = z.object({
   exercise: z.string(),
@@ -53,6 +54,8 @@ For "activate", pass the program name.`,
       hard_delete: z.boolean().optional(),
     },
     async ({ action, name, description, days, change_description, hard_delete }) => {
+      const userId = getUserId();
+
       if (action === "list") {
         const { rows } = await pool.query(
           `SELECT p.id, p.name, p.description, p.is_active,
@@ -61,7 +64,8 @@ For "activate", pass the program name.`,
               JOIN program_versions pv ON pv.id = pd.version_id
               WHERE pv.program_id = p.id AND pv.version_number = (SELECT MAX(version_number) FROM program_versions WHERE program_id = p.id)
              ) as days_count
-           FROM programs p ORDER BY p.is_active DESC, p.name`
+           FROM programs p WHERE p.user_id = $1 ORDER BY p.is_active DESC, p.name`,
+          [userId]
         );
         const active = rows.find((r) => r.is_active);
         return {
@@ -83,9 +87,9 @@ For "activate", pass the program name.`,
               .query(
                 `SELECT p.id, p.name, p.description, pv.id as version_id, pv.version_number
                FROM programs p JOIN program_versions pv ON pv.program_id = p.id
-               WHERE LOWER(p.name) = LOWER($1)
+               WHERE p.user_id = $1 AND LOWER(p.name) = LOWER($2)
                ORDER BY pv.version_number DESC LIMIT 1`,
-                [name]
+                [userId, name]
               )
               .then((r) => r.rows[0])
           : await getActiveProgram();
@@ -128,10 +132,10 @@ For "activate", pass the program name.`,
           };
         }
 
-        // Check if program name already exists
+        // Check if program name already exists for this user
         const existing = await pool.query(
-          "SELECT id FROM programs WHERE LOWER(name) = LOWER($1)",
-          [name]
+          "SELECT id FROM programs WHERE user_id = $1 AND LOWER(name) = LOWER($2)",
+          [userId, name]
         );
         if (existing.rows.length > 0) {
           return {
@@ -151,15 +155,15 @@ For "activate", pass the program name.`,
         try {
           await client.query("BEGIN");
 
-          // Deactivate other programs
-          await client.query("UPDATE programs SET is_active = FALSE");
+          // Deactivate other programs for this user
+          await client.query("UPDATE programs SET is_active = FALSE WHERE user_id = $1", [userId]);
 
           const {
             rows: [prog],
           } = await client.query(
-            `INSERT INTO programs (name, description, is_active) VALUES ($1, $2, TRUE)
+            `INSERT INTO programs (user_id, name, description, is_active) VALUES ($1, $2, $3, TRUE)
              RETURNING id`,
-            [name, description || null]
+            [userId, name, description || null]
           );
 
           const {
@@ -240,8 +244,8 @@ For "activate", pass the program name.`,
         // Find program
         const program = name
           ? await pool
-              .query("SELECT id FROM programs WHERE LOWER(name) = LOWER($1)", [
-                name,
+              .query("SELECT id FROM programs WHERE user_id = $1 AND LOWER(name) = LOWER($2)", [
+                userId, name,
               ])
               .then((r) => r.rows[0])
           : await getActiveProgram();
@@ -337,8 +341,8 @@ For "activate", pass the program name.`,
           };
         }
         const prog = await pool.query(
-          "SELECT id, name FROM programs WHERE LOWER(name) = LOWER($1)",
-          [name]
+          "SELECT id, name FROM programs WHERE user_id = $1 AND LOWER(name) = LOWER($2)",
+          [userId, name]
         );
         if (prog.rows.length === 0) {
           return {
@@ -346,7 +350,7 @@ For "activate", pass the program name.`,
             isError: true,
           };
         }
-        await pool.query("UPDATE programs SET is_active = FALSE");
+        await pool.query("UPDATE programs SET is_active = FALSE WHERE user_id = $1", [userId]);
         await pool.query("UPDATE programs SET is_active = TRUE WHERE id = $1", [prog.rows[0].id]);
         return {
           content: [
@@ -371,8 +375,8 @@ For "activate", pass the program name.`,
 
         if (hard_delete) {
           const del = await pool.query(
-            "DELETE FROM programs WHERE LOWER(name) = LOWER($1) RETURNING name",
-            [name]
+            "DELETE FROM programs WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
+            [userId, name]
           );
           if (del.rows.length === 0) {
             return {
@@ -394,8 +398,8 @@ For "activate", pass the program name.`,
         }
 
         const del = await pool.query(
-          "UPDATE programs SET is_active = FALSE WHERE LOWER(name) = LOWER($1) RETURNING name",
-          [name]
+          "UPDATE programs SET is_active = FALSE WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
+          [userId, name]
         );
         if (del.rows.length === 0) {
           return {
@@ -420,8 +424,8 @@ For "activate", pass the program name.`,
         const program = name
           ? await pool
               .query(
-                "SELECT id, name FROM programs WHERE LOWER(name) = LOWER($1)",
-                [name]
+                "SELECT id, name FROM programs WHERE user_id = $1 AND LOWER(name) = LOWER($2)",
+                [userId, name]
               )
               .then((r) => r.rows[0])
           : await getActiveProgram();

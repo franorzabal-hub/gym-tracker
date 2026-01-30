@@ -6,6 +6,7 @@ import {
   inferTodayDay,
   getProgramDaysWithExercises,
 } from "../helpers/program-helpers.js";
+import { getUserId } from "../context/user-context.js";
 
 export function registerSessionTools(server: McpServer) {
   server.tool(
@@ -18,9 +19,12 @@ Returns the session info and the exercises planned for that day (if any).`,
       notes: z.string().optional(),
     },
     async ({ program_day, notes }) => {
+      const userId = getUserId();
+
       // Check for already active session
       const active = await pool.query(
-        "SELECT id, started_at FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1"
+        "SELECT id, started_at FROM sessions WHERE user_id = $1 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1",
+        [userId]
       );
       if (active.rows.length > 0) {
         return {
@@ -61,7 +65,8 @@ Returns the session info and the exercises planned for that day (if any).`,
         } else {
           // Infer from weekday using user's timezone
           const { rows: profileRows } = await pool.query(
-            "SELECT data->>'timezone' as timezone FROM user_profile LIMIT 1"
+            "SELECT data->>'timezone' as timezone FROM user_profile WHERE user_id = $1 LIMIT 1",
+            [userId]
           );
           const timezone = profileRows[0]?.timezone || undefined;
           const inferred = await inferTodayDay(activeProgram.id, timezone);
@@ -73,9 +78,9 @@ Returns the session info and the exercises planned for that day (if any).`,
       }
 
       const { rows } = await pool.query(
-        `INSERT INTO sessions (program_version_id, program_day_id, notes)
-         VALUES ($1, $2, $3) RETURNING id, started_at`,
-        [programVersionId, programDayId, notes || null]
+        `INSERT INTO sessions (user_id, program_version_id, program_day_id, notes)
+         VALUES ($1, $2, $3, $4) RETURNING id, started_at`,
+        [userId, programVersionId, programDayId, notes || null]
       );
 
       const result: any = {
@@ -100,9 +105,9 @@ Returns the session info and the exercises planned for that day (if any).`,
         // Get last workout for the same program day (weight reference)
         const { rows: lastSession } = await pool.query(
           `SELECT s.id, s.started_at FROM sessions s
-           WHERE s.program_day_id = $1 AND s.ended_at IS NOT NULL
+           WHERE s.user_id = $1 AND s.program_day_id = $2 AND s.ended_at IS NOT NULL
            ORDER BY s.started_at DESC LIMIT 1`,
-          [programDayId]
+          [userId, programDayId]
         );
         if (lastSession.length > 0) {
           const { rows: lastExercises } = await pool.query(
@@ -161,8 +166,11 @@ Returns the session info and the exercises planned for that day (if any).`,
       force: z.boolean().optional().default(false),
     },
     async ({ notes, force }) => {
+      const userId = getUserId();
+
       const active = await pool.query(
-        "SELECT id, started_at FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1"
+        "SELECT id, started_at FROM sessions WHERE user_id = $1 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1",
+        [userId]
       );
       if (active.rows.length === 0) {
         return {
@@ -250,9 +258,9 @@ Returns the session info and the exercises planned for that day (if any).`,
       if (currentSession?.program_day_id) {
         const { rows: prevSessions } = await pool.query(
           `SELECT s.id, s.started_at FROM sessions s
-           WHERE s.program_day_id = $1 AND s.id != $2 AND s.ended_at IS NOT NULL
+           WHERE s.user_id = $1 AND s.program_day_id = $2 AND s.id != $3 AND s.ended_at IS NOT NULL
            ORDER BY s.started_at DESC LIMIT 1`,
-          [currentSession.program_day_id, sessionId]
+          [userId, currentSession.program_day_id, sessionId]
         );
 
         if (prevSessions.length > 0) {

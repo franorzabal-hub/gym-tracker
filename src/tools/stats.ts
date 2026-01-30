@@ -3,6 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { findExercise } from "../helpers/exercise-resolver.js";
 import { estimateE1RM } from "../helpers/stats-calculator.js";
+import { getUserId } from "../context/user-context.js";
 
 export function registerStatsTool(server: McpServer) {
   server.tool(
@@ -21,6 +22,8 @@ Examples:
         .default("3months"),
     },
     async ({ exercise, period }) => {
+      const userId = getUserId();
+
       const resolved = await findExercise(exercise);
       if (!resolved) {
         return {
@@ -58,9 +61,9 @@ Examples:
       // Personal records
       const { rows: prs } = await pool.query(
         `SELECT record_type, value, achieved_at
-         FROM personal_records WHERE exercise_id = $1
+         FROM personal_records WHERE user_id = $1 AND exercise_id = $2
          ORDER BY record_type`,
-        [resolved.id]
+        [userId, resolved.id]
       );
 
       const prMap: Record<string, { value: number; achieved_at: string }> = {};
@@ -80,11 +83,11 @@ Examples:
          FROM sets st
          JOIN session_exercises se ON se.id = st.session_exercise_id
          JOIN sessions s ON s.id = se.session_id
-         WHERE se.exercise_id = $1 AND st.set_type = 'working' AND st.weight IS NOT NULL
+         WHERE s.user_id = $1 AND se.exercise_id = $2 AND st.set_type = 'working' AND st.weight IS NOT NULL
            ${setsDateFilter}
          GROUP BY DATE(s.started_at), se.id
          ORDER BY date`,
-        [resolved.id]
+        [userId, resolved.id]
       );
 
       const progressionData = progression.map((row) => ({
@@ -104,11 +107,11 @@ Examples:
          FROM sets st
          JOIN session_exercises se ON se.id = st.session_exercise_id
          JOIN sessions s ON s.id = se.session_id
-         WHERE se.exercise_id = $1 AND st.set_type = 'working' AND st.weight IS NOT NULL
+         WHERE s.user_id = $1 AND se.exercise_id = $2 AND st.set_type = 'working' AND st.weight IS NOT NULL
            ${setsDateFilter}
          GROUP BY week
          ORDER BY week`,
-        [resolved.id]
+        [userId, resolved.id]
       );
 
       // Frequency
@@ -118,9 +121,9 @@ Examples:
            EXTRACT(DAYS FROM (NOW() - MIN(s.started_at))) as span_days
          FROM sessions s
          JOIN session_exercises se ON se.session_id = s.id
-         WHERE se.exercise_id = $1
+         WHERE s.user_id = $1 AND se.exercise_id = $2
            ${sessionsDateFilter}`,
-        [resolved.id]
+        [userId, resolved.id]
       );
 
       const spanWeeks = Math.max(1, (freq.span_days || 7) / 7);

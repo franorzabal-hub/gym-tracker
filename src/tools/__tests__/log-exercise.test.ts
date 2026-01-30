@@ -16,6 +16,10 @@ vi.mock("../../helpers/stats-calculator.js", () => ({
   checkPRs: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("../../context/user-context.js", () => ({
+  getUserId: vi.fn().mockReturnValue(1),
+}));
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerLogExerciseTool } from "../log-exercise.js";
 import { resolveExercise } from "../../helpers/exercise-resolver.js";

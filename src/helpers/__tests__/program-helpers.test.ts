@@ -17,6 +17,10 @@ vi.mock("../../db/connection.js", () => ({
   },
 }));
 
+vi.mock("../../context/user-context.js", () => ({
+  getUserId: vi.fn().mockReturnValue(1),
+}));
+
 import {
   getActiveProgram,
   getLatestVersion,

@@ -16,6 +16,11 @@ import { registerStatsTool } from "./src/tools/stats.js";
 import { registerEditLogTool } from "./src/tools/edit-log.js";
 import { registerTemplatesTool } from "./src/tools/templates.js";
 
+import oauthRoutes from "./src/auth/oauth-routes.js";
+import { authenticateToken, AuthError } from "./src/auth/middleware.js";
+import { runWithUser } from "./src/context/user-context.js";
+import pool from "./src/db/connection.js";
+
 function getAllowedOrigins(): string[] {
   if (process.env.ALLOWED_ORIGINS) {
     return process.env.ALLOWED_ORIGINS.split(",").map(s => s.trim()).filter(Boolean);
@@ -35,36 +40,61 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+// OAuth routes (before /mcp)
+app.use(oauthRoutes);
+
 // MCP endpoint
 app.all("/mcp", async (req, res) => {
-  const server = new McpServer({
-    name: "gym-tracker",
-    version: "1.0.0",
-  });
+  try {
+    let userId: number;
 
-  // Register all tools
-  registerProfileTool(server);
-  registerExercisesTool(server);
-  registerSessionTools(server);
-  registerLogExerciseTool(server);
-  registerProgramTool(server);
-  registerLogRoutineTool(server);
-  registerHistoryTool(server);
-  registerStatsTool(server);
-  registerEditLogTool(server);
-  registerTemplatesTool(server);
+    if (process.env.DEV_USER_ID) {
+      userId = Number(process.env.DEV_USER_ID);
+    } else {
+      userId = await authenticateToken(req);
+    }
 
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-  });
+    await runWithUser(userId, async () => {
+      const server = new McpServer({
+        name: "gym-tracker",
+        version: "1.0.0",
+      });
 
-  res.on("close", () => {
-    transport.close();
-    server.close();
-  });
+      // Register all tools
+      registerProfileTool(server);
+      registerExercisesTool(server);
+      registerSessionTools(server);
+      registerLogExerciseTool(server);
+      registerProgramTool(server);
+      registerLogRoutineTool(server);
+      registerHistoryTool(server);
+      registerStatsTool(server);
+      registerEditLogTool(server);
+      registerTemplatesTool(server);
 
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
+
+      res.on("close", () => {
+        transport.close();
+        server.close();
+      });
+
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    });
+  } catch (err) {
+    if (err instanceof AuthError) {
+      res.status(401).json({
+        error: "unauthorized",
+        message: err.message,
+      });
+      res.setHeader("WWW-Authenticate", 'Bearer realm="gym-tracker"');
+      return;
+    }
+    throw err;
+  }
 });
 
 // Start

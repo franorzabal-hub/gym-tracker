@@ -8,6 +8,10 @@ vi.mock("../../db/connection.js", () => ({
   default: { query: mockQuery, connect: vi.fn() },
 }));
 
+vi.mock("../../context/user-context.js", () => ({
+  getUserId: vi.fn().mockReturnValue(1),
+}));
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerProfileTool } from "../profile.js";
 
@@ -62,8 +66,8 @@ describe("manage_profile tool", () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.profile).toBeDefined();
     expect(mockQuery).toHaveBeenCalledWith(
-      expect.stringContaining("ON CONFLICT (id)"),
-      [JSON.stringify({ weight_kg: 82 })]
+      expect.stringContaining("ON CONFLICT (user_id)"),
+      [1, JSON.stringify({ weight_kg: 82 })]
     );
   });
 

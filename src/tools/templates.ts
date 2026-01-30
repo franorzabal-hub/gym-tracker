@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
+import { getUserId } from "../context/user-context.js";
 
 export function registerTemplatesTool(server: McpServer) {
   server.tool(
@@ -18,6 +19,8 @@ Actions:
       session_id: z.union([z.number().int(), z.literal("last")]).optional(),
     },
     async ({ action, name, session_id }) => {
+      const userId = getUserId();
+
       if (action === "list") {
         const { rows: templates } = await pool.query(
           `SELECT st.id, st.name, st.created_at,
@@ -35,8 +38,10 @@ Actions:
            FROM session_templates st
            LEFT JOIN session_template_exercises ste ON ste.template_id = st.id
            LEFT JOIN exercises e ON e.id = ste.exercise_id
+           WHERE st.user_id = $1
            GROUP BY st.id
-           ORDER BY st.name`
+           ORDER BY st.name`,
+          [userId]
         );
         return {
           content: [{ type: "text" as const, text: JSON.stringify({ templates }) }],
@@ -55,7 +60,8 @@ Actions:
         let sid: number;
         if (session_id === "last" || session_id === undefined) {
           const { rows } = await pool.query(
-            "SELECT id FROM sessions WHERE ended_at IS NOT NULL ORDER BY ended_at DESC LIMIT 1"
+            "SELECT id FROM sessions WHERE user_id = $1 AND ended_at IS NOT NULL ORDER BY ended_at DESC LIMIT 1",
+            [userId]
           );
           if (rows.length === 0) {
             return {
@@ -95,8 +101,8 @@ Actions:
           await client.query("BEGIN");
 
           const { rows: [tmpl] } = await client.query(
-            `INSERT INTO session_templates (name, source_session_id) VALUES ($1, $2) RETURNING id`,
-            [name, sid]
+            `INSERT INTO session_templates (user_id, name, source_session_id) VALUES ($1, $2, $3) RETURNING id`,
+            [userId, name, sid]
           );
 
           for (const se of sessionExercises) {
@@ -155,7 +161,8 @@ Actions:
 
         // Check no active session
         const active = await pool.query(
-          "SELECT id FROM sessions WHERE ended_at IS NULL LIMIT 1"
+          "SELECT id FROM sessions WHERE user_id = $1 AND ended_at IS NULL LIMIT 1",
+          [userId]
         );
         if (active.rows.length > 0) {
           return {
@@ -169,8 +176,8 @@ Actions:
 
         // Find template
         const { rows: templates } = await pool.query(
-          "SELECT id FROM session_templates WHERE LOWER(name) = LOWER($1)",
-          [name]
+          "SELECT id FROM session_templates WHERE user_id = $1 AND LOWER(name) = LOWER($2)",
+          [userId, name]
         );
         if (templates.length === 0) {
           return {
@@ -191,7 +198,8 @@ Actions:
 
         // Create session
         const { rows: [session] } = await pool.query(
-          "INSERT INTO sessions DEFAULT VALUES RETURNING id, started_at"
+          "INSERT INTO sessions (user_id) VALUES ($1) RETURNING id, started_at",
+          [userId]
         );
 
         // Pre-populate session_exercises
@@ -232,8 +240,8 @@ Actions:
           };
         }
         const { rows } = await pool.query(
-          "DELETE FROM session_templates WHERE LOWER(name) = LOWER($1) RETURNING name",
-          [name]
+          "DELETE FROM session_templates WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
+          [userId, name]
         );
         if (rows.length === 0) {
           return {

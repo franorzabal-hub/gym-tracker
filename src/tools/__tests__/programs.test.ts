@@ -28,6 +28,10 @@ vi.mock("../../helpers/program-helpers.js", () => ({
   cloneVersion: vi.fn(),
 }));
 
+vi.mock("../../context/user-context.js", () => ({
+  getUserId: vi.fn().mockReturnValue(1),
+}));
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerProgramTool } from "../programs.js";
 import { getActiveProgram, getLatestVersion, getProgramDaysWithExercises } from "../../helpers/program-helpers.js";

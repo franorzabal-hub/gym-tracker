@@ -7,6 +7,7 @@ import {
   inferTodayDay,
 } from "../helpers/program-helpers.js";
 import { checkPRs } from "../helpers/stats-calculator.js";
+import { getUserId } from "../context/user-context.js";
 
 export function registerLogRoutineTool(server: McpServer) {
   server.tool(
@@ -37,6 +38,7 @@ Parameters:
       skip: z.array(z.string()).optional(),
     },
     async ({ program_day, overrides, skip }) => {
+      const userId = getUserId();
       const activeProgram = await getActiveProgram();
       if (!activeProgram) {
         return {
@@ -62,7 +64,8 @@ Parameters:
       } else {
         // Infer from weekday using user's timezone
         const { rows: profileRows } = await pool.query(
-          "SELECT data->>'timezone' as timezone FROM user_profile LIMIT 1"
+          "SELECT data->>'timezone' as timezone FROM user_profile WHERE user_id = $1 LIMIT 1",
+          [userId]
         );
         const timezone = profileRows[0]?.timezone || undefined;
         dayRow = await inferTodayDay(activeProgram.id, timezone);
@@ -105,9 +108,9 @@ Parameters:
 
       // Create session
       const { rows: [session] } = await pool.query(
-        `INSERT INTO sessions (program_version_id, program_day_id)
-         VALUES ($1, $2) RETURNING id, started_at`,
-        [activeProgram.version_id, dayRow.id]
+        `INSERT INTO sessions (user_id, program_version_id, program_day_id)
+         VALUES ($1, $2, $3) RETURNING id, started_at`,
+        [userId, activeProgram.version_id, dayRow.id]
       );
 
       const exercisesLogged: any[] = [];

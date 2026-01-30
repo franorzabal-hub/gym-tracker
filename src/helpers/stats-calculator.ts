@@ -1,4 +1,5 @@
 import pool from "../db/connection.js";
+import { getUserId } from "../context/user-context.js";
 
 export function estimateE1RM(weight: number, reps: number): number {
   if (reps === 1) return weight;
@@ -24,10 +25,12 @@ export async function checkPRs(
   exerciseId: number,
   newSets: Array<{ reps: number; weight?: number | null; set_id: number }>
 ): Promise<PRCheck[]> {
+  const userId = getUserId();
+
   // Pre-load all current PRs in one query
   const { rows: currentPRs } = await pool.query(
-    `SELECT record_type, value FROM personal_records WHERE exercise_id = $1`,
-    [exerciseId]
+    `SELECT record_type, value FROM personal_records WHERE user_id = $1 AND exercise_id = $2`,
+    [userId, exerciseId]
   );
   const prMap = new Map(currentPRs.map((r) => [r.record_type, Number(r.value)]));
 
@@ -73,7 +76,7 @@ export async function checkPRs(
 
   // Batch upsert all new PRs
   for (const { type, value, setId } of upserts) {
-    await upsertPR(exerciseId, type, value, setId);
+    await upsertPR(userId, exerciseId, type, value, setId);
   }
 
   // Deduplicate by record_type (keep only the best per type)
@@ -88,17 +91,18 @@ export async function checkPRs(
 }
 
 async function upsertPR(
+  userId: number,
   exerciseId: number,
   recordType: string,
   value: number,
   setId: number
 ) {
   await pool.query(
-    `INSERT INTO personal_records (exercise_id, record_type, value, achieved_at, set_id)
-     VALUES ($1, $2, $3, NOW(), $4)
-     ON CONFLICT (exercise_id, record_type) DO UPDATE
-     SET value = $3, achieved_at = NOW(), set_id = $4
-     WHERE personal_records.value < $3`,
-    [exerciseId, recordType, value, setId]
+    `INSERT INTO personal_records (user_id, exercise_id, record_type, value, achieved_at, set_id)
+     VALUES ($1, $2, $3, $4, NOW(), $5)
+     ON CONFLICT (user_id, exercise_id, record_type) DO UPDATE
+     SET value = $4, achieved_at = NOW(), set_id = $5
+     WHERE personal_records.value < $4`,
+    [userId, exerciseId, recordType, value, setId]
   );
 }

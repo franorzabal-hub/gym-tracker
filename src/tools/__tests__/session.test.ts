@@ -14,6 +14,10 @@ vi.mock("../../helpers/program-helpers.js", () => ({
   getProgramDaysWithExercises: vi.fn(),
 }));
 
+vi.mock("../../context/user-context.js", () => ({
+  getUserId: vi.fn().mockReturnValue(1),
+}));
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerSessionTools } from "../session.js";
 import { getActiveProgram, inferTodayDay } from "../../helpers/program-helpers.js";

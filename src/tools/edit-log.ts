@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { findExercise } from "../helpers/exercise-resolver.js";
+import { getUserId } from "../context/user-context.js";
 
 export function registerEditLogTool(server: McpServer) {
   server.tool(
@@ -58,6 +59,7 @@ Parameters:
       })).optional(),
     },
     async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk }) => {
+      const userId = getUserId();
 
       // --- Bulk mode ---
       if (bulk && bulk.length > 0) {
@@ -66,6 +68,7 @@ Parameters:
           const entryAction = entry.action || action || "update";
           const entryUpdates = entry.updates || updates;
           const result = await processSingleEdit({
+            userId,
             exercise: entry.exercise,
             session,
             action: entryAction,
@@ -106,6 +109,7 @@ Parameters:
       }
 
       const result = await processSingleEdit({
+        userId,
         exercise,
         session,
         action,
@@ -130,6 +134,7 @@ Parameters:
 }
 
 async function processSingleEdit(params: {
+  userId: number;
   exercise: string;
   session?: string;
   action: string;
@@ -138,7 +143,7 @@ async function processSingleEdit(params: {
   set_ids?: number[];
   set_type_filter?: string;
 }): Promise<Record<string, any>> {
-  const { exercise, session, action, updates, set_numbers, set_ids, set_type_filter } = params;
+  const { userId, exercise, session, action, updates, set_numbers, set_ids, set_type_filter } = params;
 
   const resolved = await findExercise(exercise);
   if (!resolved) {
@@ -146,7 +151,7 @@ async function processSingleEdit(params: {
   }
 
   // Find the session
-  const queryParams: any[] = [resolved.id];
+  const queryParams: any[] = [resolved.id, userId];
   let sessionFilter: string;
   if (!session || session === "today") {
     sessionFilter = "AND DATE(s.started_at) = CURRENT_DATE";
@@ -165,7 +170,7 @@ async function processSingleEdit(params: {
     `SELECT se.id, s.id as session_id, s.started_at
      FROM session_exercises se
      JOIN sessions s ON s.id = se.session_id
-     WHERE se.exercise_id = $1 ${sessionFilter}
+     WHERE se.exercise_id = $1 AND s.user_id = $2 ${sessionFilter}
      ORDER BY s.started_at DESC`,
     queryParams
   );

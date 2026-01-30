@@ -12,6 +12,10 @@ vi.mock("../../db/connection.js", () => {
   };
 });
 
+vi.mock("../../context/user-context.js", () => ({
+  getUserId: vi.fn().mockReturnValue(1),
+}));
+
 import pool from "../../db/connection.js";
 const mockQuery = pool.query as ReturnType<typeof vi.fn>;
 

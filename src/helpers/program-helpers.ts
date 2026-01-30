@@ -1,14 +1,17 @@
 import pool from "../db/connection.js";
+import { getUserId } from "../context/user-context.js";
 
 export async function getActiveProgram() {
+  const userId = getUserId();
   const { rows } = await pool.query(
     `SELECT p.id, p.name, p.description,
        pv.id as version_id, pv.version_number
      FROM programs p
      JOIN program_versions pv ON pv.program_id = p.id
-     WHERE p.is_active = TRUE
+     WHERE p.user_id = $1 AND p.is_active = TRUE
      ORDER BY pv.version_number DESC
-     LIMIT 1`
+     LIMIT 1`,
+    [userId]
   );
   return rows[0] || null;
 }

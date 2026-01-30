@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
+import { getUserId } from "../context/user-context.js";
 
 export function registerProfileTool(server: McpServer) {
   server.tool(
@@ -14,9 +15,12 @@ Example: user says "peso 82kg" → update with { "weight_kg": 82 }`,
       data: z.record(z.any()).optional(),
     },
     async ({ action, data }) => {
+      const userId = getUserId();
+
       if (action === "get") {
         const { rows } = await pool.query(
-          "SELECT data FROM user_profile LIMIT 1"
+          "SELECT data FROM user_profile WHERE user_id = $1 LIMIT 1",
+          [userId]
         );
         return {
           content: [
@@ -37,12 +41,12 @@ Example: user says "peso 82kg" → update with { "weight_kg": 82 }`,
       }
 
       const { rows } = await pool.query(
-        `INSERT INTO user_profile (id, data, updated_at)
-         VALUES (1, $1::jsonb, NOW())
-         ON CONFLICT (id)
+        `INSERT INTO user_profile (user_id, data, updated_at)
+         VALUES ($1, $2::jsonb, NOW())
+         ON CONFLICT (user_id)
          DO UPDATE SET data = user_profile.data || EXCLUDED.data, updated_at = NOW()
          RETURNING data`,
-        [JSON.stringify(data)]
+        [userId, JSON.stringify(data)]
       );
 
       return {

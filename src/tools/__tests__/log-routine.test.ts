@@ -21,6 +21,10 @@ vi.mock("../../helpers/stats-calculator.js", () => ({
   checkPRs: vi.fn(),
 }));
 
+vi.mock("../../context/user-context.js", () => ({
+  getUserId: vi.fn().mockReturnValue(1),
+}));
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerLogRoutineTool } from "../log-routine.js";
 import { getActiveProgram, inferTodayDay } from "../../helpers/program-helpers.js";

@@ -3,6 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { resolveExercise } from "../helpers/exercise-resolver.js";
 import { checkPRs } from "../helpers/stats-calculator.js";
+import { getUserId } from "../context/user-context.js";
 
 const exerciseEntrySchema = z.object({
   exercise: z.string(),
@@ -201,13 +202,17 @@ Returns the logged sets and any new personal records achieved.`,
       exercises: z.array(exerciseEntrySchema).optional(),
     },
     async (params) => {
+      const userId = getUserId();
+
       // Get or create active session
       let sessionRes = await pool.query(
-        "SELECT id FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1"
+        "SELECT id FROM sessions WHERE user_id = $1 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1",
+        [userId]
       );
       if (sessionRes.rows.length === 0) {
         sessionRes = await pool.query(
-          "INSERT INTO sessions DEFAULT VALUES RETURNING id"
+          "INSERT INTO sessions (user_id) VALUES ($1) RETURNING id",
+          [userId]
         );
       }
       const sessionId = sessionRes.rows[0].id;

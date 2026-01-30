@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
+import { getUserId } from "../context/user-context.js";
 
 export function registerHistoryTool(server: McpServer) {
   server.tool(
@@ -25,8 +26,10 @@ Examples:
       program_day: z.string().optional(),
     },
     async ({ period, exercise, program_day }) => {
+      const userId = getUserId();
+
       // Build date filter
-      const params: any[] = [];
+      const params: any[] = [userId];
       let dateFilter: string;
       if (period === "today") {
         dateFilter = "s.started_at >= CURRENT_DATE";
@@ -67,7 +70,7 @@ Examples:
         LEFT JOIN program_days pd ON pd.id = s.program_day_id
         LEFT JOIN session_exercises se ON se.session_id = s.id
         LEFT JOIN exercises e ON e.id = se.exercise_id
-        WHERE ${dateFilter}
+        WHERE s.user_id = $1 AND ${dateFilter}
       `;
 
       if (exercise) {

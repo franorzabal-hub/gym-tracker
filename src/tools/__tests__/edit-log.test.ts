@@ -12,6 +12,10 @@ vi.mock("../../helpers/exercise-resolver.js", () => ({
   findExercise: vi.fn().mockResolvedValue({ id: 1, name: "Bench Press", isNew: false }),
 }));
 
+vi.mock("../../context/user-context.js", () => ({
+  getUserId: vi.fn().mockReturnValue(1),
+}));
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerEditLogTool } from "../edit-log.js";
 

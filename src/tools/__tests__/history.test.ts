@@ -8,6 +8,10 @@ vi.mock("../../db/connection.js", () => ({
   default: { query: mockQuery, connect: vi.fn() },
 }));
 
+vi.mock("../../context/user-context.js", () => ({
+  getUserId: vi.fn().mockReturnValue(1),
+}));
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerHistoryTool } from "../history.js";
 

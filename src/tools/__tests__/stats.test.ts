@@ -19,6 +19,10 @@ vi.mock("../../helpers/stats-calculator.js", () => ({
   }),
 }));
 
+vi.mock("../../context/user-context.js", () => ({
+  getUserId: vi.fn().mockReturnValue(1),
+}));
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerStatsTool } from "../stats.js";
 
