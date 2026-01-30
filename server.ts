@@ -86,11 +86,11 @@ app.all("/mcp", async (req, res) => {
     });
   } catch (err) {
     if (err instanceof AuthError) {
+      res.setHeader("WWW-Authenticate", 'Bearer realm="gym-tracker"');
       res.status(401).json({
         error: "unauthorized",
         message: err.message,
       });
-      res.setHeader("WWW-Authenticate", 'Bearer realm="gym-tracker"');
       return;
     }
     throw err;
