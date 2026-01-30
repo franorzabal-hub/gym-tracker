@@ -28,6 +28,9 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
+      WORKOS_API_KEY: ${{ secrets.WORKOS_API_KEY }}
+      WORKOS_CLIENT_ID: ${{ secrets.WORKOS_CLIENT_ID }}
+      BASE_URL: ${{ secrets.BASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -48,5 +51,5 @@ jobs:
             --cpu 1 \
             --min-instances 0 \
             --max-instances 1 \
-            --set-env-vars "DATABASE_URL=$DATABASE_URL,ALLOWED_ORIGINS=$ALLOWED_ORIGINS" \
+            --set-env-vars "DATABASE_URL=$DATABASE_URL,ALLOWED_ORIGINS=$ALLOWED_ORIGINS,WORKOS_API_KEY=$WORKOS_API_KEY,WORKOS_CLIENT_ID=$WORKOS_CLIENT_ID,BASE_URL=$BASE_URL" \
             --quiet
