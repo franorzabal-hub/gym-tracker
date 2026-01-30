@@ -37,8 +37,11 @@ Example: user says "peso 82kg" → update with { "weight_kg": 82 }`,
       }
 
       const { rows } = await pool.query(
-        `UPDATE user_profile SET data = data || $1::jsonb, updated_at = NOW()
-         WHERE id = 1 RETURNING data`,
+        `INSERT INTO user_profile (id, data, updated_at)
+         VALUES (1, $1::jsonb, NOW())
+         ON CONFLICT (id)
+         DO UPDATE SET data = user_profile.data || EXCLUDED.data, updated_at = NOW()
+         RETURNING data`,
         [JSON.stringify(data)]
       );
 

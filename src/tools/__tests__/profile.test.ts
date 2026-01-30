@@ -62,7 +62,7 @@ describe("manage_profile tool", () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.profile).toBeDefined();
     expect(mockQuery).toHaveBeenCalledWith(
-      expect.stringContaining("data || $1::jsonb"),
+      expect.stringContaining("ON CONFLICT (id)"),
       [JSON.stringify({ weight_kg: 82 })]
     );
   });

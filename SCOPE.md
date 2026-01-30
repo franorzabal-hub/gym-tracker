@@ -1,20 +1,17 @@
-# Gym Tracker — MCP Server + MCP App
+# Gym Tracker — MCP Server
 
 ## Vision
 
-An MCP Server + MCP App that turns Claude into a gym training partner. The user talks naturally — "hice peso muerto 100kg 5x5", "hice la rutina de push", "cuanto levante en banca la semana pasada?" — and Claude logs, queries, and analyzes workout data automatically.
+An MCP Server that turns Claude into a gym training partner. The user talks naturally — "hice peso muerto 100kg 5x5", "hice la rutina de push", "cuanto levante en banca la semana pasada?" — and Claude logs, queries, and analyzes workout data automatically.
 
-**Two interfaces:**
-1. **Conversational (MCP Tools)** — The user talks to Claude, Claude calls tools. Works on mobile, desktop, anywhere Claude runs.
-2. **Visual (MCP App)** — An interactive UI rendered inside Claude's chat. Shows today's session, quick-log buttons, progress charts. The UI calls the same tools as Claude.
+**Conversational (MCP Tools)** — The user talks to Claude, Claude calls tools. Works on mobile, desktop, anywhere Claude runs.
 
-**Priority: conversational flow above everything else.** The tools must be designed so Claude can interpret natural language and map it to the right operations without friction. The UI is a complement, not a replacement.
+**Priority: conversational flow above everything else.** The tools must be designed so Claude can interpret natural language and map it to the right operations without friction.
 
 ## Status
 
 - **Phase 1: Complete** — MCP Server deployed and functional
-- **Phase 2: Pending** — MCP App UI
-- **Phase 3: Pending** — Polish
+- **Phase 2: Pending** — Polish (better error messages, edge cases, exports, fuzzy matching)
 
 ### Deployment
 
@@ -87,6 +84,7 @@ gym-tracker/
 ├── Dockerfile                # Cloud Run container
 ├── .env                      # DATABASE_URL (local dev, gitignored)
 ├── .env.example
+├── README.md                 # Quickstart guide
 ├── SCOPE.md
 ├── server.ts                 # Express + MCP server + tool registration
 ├── src/
@@ -95,24 +93,26 @@ gym-tracker/
 │   │   ├── migrate.ts        # Standalone migration runner (npm run migrate)
 │   │   ├── run-migrations.ts # Importable migration function (used by server.ts on startup)
 │   │   └── migrations/
-│   │       ├── 001_schema.sql    # Full schema (11 tables + indexes)
-│   │       └── 002_seed.sql      # 16 exercises with aliases + PPL program
+│   │       ├── 001_schema.sql          # Full schema (11 tables + indexes)
+│   │       ├── 002_seed.sql            # 16 exercises with aliases + PPL program
+│   │       ├── 003_fixes.sql           # Schema fixes
+│   │       ├── 004_rest_and_notes.sql  # Added rest_seconds + notes columns
+│   │       └── 005_fix_seed_references.sql  # Fixed seed data references
 │   ├── tools/
 │   │   ├── profile.ts        # manage_profile (get/update JSONB)
-│   │   ├── exercises.ts      # manage_exercises (list/search/add)
-│   │   ├── programs.ts       # manage_program (CRUD + versioning)
+│   │   ├── exercises.ts      # manage_exercises (list/search/add/update/delete)
+│   │   ├── programs.ts       # manage_program (list/get/create/update/activate/delete/history)
 │   │   ├── session.ts        # start_session + end_session
 │   │   ├── log-exercise.ts   # log_exercise (auto-session, auto-create, PR check)
 │   │   ├── log-routine.ts    # log_routine (log full day with overrides/skips)
 │   │   ├── history.ts        # get_history (period/exercise/day filters)
 │   │   ├── stats.ts          # get_stats (PRs, progression, volume trends)
-│   │   └── edit-log.ts       # edit_log (update/delete sets)
+│   │   ├── edit-log.ts       # edit_log (update/delete sets)
+│   │   └── templates.ts      # manage_templates (save/list/start/delete)
 │   └── helpers/
 │       ├── exercise-resolver.ts  # Fuzzy match: exact → alias → ILIKE → auto-create
 │       ├── stats-calculator.ts   # E1RM (Epley), volume calc, PR detection + upsert
 │       └── program-helpers.ts    # Version cloning, day inference, active program lookup
-└── src/app/                  # (Phase 2) MCP App UI
-    └── gym-tracker.ts
 ```
 
 ## Database Schema
@@ -125,6 +125,7 @@ exercises → exercise_aliases
 programs → program_versions → program_days → program_day_exercises
 sessions → session_exercises → sets
 personal_records
+session_templates → session_template_exercises
 ```
 
 ### Key Design: Program Versioning
@@ -157,16 +158,23 @@ program_versions (id, program_id FK, version_number, change_description, created
   UNIQUE(program_id, version_number)
 program_days (id, version_id FK, day_label, weekdays INTEGER[], sort_order)
 program_day_exercises (id, day_id FK, exercise_id FK, target_sets, target_reps,
-  target_weight, target_rpe, sort_order, superset_group, notes)
+  target_weight, target_rpe, sort_order, superset_group, rest_seconds, notes)
 
 -- SESSIONS
 sessions (id, started_at, ended_at, program_version_id FK, program_day_id FK, notes)
-session_exercises (id, session_id FK, exercise_id FK, sort_order, superset_group, notes)
-sets (id, session_exercise_id FK, set_number, set_type, reps, weight, rpe, completed, logged_at)
+session_exercises (id, session_id FK, exercise_id FK, sort_order, superset_group,
+  rest_seconds, notes)
+sets (id, session_exercise_id FK, set_number, set_type, reps, weight, rpe, completed,
+  notes, logged_at)
 
 -- PERSONAL RECORDS (denormalized, upserted on log)
 personal_records (id, exercise_id FK, record_type, value, achieved_at, set_id FK)
   UNIQUE(exercise_id, record_type)
+
+-- TEMPLATES (reusable session blueprints)
+session_templates (id, name UNIQUE, source_session_id FK, created_at)
+session_template_exercises (id, template_id FK, exercise_id FK, target_sets, target_reps,
+  target_weight, target_rpe, sort_order, superset_group, rest_seconds, notes)
 ```
 
 ### Schema Decisions
@@ -180,7 +188,7 @@ personal_records (id, exercise_id FK, record_type, value, achieved_at, set_id FK
 | **personal_records upsert** | Denormalized table avoids scanning all sets. Updated automatically on each log. |
 | **weekdays INTEGER[]** | ISO weekdays (1=Mon..7=Sun) as Postgres array. Enables day-of-week inference. |
 
-## MCP Tools (9 total)
+## MCP Tools (11 total)
 
 ### 1. `manage_profile`
 Manage user profile data (JSONB). Claude calls `get` at conversation start for context.
@@ -191,28 +199,39 @@ Output: { profile: {...} }
 ```
 
 ### 2. `manage_exercises`
-List, search, or add exercises with aliases.
+List, search, add, update, or delete exercises with aliases.
 
 ```
-Input: { action: "list" | "add" | "search", name?, muscle_group?, equipment?, aliases? }
-Output: { exercises: [...] }
+Input: {
+  action: "list" | "add" | "search" | "update" | "delete",
+  name?, muscle_group?, equipment?, aliases?, hard_delete?
+}
+Output: { exercises: [...] } | { exercise, is_new } | { updated } | { deleted, warning? }
 ```
+
+- `list`: List all exercises, optionally filtered by `muscle_group`.
+- `search`: Search exercises by name/alias (fuzzy ILIKE).
+- `add`: Add a new exercise with optional aliases, muscle_group, equipment.
+- `update`: Update `muscle_group` and/or `equipment` of an existing exercise by name.
+- `delete`: Permanently delete an exercise. Requires `hard_delete=true`. Cascade deletes aliases; sets personal_records FK to NULL.
 
 ### 3. `manage_program`
 Full program CRUD with automatic version history.
 
 ```
 Input: {
-  action: "list" | "get" | "create" | "update" | "delete" | "history",
+  action: "list" | "get" | "create" | "update" | "activate" | "delete" | "history",
   name?, description?,
-  days?: [{ day_label, weekdays?, exercises: [{ exercise, sets, reps, weight?, rpe?, superset_group? }] }],
-  change_description?
+  days?: [{ day_label, weekdays?, exercises: [{ exercise, sets, reps, weight?, rpe?, superset_group?, rest_seconds?, notes? }] }],
+  change_description?, hard_delete?
 }
-Output: { program: {...}, version? }
+Output: { program, version? }
 ```
 
 - `create`: Creates program + v1 + days + exercises. Deactivates other programs.
-- `update`: Creates new version with full days array + change_description.
+- `update`: Creates new version with full days array + `change_description`.
+- `activate`: Set program as active (deactivates all others).
+- `delete`: Soft delete (deactivate). With `hard_delete=true`: permanent removal of program + all versions/days/exercises.
 - `history`: Lists all versions with dates and change descriptions.
 
 ### 4. `start_session`
@@ -220,24 +239,47 @@ Start a workout. Infers program day from weekday if not specified.
 
 ```
 Input: { program_day?, notes? }
-Output: { session_id, started_at, program_day?: { label, exercises } }
+Output: {
+  session_id, started_at,
+  program_day?: { label, exercises },
+  last_workout?: { date, exercises: [{ name, sets, summary }] }
+}
 ```
+
+Returns `last_workout` with per-exercise set summaries from the previous session on the same program day (useful for weight reference).
 
 ### 5. `end_session`
-End active session with summary.
+End active session with summary and comparison.
 
 ```
-Input: { notes? }
-Output: { session_id, duration_minutes, exercises_count, total_sets, total_volume_kg }
+Input: { notes?, force?: boolean }
+Output: {
+  session_id, duration_minutes, exercises_count, total_sets, total_volume_kg,
+  exercises, supersets?,
+  comparison?: { vs_last, volume_change, exercise_changes }
+}
 ```
+
+- `force`: Close session even if no exercises are logged (defaults to false — warns if empty).
+- `comparison`: Volume change % and per-exercise weight changes vs the previous session on the same program day.
 
 ### 6. `log_exercise`
 Log sets for an exercise. Auto-creates session and exercise if needed.
 
 ```
-Input: { exercise, sets, reps (number | number[]), weight?, rpe?, set_type?, notes? }
-Output: { exercise_name, is_new_exercise, session_id, logged_sets, new_prs? }
+Input: {
+  exercise, sets, reps (number | number[]), weight?, rpe?,
+  set_type? ("warmup"|"working"|"drop"|"failure"),
+  notes?, rest_seconds?, superset_group?,
+  muscle_group?, equipment?, set_notes?, drop_percent?,
+  exercises?: ExerciseEntry[]  // bulk mode
+}
+Output: { exercise_name, is_new_exercise, session_id, logged_sets, new_prs?, rest_seconds?, rest_reminder? }
 ```
+
+- `reps` as array: per-set reps, e.g. `[10, 8, 6]` for 3 sets.
+- `drop_percent`: auto-decreases weight per set (e.g. 100kg with 10% → 100, 90, 80...).
+- `exercises` (bulk mode): array of exercise entries to log multiple exercises in one call.
 
 Natural language examples:
 - "Hice peso muerto 100kg 5x5" → `{ exercise: "peso muerto", sets: 5, reps: 5, weight: 100 }`
@@ -275,6 +317,19 @@ Edit or delete previously logged sets.
 Input: { exercise, session?: "today" | "last" | date, action: "update" | "delete", updates?, set_numbers? }
 Output: { exercise, sets_updated, updated_sets } | { deleted, exercise, set_numbers }
 ```
+
+### 11. `manage_templates`
+Manage session templates — save a workout as a reusable template or start a session from one.
+
+```
+Input: { action: "save" | "list" | "start" | "delete", name?, session_id? ("last" | number) }
+Output: { templates } | { template, exercises_count, source_session_id } | { session_id, started_at, template, planned_exercises } | { deleted }
+```
+
+- `save`: Save a completed session as a template. Pass `session_id` (or `"last"` for the most recent ended session) and a `name`.
+- `list`: List all saved templates with their exercises.
+- `start`: Start a new session pre-populated from a template (exercises only, no sets — use `log_exercise` to fill them in). Errors if an active session exists.
+- `delete`: Delete a template by name.
 
 ## Exercise Resolver Logic
 
@@ -361,20 +416,12 @@ On every `log_exercise`, check and upsert:
 - [x] Stats calculator (E1RM, volume, PR detection)
 - [x] Program helpers (version cloning, day inference)
 - [x] Express server with StreamableHTTP transport
-- [x] All 9 MCP tools implemented and tested
+- [x] All 11 MCP tools implemented and tested
 - [x] Migrations run on server startup
 - [x] Deployed to Cloud Run
 - [x] Health check endpoint
 
-### Phase 2: MCP App (UI) — PENDING
-- [ ] Vite + vite-plugin-singlefile setup
-- [ ] Register UI resource (`ui://gym-tracker/gym-tracker.html`)
-- [ ] Active session view with live data
-- [ ] Quick-log buttons for program days
-- [ ] History and stats views
-- [ ] All tools declare `_meta.ui.resourceUri`
-
-### Phase 3: Polish — PENDING
+### Phase 2: Polish — PENDING
 - [ ] Better error messages in Spanish
 - [ ] Handle edge cases (no active session, duplicate exercises)
 - [ ] Export data (CSV)
@@ -395,7 +442,7 @@ npm run dev      # Starts on http://localhost:3001
 gcloud run deploy gym-tracker \
   --source . \
   --region us-central1 \
-  --allow-unauthenticated \
+  --no-allow-unauthenticated \
   --set-env-vars DATABASE_URL="postgresql://..." \
   --port 3001 \
   --memory 256Mi \
@@ -403,6 +450,8 @@ gcloud run deploy gym-tracker \
   --min-instances 0 \
   --max-instances 1
 ```
+
+> **Note:** Cloud Run is configured with `--no-allow-unauthenticated`, requiring IAM auth for access.
 
 ### Connect to Claude
 1. Go to Claude → Settings → Integrations → Add custom integration

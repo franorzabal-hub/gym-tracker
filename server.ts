@@ -16,12 +16,18 @@ import { registerStatsTool } from "./src/tools/stats.js";
 import { registerEditLogTool } from "./src/tools/edit-log.js";
 import { registerTemplatesTool } from "./src/tools/templates.js";
 
+function getAllowedOrigins(): string[] {
+  if (process.env.ALLOWED_ORIGINS) {
+    return process.env.ALLOWED_ORIGINS.split(",").map(s => s.trim()).filter(Boolean);
+  }
+  if (!process.env.NODE_ENV || process.env.NODE_ENV === "development") {
+    return ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173"];
+  }
+  return [];
+}
+
 const app = express();
-app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(",")
-    : [],
-}));
+app.use(cors({ origin: getAllowedOrigins() }));
 app.use(express.json());
 
 // Health check
