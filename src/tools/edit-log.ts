@@ -208,11 +208,11 @@ async function processSingleEdit(params: {
         await pool.query(`DELETE FROM session_exercises WHERE id = $1`, [seId]);
       } else {
         // Check if any sets remain; if not, clean up the session_exercise
-        const { rowCount: remaining } = await pool.query(
+        const { rows: remainingRows } = await pool.query(
           `SELECT 1 FROM sets WHERE session_exercise_id = $1 LIMIT 1`,
           [seId]
         );
-        if (remaining === 0) {
+        if (remainingRows.length === 0) {
           await pool.query(`DELETE FROM session_exercises WHERE id = $1`, [seId]);
         }
       }

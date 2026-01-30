@@ -81,7 +81,8 @@ describe("edit_log tool", () => {
     it("deletes specific sets", async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 10, session_id: 5, started_at: "2024-01-15" }] })
-        .mockResolvedValueOnce({});
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ rows: [{ id: 1 }] }); // remaining sets check
 
       const result = await toolHandler({
         exercise: "Bench Press", action: "delete", set_numbers: [3],
@@ -100,7 +101,7 @@ describe("edit_log tool", () => {
       const result = await toolHandler({ exercise: "Bench Press", action: "delete" });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.deleted).toBe(true);
-      expect(parsed.set_numbers).toBe("all");
+      expect(parsed.scope).toBe("all");
     });
   });
 

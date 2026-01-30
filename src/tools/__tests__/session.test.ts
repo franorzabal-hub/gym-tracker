@@ -103,7 +103,8 @@ describe("session tools", () => {
     it("ends session and returns summary", async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z" }] })
-        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ rows: [{ count: "3" }] }) // exerciseCheck
+        .mockResolvedValueOnce({}) // UPDATE ended_at
         .mockResolvedValueOnce({
           rows: [{
             started_at: "2024-01-15T10:00:00Z",
@@ -118,7 +119,8 @@ describe("session tools", () => {
           rows: [
             { name: "Bench Press", superset_group: null, sets: [{ set_number: 1, reps: 8, weight: 80, rpe: 8, set_type: "working" }] },
           ],
-        });
+        })
+        .mockResolvedValueOnce({ rows: [{ program_day_id: null }] }); // comparison query
 
       const result = await endHandler({ notes: "Great workout" });
       const parsed = JSON.parse(result.content[0].text);
