@@ -5,10 +5,10 @@ import { findExercise } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerEditLogTool(server: McpServer) {
-  server.tool("edit_log", `Edit or delete previously logged sets, or delete entire sessions.
+  server.tool("edit_log", `${APP_CONTEXT}Edit or delete previously logged sets, or delete entire sessions.
 
 Examples:
 - "No, eran 80kg" → update weight on the last logged exercise

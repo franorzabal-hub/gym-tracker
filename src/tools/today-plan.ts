@@ -3,12 +3,12 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getActiveProgram, inferTodayDay } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerTodayPlanTool(server: McpServer) {
   server.tool(
     "get_today_plan",
-    `Get today's planned workout without starting a session. Returns the program day, exercises with targets, and last workout comparison.
+    `${APP_CONTEXT}Get today's planned workout without starting a session. Returns the program day, exercises with targets, and last workout comparison.
 Uses the active program + user's timezone to infer which day it is. Returns rest_day if no day is mapped to today.`,
     {
       include_last_workout: z.boolean().optional().describe("If true, include last workout data. Defaults to true"),

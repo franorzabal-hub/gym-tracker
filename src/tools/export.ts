@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 function escapeCsvValue(val: any): string {
   if (val === null || val === undefined) return "";
@@ -25,7 +25,7 @@ function toCsv(headers: string[], rows: Record<string, any>[]): string {
 export function registerExportTool(server: McpServer) {
   server.tool(
     "export_data",
-    `Export user data as JSON or CSV. Use scope to choose what to export: all, sessions, exercises, programs, measurements, prs.
+    `${APP_CONTEXT}Export user data as JSON or CSV. Use scope to choose what to export: all, sessions, exercises, programs, measurements, prs.
 
 Examples:
 - "exportar mis datos" → json, scope: "all"

@@ -4,10 +4,10 @@ import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerHistoryTool(server: McpServer) {
-  server.tool("get_history", `Get workout history. Shows past sessions with exercises and sets.
+  server.tool("get_history", `${APP_CONTEXT}Get workout history. Shows past sessions with exercises and sets.
 Use period to filter: "today", "week", "month", "year", or a number of days.
 Optionally filter by exercise name or program_day label.
 Use session_id to fetch a specific session by ID (ignores other filters).

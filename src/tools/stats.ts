@@ -6,10 +6,10 @@ import { estimateE1RM } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerStatsTool(server: McpServer) {
-  server.tool("get_stats", `Get detailed statistics for one or more exercises. Shows personal records, progression over time, volume trends, and training frequency.
+  server.tool("get_stats", `${APP_CONTEXT}Get detailed statistics for one or more exercises. Shows personal records, progression over time, volume trends, and training frequency.
 
 Single mode: pass "exercise" (string) for one exercise.
 Multi mode: pass "exercises" (string[]) for multiple exercises at once. Returns an array of stats.

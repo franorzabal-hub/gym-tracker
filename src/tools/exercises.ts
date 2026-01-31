@@ -4,12 +4,12 @@ import pool from "../db/connection.js";
 import { resolveExercise, searchExercises } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerExercisesTool(server: McpServer) {
   server.tool(
     "manage_exercises",
-    `Use this when you need to manage the exercise library. Actions:
+    `${APP_CONTEXT}Use this when you need to manage the exercise library. Actions:
 - "list": List all exercises, optionally filtered by muscle_group. Supports pagination with limit/offset. Returns { exercises, total }.
 - "search": Search exercises by name/alias (fuzzy)
 - "add": Add a new exercise with optional muscle_group, equipment, aliases, rep_type, exercise_type

@@ -11,7 +11,7 @@ import {
 import { PROGRAM_TEMPLATES, listTemplates } from "../helpers/program-templates.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 const dayExerciseSchema = z.object({
   exercise: z.string(),
@@ -33,7 +33,7 @@ const daySchema = z.object({
 export function registerProgramTool(server: McpServer) {
   server.tool(
     "manage_program",
-    `Manage workout programs (routines). A program is a weekly routine like PPL, Upper/Lower, Full Body.
+    `${APP_CONTEXT}Manage workout programs (routines). A program is a weekly routine like PPL, Upper/Lower, Full Body.
 Each program has versioned days with exercises. When updated, a new version is created preserving history.
 
 Actions:

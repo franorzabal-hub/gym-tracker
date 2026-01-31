@@ -2,12 +2,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerProfileTool(server: McpServer) {
   server.tool(
     "manage_profile",
-    `Read or update user profile data. This is a data-only tool — no visual UI.
+    `${APP_CONTEXT}Read or update user profile data. This is a data-only tool — no visual UI.
 Use action "get" to retrieve the current profile (call this at conversation start for context).
 Use action "update" to save user info. The data field merges with existing data.
 When the user wants to SEE their profile visually, call show_profile instead.

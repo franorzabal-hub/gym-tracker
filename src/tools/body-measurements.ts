@@ -3,12 +3,12 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerBodyMeasurementsTool(server: McpServer) {
   server.tool(
     "manage_body_measurements",
-    `Track body measurements over time. Use action "log" to record a measurement, "history" to see trends for a specific type, "latest" to get the most recent value of each type.
+    `${APP_CONTEXT}Track body measurements over time. Use action "log" to record a measurement, "history" to see trends for a specific type, "latest" to get the most recent value of each type.
 
 Common types: weight_kg, body_fat_pct, chest_cm, waist_cm, arm_cm, thigh_cm — or any custom type.
 

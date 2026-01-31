@@ -3,10 +3,10 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerTemplatesTool(server: McpServer) {
-  server.tool("manage_templates", `Manage session templates — save a workout as a reusable template, list templates, or start a new session from one.
+  server.tool("manage_templates", `${APP_CONTEXT}Manage session templates — save a workout as a reusable template, list templates, or start a new session from one.
 
 Actions:
 - "save": Save a completed session as a template. Pass session_id (or "last" for the most recent ended session) and a name.

@@ -8,12 +8,12 @@ import {
 } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerSessionTools(server: McpServer) {
   server.tool(
     "start_session",
-    `Use this when you need to start a new workout session. Optionally specify a program_day label (e.g. "Push", "Pull", "Legs").
+    `${APP_CONTEXT}Use this when you need to start a new workout session. Optionally specify a program_day label (e.g. "Push", "Pull", "Legs").
 If not specified, it will infer from the active program + today's weekday.
 Returns the session info and the exercises planned for that day (if any).
 
@@ -162,7 +162,7 @@ Returns the session info and the exercises planned for that day (if any).
 
   server.tool(
     "end_session",
-    `Use this when you need to end the current active workout session. Returns a summary with duration, exercises count, total sets, and total volume.
+    `${APP_CONTEXT}Use this when you need to end the current active workout session. Returns a summary with duration, exercises count, total sets, and total volume.
 Optionally add or update tags on the session.`,
     {
       notes: z.string().optional(),
@@ -378,7 +378,7 @@ Optionally add or update tags on the session.`,
 
   server.tool(
     "get_active_session",
-    `Use this when you need to check if there is an active (open) workout session. Returns session details with exercises logged so far, or indicates no active session.`,
+    `${APP_CONTEXT}Use this when you need to check if there is an active (open) workout session. Returns session details with exercises logged so far, or indicates no active session.`,
     {},
     async () => {
       const userId = getUserId();

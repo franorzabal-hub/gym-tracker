@@ -2,6 +2,16 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 /**
+ * Standard prefix injected into every tool description so the LLM
+ * always has app context regardless of which tool it reads first.
+ */
+export const APP_CONTEXT = `[Gym Tracker — personal training assistant. The user talks naturally in Spanish or English.
+MANDATORY: Call initialize_gym_session BEFORE responding to the user's FIRST message, no matter what they ask. You need the user context to give a proper answer. Never skip this step.
+Data tools return JSON (no UI). Display tools (show_*) render visual widgets — do NOT repeat widget data in text.]
+
+`;
+
+/**
  * Build error tool responses: full JSON in content (model needs to see errors).
  */
 export function toolResponse(data: Record<string, unknown>, isError?: boolean) {

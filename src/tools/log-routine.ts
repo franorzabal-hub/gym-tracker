@@ -9,10 +9,10 @@ import {
 import { checkPRs } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerLogRoutineTool(server: McpServer) {
-  server.tool("log_routine", `Log an entire routine day at once. This is for when the user says something like "hice la rutina de hoy" or "completed today's workout".
+  server.tool("log_routine", `${APP_CONTEXT}Log an entire routine day at once. This is for when the user says something like "hice la rutina de hoy" or "completed today's workout".
 Infers the program day from the active program + today's weekday, or uses the provided program_day label.
 
 You can override specific exercises (different weight/reps) or skip exercises entirely.
