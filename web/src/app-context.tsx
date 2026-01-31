@@ -20,6 +20,11 @@ const AppContext = createContext<AppContextValue>({
 });
 
 function parseToolContent(result: any): any {
+  // Prefer structuredContent (not sent to LLM, meant for widget)
+  if (result?.structuredContent) {
+    return result.structuredContent;
+  }
+  // Fallback: parse content text as JSON (legacy tools)
   const textContent = result?.content?.find((c: any) => c.type === "text");
   if (textContent?.text) {
     try {
@@ -28,7 +33,7 @@ function parseToolContent(result: any): any {
       return textContent.text;
     }
   }
-  return result?.structuredContent ?? result;
+  return result;
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {

@@ -32,7 +32,11 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           "SELECT data FROM user_profile WHERE user_id = $1 LIMIT 1",
           [userId]
         );
-        return toolResponse({ profile: rows[0]?.data || {} });
+        const profile = rows[0]?.data || {};
+        return {
+          content: [{ type: "text" as const, text: profile.name ? `Profile loaded for ${profile.name}.` : "Profile is empty." }],
+          structuredContent: { profile },
+        };
       }
 
       // update
@@ -49,7 +53,11 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         [userId, JSON.stringify(data)]
       );
 
-      return toolResponse({ profile: rows[0].data });
+      const updated = rows[0].data;
+      return {
+        content: [{ type: "text" as const, text: `Profile updated: ${Object.keys(data).join(", ")}.` }],
+        structuredContent: { profile: updated },
+      };
     }
   );
 }

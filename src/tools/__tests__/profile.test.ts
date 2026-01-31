@@ -44,16 +44,16 @@ describe("manage_profile tool", () => {
     });
 
     const result = await toolHandler({ action: "get" });
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.profile).toEqual({ name: "Franco", weight_kg: 80 });
+    expect(result.structuredContent.profile).toEqual({ name: "Franco", weight_kg: 80 });
+    expect(result.content[0].text).toContain("Franco");
   });
 
   it("get action returns empty profile when no data", async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const result = await toolHandler({ action: "get" });
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.profile).toEqual({});
+    expect(result.structuredContent.profile).toEqual({});
+    expect(result.content[0].text).toBe("Profile is empty.");
   });
 
   it("update action merges data", async () => {
@@ -62,8 +62,7 @@ describe("manage_profile tool", () => {
     });
 
     const result = await toolHandler({ action: "update", data: { weight_kg: 82 } });
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.profile).toBeDefined();
+    expect(result.structuredContent.profile).toBeDefined();
     expect(mockQuery).toHaveBeenCalledWith(
       expect.stringContaining("ON CONFLICT (user_id)"),
       [1, JSON.stringify({ weight_kg: 82 })]
