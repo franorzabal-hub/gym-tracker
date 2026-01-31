@@ -120,7 +120,7 @@ async function logSingleExercise(sessionId: number, entry: ExerciseEntry) {
     // Calculate weight for drop sets
     let setWeight = weight || null;
     if (set_type === 'drop' && weight && drop_percent) {
-      setWeight = Math.round((weight * (1 - (i * drop_percent / 100))) * 10) / 10;
+      setWeight = Math.max(0, Math.round((weight * (1 - (i * drop_percent / 100))) * 10) / 10);
     }
     const { rows: [inserted] } = await pool.query(
       `INSERT INTO sets (session_exercise_id, set_number, set_type, reps, weight, rpe, notes)

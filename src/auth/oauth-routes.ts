@@ -1,29 +1,17 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { workos, WORKOS_CLIENT_ID, BASE_URL } from "./workos.js";
+import pool from "../db/connection.js";
 
 const router = Router();
 
-// In-memory stores
-const authCodes = new Map<string, { workosUserId: string; email: string | null; expiresAt: number; codeChallenge?: string; codeChallengeMethod?: string }>();
-const accessTokens = new Map<string, { workosUserId: string; email: string | null; expiresAt: number }>();
-const dynamicClients = new Map<string, { client_id: string; redirect_uris: string[]; created_at: number }>();
-
-export { accessTokens };
-
-// Cleanup expired codes every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [code, data] of authCodes) {
-    if (data.expiresAt < now) authCodes.delete(code);
-  }
-}, 5 * 60 * 1000);
-
-// Cleanup expired access tokens every 15 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [token, data] of accessTokens) {
-    if (data.expiresAt < now) accessTokens.delete(token);
+// Cleanup expired tokens/codes every 15 minutes
+setInterval(async () => {
+  try {
+    await pool.query("DELETE FROM auth_tokens WHERE expires_at < NOW()");
+    await pool.query("DELETE FROM auth_codes WHERE expires_at < NOW()");
+  } catch {
+    // Ignore cleanup errors
   }
 }, 15 * 60 * 1000);
 
@@ -51,16 +39,15 @@ router.get("/.well-known/oauth-authorization-server", (_req, res) => {
 });
 
 // Dynamic Client Registration (RFC 7591)
-router.post("/register", (req, res) => {
+router.post("/register", async (req, res) => {
   const { client_name, redirect_uris, grant_types, response_types, token_endpoint_auth_method } = req.body;
 
   const clientId = `client_${crypto.randomBytes(16).toString("hex")}`;
 
-  dynamicClients.set(clientId, {
-    client_id: clientId,
-    redirect_uris: redirect_uris || [],
-    created_at: Date.now(),
-  });
+  await pool.query(
+    "INSERT INTO dynamic_clients (client_id, redirect_uris) VALUES ($1, $2)",
+    [clientId, redirect_uris || []]
+  );
 
   res.status(201).json({
     client_id: clientId,
@@ -73,7 +60,7 @@ router.post("/register", (req, res) => {
 });
 
 // Authorize → redirect to WorkOS AuthKit
-router.get("/authorize", (req, res) => {
+router.get("/authorize", async (req, res) => {
   const { redirect_uri, state, code_challenge, code_challenge_method, client_id } = req.query;
 
   if (!redirect_uri || !state) {
@@ -81,11 +68,17 @@ router.get("/authorize", (req, res) => {
     return;
   }
 
+  const uri = redirect_uri as string;
+  const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(uri);
+
   // Validate redirect_uri against registered client
   if (client_id && typeof client_id === "string") {
-    const client = dynamicClients.get(client_id);
-    if (client && client.redirect_uris.length > 0) {
-      if (!client.redirect_uris.includes(redirect_uri as string)) {
+    const { rows } = await pool.query(
+      "SELECT redirect_uris FROM dynamic_clients WHERE client_id = $1",
+      [client_id]
+    );
+    if (rows.length > 0 && rows[0].redirect_uris.length > 0) {
+      if (!rows[0].redirect_uris.includes(uri)) {
         res.status(400).json({ error: "invalid_request", error_description: "redirect_uri not registered for this client" });
         return;
       }
@@ -93,11 +86,23 @@ router.get("/authorize", (req, res) => {
   }
 
   if (process.env.NODE_ENV === "production") {
-    const uri = redirect_uri as string;
-    const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(uri);
-    const isRegistered = client_id && typeof client_id === "string" && dynamicClients.has(client_id);
-    if (!isLocalhost && !isRegistered) {
+    const isRegistered = client_id && typeof client_id === "string";
+    let clientExists = false;
+    if (isRegistered) {
+      const { rows } = await pool.query(
+        "SELECT 1 FROM dynamic_clients WHERE client_id = $1",
+        [client_id]
+      );
+      clientExists = rows.length > 0;
+    }
+    if (!isLocalhost && !clientExists) {
       res.status(400).json({ error: "invalid_request", error_description: "Unregistered redirect_uri" });
+      return;
+    }
+  } else {
+    // Non-production: only allow localhost
+    if (!isLocalhost) {
+      res.status(400).json({ error: "invalid_request", error_description: "Only localhost redirect_uris are allowed in non-production" });
       return;
     }
   }
@@ -146,13 +151,10 @@ router.get("/callback", async (req, res) => {
 
     // Generate a short-lived auth code for the MCP client
     const mcpCode = crypto.randomBytes(32).toString("hex");
-    authCodes.set(mcpCode, {
-      workosUserId,
-      email,
-      expiresAt: Date.now() + 5 * 60 * 1000, // 5 min
-      codeChallenge: code_challenge || undefined,
-      codeChallengeMethod: code_challenge_method || undefined,
-    });
+    await pool.query(
+      "INSERT INTO auth_codes (code, workos_user_id, email, expires_at, code_challenge, code_challenge_method) VALUES ($1, $2, $3, $4, $5, $6)",
+      [mcpCode, workosUserId, email, new Date(Date.now() + 5 * 60 * 1000), code_challenge || null, code_challenge_method || null]
+    );
 
     // Redirect back to MCP client
     const redirectUrl = new URL(redirect_uri);
@@ -180,18 +182,21 @@ router.post("/token", async (req, res) => {
     return;
   }
 
-  const stored = authCodes.get(code);
-  if (!stored || stored.expiresAt < Date.now()) {
-    authCodes.delete(code);
+  // Fetch and delete code in one operation (one-time use)
+  const { rows } = await pool.query(
+    "DELETE FROM auth_codes WHERE code = $1 AND expires_at > NOW() RETURNING workos_user_id, email, code_challenge, code_challenge_method",
+    [code]
+  );
+
+  if (rows.length === 0) {
     res.status(400).json({ error: "invalid_grant", error_description: "Code expired or invalid" });
     return;
   }
 
-  // Delete used code (one-time use)
-  authCodes.delete(code);
+  const stored = rows[0];
 
   // PKCE verification
-  if (stored.codeChallenge) {
+  if (stored.code_challenge) {
     if (!code_verifier) {
       res.status(400).json({ error: "invalid_grant", error_description: "code_verifier required" });
       return;
@@ -200,7 +205,7 @@ router.post("/token", async (req, res) => {
       .createHash("sha256")
       .update(code_verifier)
       .digest("base64url");
-    if (expectedChallenge !== stored.codeChallenge) {
+    if (expectedChallenge !== stored.code_challenge) {
       res.status(400).json({ error: "invalid_grant", error_description: "code_verifier mismatch" });
       return;
     }
@@ -208,11 +213,12 @@ router.post("/token", async (req, res) => {
 
   // Generate our own opaque access token
   const opaqueToken = crypto.randomBytes(32).toString("hex");
-  accessTokens.set(opaqueToken, {
-    workosUserId: stored.workosUserId,
-    email: stored.email,
-    expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-  });
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+  await pool.query(
+    "INSERT INTO auth_tokens (token, workos_user_id, email, expires_at) VALUES ($1, $2, $3, $4)",
+    [opaqueToken, stored.workos_user_id, stored.email, expiresAt]
+  );
 
   res.json({
     access_token: opaqueToken,

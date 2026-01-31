@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
+import { getUserCurrentDate } from "../helpers/date-helpers.js";
 
 export function registerHistoryTool(server: McpServer) {
   server.tool(
@@ -33,20 +34,26 @@ Examples:
       }
       const userId = getUserId();
 
-      // Build date filter
+      // Build date filter using user's timezone
+      const userDate = await getUserCurrentDate();
       const params: any[] = [userId];
       let dateFilter: string;
       if (period === "today") {
-        dateFilter = "s.started_at >= CURRENT_DATE";
+        params.push(userDate);
+        dateFilter = `s.started_at >= $${params.length}::date`;
       } else if (period === "week") {
-        dateFilter = "s.started_at >= CURRENT_DATE - INTERVAL '7 days'";
+        params.push(userDate);
+        dateFilter = `s.started_at >= $${params.length}::date - INTERVAL '7 days'`;
       } else if (period === "month") {
-        dateFilter = "s.started_at >= CURRENT_DATE - INTERVAL '30 days'";
+        params.push(userDate);
+        dateFilter = `s.started_at >= $${params.length}::date - INTERVAL '30 days'`;
       } else if (period === "year") {
-        dateFilter = "s.started_at >= CURRENT_DATE - INTERVAL '365 days'";
+        params.push(userDate);
+        dateFilter = `s.started_at >= $${params.length}::date - INTERVAL '365 days'`;
       } else {
+        params.push(userDate);
         params.push(period);
-        dateFilter = `s.started_at >= CURRENT_DATE - make_interval(days => $${params.length})`;
+        dateFilter = `s.started_at >= $${params.length - 1}::date - make_interval(days => $${params.length})`;
       }
 
       let sql = `

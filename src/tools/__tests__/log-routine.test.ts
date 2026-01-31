@@ -54,7 +54,23 @@ describe("log_routine tool", () => {
     registerLogRoutineTool(server);
   });
 
+  it("rejects when active session exists", async () => {
+    // Active session found
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ id: 99, started_at: "2024-01-15T09:00:00Z" }],
+    });
+
+    const result = await toolHandler({});
+    expect(result.isError).toBe(true);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.error).toContain("already an active session");
+    expect(parsed.session_id).toBe(99);
+  });
+
   it("logs routine for inferred day", async () => {
+    // No active session
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
     mockGetActiveProgram.mockResolvedValueOnce({
       id: 1, name: "PPL", version_id: 3, version_number: 1,
     });
@@ -97,6 +113,9 @@ describe("log_routine tool", () => {
   });
 
   it("logs with explicit program_day label", async () => {
+    // No active session
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
     mockGetActiveProgram.mockResolvedValueOnce({
       id: 1, name: "PPL", version_id: 3, version_number: 1,
     });
@@ -118,6 +137,9 @@ describe("log_routine tool", () => {
   });
 
   it("applies overrides to specific exercises", async () => {
+    // No active session
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
     mockGetActiveProgram.mockResolvedValueOnce({
       id: 1, name: "PPL", version_id: 3, version_number: 1,
     });
@@ -159,6 +181,9 @@ describe("log_routine tool", () => {
   });
 
   it("skips exercises in skip array", async () => {
+    // No active session
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
     mockGetActiveProgram.mockResolvedValueOnce({
       id: 1, name: "PPL", version_id: 3, version_number: 1,
     });
@@ -195,6 +220,8 @@ describe("log_routine tool", () => {
   });
 
   it("returns error when no active program", async () => {
+    // No active session
+    mockQuery.mockResolvedValueOnce({ rows: [] });
     mockGetActiveProgram.mockResolvedValueOnce(null);
 
     const result = await toolHandler({});
@@ -204,6 +231,9 @@ describe("log_routine tool", () => {
   });
 
   it("returns error when day not found", async () => {
+    // No active session
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
     mockGetActiveProgram.mockResolvedValueOnce({
       id: 1, name: "PPL", version_id: 3, version_number: 1,
     });

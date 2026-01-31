@@ -13,6 +13,10 @@ vi.mock("../../helpers/exercise-resolver.js", () => ({
   searchExercises: vi.fn(),
 }));
 
+vi.mock("../../context/user-context.js", () => ({
+  getUserId: vi.fn().mockReturnValue(1),
+}));
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerExercisesTool } from "../exercises.js";
 import { resolveExercise, searchExercises } from "../../helpers/exercise-resolver.js";
@@ -119,6 +123,31 @@ describe("manage_exercises tool", () => {
     });
   });
 
+  describe("delete action", () => {
+    it("rejects deleting a global exercise", async () => {
+      // Check global returns exercise with user_id=null
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, user_id: null }] });
+
+      const result = await toolHandler({ action: "delete", name: "Bench Press" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("global and cannot be deleted");
+    });
+
+    it("deletes user-owned exercise", async () => {
+      // Check global: user-owned
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, user_id: 1 }] });
+      // Refs count
+      mockQuery.mockResolvedValueOnce({ rows: [{ count: 0 }] });
+      // Delete
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "My Exercise" }] });
+
+      const result = await toolHandler({ action: "delete", name: "My Exercise" });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deleted.name).toBe("My Exercise");
+    });
+  });
+
   describe("delete_bulk action", () => {
     it("rejects without names array", async () => {
       const result = await toolHandler({ action: "delete_bulk" });
@@ -127,34 +156,62 @@ describe("manage_exercises tool", () => {
       expect(parsed.error).toContain("names array required");
     });
 
-    it("deletes multiple exercises and reports not_found", async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [{ name: "Bench Press" }] })
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ name: "Squat" }] });
+    it("deletes user-owned and reports global as failed", async () => {
+      // First exercise: user-owned
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, user_id: 1 }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ name: "My Exercise" }] });
+      // Second exercise: global
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 2, user_id: null }] });
+      // Third exercise: not found
+      mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const result = await toolHandler({
         action: "delete_bulk",
-
-        names: ["Bench Press", "NonExistent", "Squat"],
+        names: ["My Exercise", "Bench Press", "NonExistent"],
       });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.deleted).toEqual(["Bench Press", "Squat"]);
+      expect(parsed.deleted).toEqual(["My Exercise"]);
+      expect(parsed.failed).toEqual([{ name: "Bench Press", error: "Exercise is global and cannot be deleted" }]);
       expect(parsed.not_found).toEqual(["NonExistent"]);
     });
 
     it("handles JSON string workaround for names", async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ name: "Bench Press" }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, user_id: 1 }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ name: "My Exercise" }] });
 
       const result = await toolHandler({
         action: "delete_bulk",
-
-        names: JSON.stringify(["Bench Press"]),
+        names: JSON.stringify(["My Exercise"]),
       });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.deleted).toEqual(["Bench Press"]);
+      expect(parsed.deleted).toEqual(["My Exercise"]);
+    });
+  });
+
+  describe("update action", () => {
+    it("rejects updating a global exercise", async () => {
+      // Check global returns exercise with user_id=null
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, user_id: null }] });
+
+      const result = await toolHandler({ action: "update", name: "Bench Press", muscle_group: "chest" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("global and cannot be modified");
+    });
+
+    it("updates user-owned exercise", async () => {
+      // Check global: user-owned
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, user_id: 1 }] });
+      // Update
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ id: 1, name: "My Exercise", muscle_group: "chest", equipment: null, rep_type: "reps", exercise_type: "strength" }],
+      });
+
+      const result = await toolHandler({ action: "update", name: "My Exercise", muscle_group: "chest" });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.updated.name).toBe("My Exercise");
     });
   });
 
@@ -166,22 +223,24 @@ describe("manage_exercises tool", () => {
       expect(parsed.error).toContain("exercises array required");
     });
 
-    it("updates multiple exercises and reports not_found", async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [{ name: "Bench Press" }] })
-        .mockResolvedValueOnce({ rows: [] });
+    it("updates user-owned and reports global as failed", async () => {
+      // First: user-owned
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, user_id: 1 }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ name: "My Exercise" }] });
+      // Second: global
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 2, user_id: null }] });
 
       const result = await toolHandler({
         action: "update_bulk",
         exercises: [
-          { name: "Bench Press", muscle_group: "chest" },
-          { name: "NonExistent", equipment: "barbell" },
+          { name: "My Exercise", muscle_group: "chest" },
+          { name: "Bench Press", equipment: "barbell" },
         ],
       });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.updated).toEqual(["Bench Press"]);
-      expect(parsed.not_found).toEqual(["NonExistent"]);
+      expect(parsed.updated).toEqual(["My Exercise"]);
+      expect(parsed.failed).toEqual([{ name: "Bench Press", error: "Exercise is global and cannot be modified" }]);
     });
 
     it("reports failed when no fields to update", async () => {
@@ -195,15 +254,16 @@ describe("manage_exercises tool", () => {
     });
 
     it("handles JSON string workaround for exercises", async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ name: "Bench Press" }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, user_id: 1 }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ name: "My Exercise" }] });
 
       const result = await toolHandler({
         action: "update_bulk",
-        exercises: JSON.stringify([{ name: "Bench Press", muscle_group: "chest" }]),
+        exercises: JSON.stringify([{ name: "My Exercise", muscle_group: "chest" }]),
       });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.updated).toEqual(["Bench Press"]);
+      expect(parsed.updated).toEqual(["My Exercise"]);
     });
   });
 

@@ -1,6 +1,5 @@
 import type { Request } from "express";
 import pool from "../db/connection.js";
-import { accessTokens } from "./oauth-routes.js";
 
 export class AuthError extends Error {
   constructor(message: string) {
@@ -17,22 +16,26 @@ export async function authenticateToken(req: Request): Promise<number> {
 
   const token = authHeader.slice(7);
 
-  // Look up token in our store
-  const stored = accessTokens.get(token);
-  if (!stored || stored.expiresAt < Date.now()) {
-    if (stored) accessTokens.delete(token);
+  // Look up token in database
+  const { rows } = await pool.query(
+    "SELECT workos_user_id, email FROM auth_tokens WHERE token = $1 AND expires_at > NOW()",
+    [token]
+  );
+  if (rows.length === 0) {
     throw new AuthError("Invalid or expired token");
   }
 
+  const stored = rows[0];
+
   // Upsert user
-  const { rows } = await pool.query(
+  const { rows: userRows } = await pool.query(
     `INSERT INTO users (external_id, email, last_login)
      VALUES ($1, $2, NOW())
      ON CONFLICT (external_id)
      DO UPDATE SET email = COALESCE($2, users.email), last_login = NOW()
      RETURNING id`,
-    [stored.workosUserId, stored.email]
+    [stored.workos_user_id, stored.email]
   );
 
-  return rows[0].id;
+  return userRows[0].id;
 }

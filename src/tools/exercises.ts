@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { resolveExercise, searchExercises } from "../helpers/exercise-resolver.js";
+import { getUserId } from "../context/user-context.js";
 
 export function registerExercisesTool(server: McpServer) {
   server.tool(
@@ -11,10 +12,10 @@ export function registerExercisesTool(server: McpServer) {
 - "search": Search exercises by name/alias (fuzzy)
 - "add": Add a new exercise with optional muscle_group, equipment, aliases, rep_type, exercise_type
 - "add_bulk": Add multiple exercises at once. Pass an "exercises" array with {name, muscle_group?, equipment?, aliases?, rep_type?, exercise_type?}. Returns created/existing/failed counts.
-- "update": Update muscle_group, equipment, rep_type, and/or exercise_type of an existing exercise by name
-- "delete": Permanently delete an exercise (cascade deletes aliases, sets NULL on personal_records). The LLM should confirm with the user before calling.
-- "delete_bulk": Delete multiple exercises at once. Pass "names" array (string[]). Returns { deleted, not_found, failed }. The LLM should confirm with the user before calling.
-- "update_bulk": Update multiple exercises at once. Pass "exercises" array with [{name, muscle_group?, equipment?, rep_type?, exercise_type?}]. Returns { updated, not_found, failed }.
+- "update": Update muscle_group, equipment, rep_type, and/or exercise_type of an existing exercise by name. Only user-owned exercises can be updated.
+- "delete": Permanently delete an exercise (cascade deletes aliases, sets NULL on personal_records). Only user-owned exercises can be deleted. The LLM should confirm with the user before calling.
+- "delete_bulk": Delete multiple exercises at once. Pass "names" array (string[]). Only user-owned exercises can be deleted. Returns { deleted, not_found, failed }. The LLM should confirm with the user before calling.
+- "update_bulk": Update multiple exercises at once. Pass "exercises" array with [{name, muscle_group?, equipment?, rep_type?, exercise_type?}]. Only user-owned exercises can be updated. Returns { updated, not_found, failed }.
 
 rep_type: "reps" (default), "seconds", "meters", "calories" - how the exercise is measured
 exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category of exercise (PRs only tracked for strength)`,
@@ -40,6 +41,8 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
       ]).optional(),
     },
     async ({ action, name, muscle_group, equipment, aliases, rep_type, exercise_type, names: rawNames, exercises }) => {
+      const userId = getUserId();
+
       if (action === "list" || action === "search") {
         const results = await searchExercises(
           action === "search" ? name : undefined,
@@ -83,9 +86,30 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
             isError: true,
           };
         }
+
+        // Check if exercise is global
         params.push(name);
+        const checkGlobal = await pool.query(
+          `SELECT id, user_id FROM exercises WHERE LOWER(name) = LOWER($${params.length}) AND (user_id IS NULL OR user_id = $${params.length + 1}) ORDER BY user_id NULLS LAST LIMIT 1`,
+          [...params, userId]
+        );
+        if (checkGlobal.rows.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: `Exercise "${name}" not found` }) }],
+            isError: true,
+          };
+        }
+        if (checkGlobal.rows[0].user_id === null) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: "Exercise is global and cannot be modified" }) }],
+            isError: true,
+          };
+        }
+
+        // Update only user-owned
+        params.push(userId);
         const { rows } = await pool.query(
-          `UPDATE exercises SET ${updates.join(", ")} WHERE LOWER(name) = LOWER($${params.length}) RETURNING id, name, muscle_group, equipment, rep_type, exercise_type`,
+          `UPDATE exercises SET ${updates.join(", ")} WHERE LOWER(name) = LOWER($${params.length - 1}) AND user_id = $${params.length} RETURNING id, name, muscle_group, equipment, rep_type, exercise_type`,
           params
         );
         if (rows.length === 0) {
@@ -106,18 +130,37 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
             isError: true,
           };
         }
+
+        // Check if exercise is global
+        const checkGlobal = await pool.query(
+          `SELECT id, user_id FROM exercises WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2) ORDER BY user_id NULLS LAST LIMIT 1`,
+          [name, userId]
+        );
+        if (checkGlobal.rows.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: `Exercise "${name}" not found` }) }],
+            isError: true,
+          };
+        }
+        if (checkGlobal.rows[0].user_id === null) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: "Exercise is global and cannot be deleted" }) }],
+            isError: true,
+          };
+        }
+
         // Check for references in session_exercises
         const refs = await pool.query(
           `SELECT COUNT(*) as count FROM session_exercises se
            JOIN exercises e ON e.id = se.exercise_id
-           WHERE LOWER(e.name) = LOWER($1)`,
-          [name]
+           WHERE LOWER(e.name) = LOWER($1) AND e.user_id = $2`,
+          [name, userId]
         );
         const refCount = Number(refs.rows[0].count);
 
         const { rows } = await pool.query(
-          `DELETE FROM exercises WHERE LOWER(name) = LOWER($1) RETURNING id, name`,
-          [name]
+          `DELETE FROM exercises WHERE LOWER(name) = LOWER($1) AND user_id = $2 RETURNING id, name`,
+          [name, userId]
         );
         if (rows.length === 0) {
           return {
@@ -156,9 +199,23 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
 
         for (const n of namesList) {
           try {
+            // Check if global
+            const check = await pool.query(
+              `SELECT id, user_id FROM exercises WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2) ORDER BY user_id NULLS LAST LIMIT 1`,
+              [n, userId]
+            );
+            if (check.rows.length === 0) {
+              not_found.push(n);
+              continue;
+            }
+            if (check.rows[0].user_id === null) {
+              failed.push({ name: n, error: "Exercise is global and cannot be deleted" });
+              continue;
+            }
+
             const { rows } = await pool.query(
-              "DELETE FROM exercises WHERE LOWER(name) = LOWER($1) RETURNING name",
-              [n]
+              "DELETE FROM exercises WHERE LOWER(name) = LOWER($1) AND user_id = $2 RETURNING name",
+              [n, userId]
             );
             if (rows.length === 0) {
               not_found.push(n);
@@ -212,9 +269,24 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
               continue;
             }
 
+            // Check if global
+            const check = await pool.query(
+              `SELECT id, user_id FROM exercises WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2) ORDER BY user_id NULLS LAST LIMIT 1`,
+              [ex.name, userId]
+            );
+            if (check.rows.length === 0) {
+              not_found.push(ex.name);
+              continue;
+            }
+            if (check.rows[0].user_id === null) {
+              failed.push({ name: ex.name, error: "Exercise is global and cannot be modified" });
+              continue;
+            }
+
             params.push(ex.name);
+            params.push(userId);
             const { rows } = await pool.query(
-              `UPDATE exercises SET ${updates.join(", ")} WHERE LOWER(name) = LOWER($${params.length}) RETURNING name`,
+              `UPDATE exercises SET ${updates.join(", ")} WHERE LOWER(name) = LOWER($${params.length - 1}) AND user_id = $${params.length} RETURNING name`,
               params
             );
             if (rows.length === 0) {

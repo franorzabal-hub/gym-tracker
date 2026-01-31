@@ -4,6 +4,7 @@ import pool from "../db/connection.js";
 import { findExercise } from "../helpers/exercise-resolver.js";
 import { estimateE1RM } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
+import { getUserCurrentDate } from "../helpers/date-helpers.js";
 
 export function registerStatsTool(server: McpServer) {
   server.tool(
@@ -48,9 +49,10 @@ Examples:
         };
       }
 
+      const userDate = await getUserCurrentDate();
       const results = [];
       for (const exName of exerciseNames) {
-        const stats = await getExerciseStats(userId, exName, period);
+        const stats = await getExerciseStats(userId, exName, period, userDate);
         results.push(stats);
       }
 
@@ -75,7 +77,7 @@ Examples:
   );
 }
 
-async function getExerciseStats(userId: number, exercise: string, period: string): Promise<Record<string, any>> {
+async function getExerciseStats(userId: number, exercise: string, period: string, userDate: string): Promise<Record<string, any>> {
   const resolved = await findExercise(exercise);
   if (!resolved) {
     return { exercise, error: `Exercise "${exercise}" not found` };
@@ -83,29 +85,34 @@ async function getExerciseStats(userId: number, exercise: string, period: string
 
   let setsDateFilter: string;
   let sessionsDateFilter: string;
+  // $3 will be the userDate parameter in queries that use date filters
   switch (period) {
     case "month":
-      setsDateFilter = "AND st.logged_at >= CURRENT_DATE - INTERVAL '30 days'";
-      sessionsDateFilter = "AND s.started_at >= CURRENT_DATE - INTERVAL '30 days'";
+      setsDateFilter = "AND st.logged_at >= $3::date - INTERVAL '30 days'";
+      sessionsDateFilter = "AND s.started_at >= $3::date - INTERVAL '30 days'";
       break;
     case "3months":
-      setsDateFilter = "AND st.logged_at >= CURRENT_DATE - INTERVAL '90 days'";
-      sessionsDateFilter = "AND s.started_at >= CURRENT_DATE - INTERVAL '90 days'";
+      setsDateFilter = "AND st.logged_at >= $3::date - INTERVAL '90 days'";
+      sessionsDateFilter = "AND s.started_at >= $3::date - INTERVAL '90 days'";
       break;
     case "year":
-      setsDateFilter = "AND st.logged_at >= CURRENT_DATE - INTERVAL '365 days'";
-      sessionsDateFilter = "AND s.started_at >= CURRENT_DATE - INTERVAL '365 days'";
+      setsDateFilter = "AND st.logged_at >= $3::date - INTERVAL '365 days'";
+      sessionsDateFilter = "AND s.started_at >= $3::date - INTERVAL '365 days'";
       break;
     default:
       setsDateFilter = "";
       sessionsDateFilter = "";
   }
 
+  const hasDateFilter = setsDateFilter !== "";
+  const baseParams = [userId, resolved.id];
+  const dateParams = hasDateFilter ? [userId, resolved.id, userDate] : baseParams;
+
   const { rows: prs } = await pool.query(
     `SELECT record_type, value, achieved_at
      FROM personal_records WHERE user_id = $1 AND exercise_id = $2
      ORDER BY record_type`,
-    [userId, resolved.id]
+    baseParams
   );
 
   const prMap: Record<string, { value: number; achieved_at: string }> = {};
@@ -125,7 +132,7 @@ async function getExerciseStats(userId: number, exercise: string, period: string
        ${setsDateFilter}
      GROUP BY DATE(s.started_at), se.id
      ORDER BY date`,
-    [userId, resolved.id]
+    dateParams
   );
 
   const progressionData = progression.map((row) => ({
@@ -148,7 +155,7 @@ async function getExerciseStats(userId: number, exercise: string, period: string
        ${setsDateFilter}
      GROUP BY week
      ORDER BY week`,
-    [userId, resolved.id]
+    dateParams
   );
 
   const { rows: [freq] } = await pool.query(
@@ -159,7 +166,7 @@ async function getExerciseStats(userId: number, exercise: string, period: string
      JOIN session_exercises se ON se.session_id = s.id
      WHERE s.user_id = $1 AND se.exercise_id = $2 AND s.deleted_at IS NULL
        ${sessionsDateFilter}`,
-    [userId, resolved.id]
+    dateParams
   );
 
   const spanWeeks = Math.max(1, (freq.span_days || 7) / 7);

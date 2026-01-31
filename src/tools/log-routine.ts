@@ -53,6 +53,27 @@ Parameters:
       const overrides = parseIfString(rawOverrides);
       const skip = parseIfString(rawSkip);
       const tags = parseIfString(rawTags);
+      // Check for already active session
+      const active = await pool.query(
+        "SELECT id, started_at FROM sessions WHERE user_id = $1 AND ended_at IS NULL AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
+        [userId]
+      );
+      if (active.rows.length > 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: "There is already an active session. End it first or use log_exercise to add exercises to it.",
+                session_id: active.rows[0].id,
+                started_at: active.rows[0].started_at,
+              }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
       const activeProgram = await getActiveProgram();
       if (!activeProgram) {
         return {
@@ -196,8 +217,8 @@ Parameters:
       if (shouldEnd) {
         const endedAt = date ? new Date(new Date(date).getTime() + 60 * 60 * 1000) : new Date();
         await pool.query(
-          "UPDATE sessions SET ended_at = $2 WHERE id = $1",
-          [session.id, endedAt]
+          "UPDATE sessions SET ended_at = $2 WHERE id = $1 AND user_id = $3",
+          [session.id, endedAt, userId]
         );
       }
 

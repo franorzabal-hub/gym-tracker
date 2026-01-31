@@ -252,8 +252,8 @@ Optionally add or update tags on the session.`,
 
       await pool.query(
         `UPDATE sessions SET ended_at = $2, notes = COALESCE($3, notes)${tags ? ', tags = $4' : ''}
-         WHERE id = $1`,
-        tags ? [sessionId, endedAt, notes || null, tags] : [sessionId, endedAt, notes || null]
+         WHERE id = $1 AND user_id = $${tags ? 5 : 4}`,
+        tags ? [sessionId, endedAt, notes || null, tags, userId] : [sessionId, endedAt, notes || null, userId]
       );
 
       const { rows: [summary] } = await pool.query(
@@ -298,7 +298,7 @@ Optionally add or update tags on the session.`,
       // Session comparison - find previous session with same program_day
       let comparison: any = undefined;
       const { rows: [currentSession] } = await pool.query(
-        'SELECT program_day_id FROM sessions WHERE id = $1', [sessionId]
+        'SELECT program_day_id FROM sessions WHERE id = $1 AND user_id = $2', [sessionId, userId]
       );
 
       if (currentSession?.program_day_id) {

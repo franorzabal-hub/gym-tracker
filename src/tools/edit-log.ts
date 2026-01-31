@@ -3,6 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { findExercise } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
+import { getUserCurrentDate } from "../helpers/date-helpers.js";
 
 export function registerEditLogTool(server: McpServer) {
   server.tool(
@@ -173,6 +174,7 @@ Parameters:
 
       // --- Bulk mode ---
       if (bulk && bulk.length > 0) {
+        const userDate = await getUserCurrentDate();
         const results = [];
         for (const entry of bulk) {
           const entryAction = entry.action || action || "update";
@@ -186,6 +188,7 @@ Parameters:
             set_numbers: entry.set_numbers,
             set_ids: entry.set_ids,
             set_type_filter: entry.set_type_filter,
+            userDate,
           });
           results.push(result);
         }
@@ -218,6 +221,7 @@ Parameters:
         };
       }
 
+      const userDate = await getUserCurrentDate();
       const result = await processSingleEdit({
         userId,
         exercise,
@@ -227,6 +231,7 @@ Parameters:
         set_numbers,
         set_ids,
         set_type_filter,
+        userDate,
       });
 
       if (result.error) {
@@ -252,8 +257,9 @@ async function processSingleEdit(params: {
   set_numbers?: number[];
   set_ids?: number[];
   set_type_filter?: string;
+  userDate: string;
 }): Promise<Record<string, any>> {
-  const { userId, exercise, session, action, updates, set_numbers, set_ids, set_type_filter } = params;
+  const { userId, exercise, session, action, updates, set_numbers, set_ids, set_type_filter, userDate } = params;
 
   const resolved = await findExercise(exercise);
   if (!resolved) {
@@ -264,7 +270,8 @@ async function processSingleEdit(params: {
   const queryParams: any[] = [resolved.id, userId];
   let sessionFilter: string;
   if (!session || session === "today") {
-    sessionFilter = "AND DATE(s.started_at) = CURRENT_DATE";
+    queryParams.push(userDate);
+    sessionFilter = `AND DATE(s.started_at) = $${queryParams.length}::date`;
   } else if (session === "last") {
     sessionFilter = "";
   } else {

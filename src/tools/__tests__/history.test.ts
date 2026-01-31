@@ -12,6 +12,10 @@ vi.mock("../../context/user-context.js", () => ({
   getUserId: vi.fn().mockReturnValue(1),
 }));
 
+vi.mock("../../helpers/date-helpers.js", () => ({
+  getUserCurrentDate: vi.fn().mockResolvedValue("2024-01-15"),
+}));
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerHistoryTool } from "../history.js";
 
