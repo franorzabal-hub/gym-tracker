@@ -121,6 +121,17 @@ describe("inferTodayDay", () => {
     await inferTodayDay(1);
     expect(mockQuery).toHaveBeenCalledTimes(2);
   });
+
+  it("falls back to UTC weekday on invalid timezone", async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ id: 10, version_number: 1 }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    // Should not throw, should fall back gracefully
+    const result = await inferTodayDay(1, "Invalid/Timezone");
+    expect(result).toBeNull(); // no matching day, but no error
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("cloneVersion", () => {

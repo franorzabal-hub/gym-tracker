@@ -26,7 +26,11 @@ Examples:
       program_day: z.string().optional(),
       tags: z.array(z.string()).optional().describe("Filter sessions that have ALL of these tags"),
     },
-    async ({ period, exercise, program_day, tags }) => {
+    async ({ period, exercise, program_day, tags: rawTags }) => {
+      let tags = rawTags as any;
+      if (typeof tags === 'string') {
+        try { tags = JSON.parse(tags); } catch { tags = undefined; }
+      }
       const userId = getUserId();
 
       // Build date filter

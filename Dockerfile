@@ -1,18 +1,25 @@
-FROM node:22-slim AS base
+# Stage 1: Build
+FROM node:22-slim AS builder
 WORKDIR /app
 
-# Install dependencies
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+COPY package.json package-lock.json tsconfig.json ./
+RUN npm ci
 
-# Copy source
 COPY server.ts ./
 COPY src/ ./src/
 
-# Run with tsx (no build step needed for server)
-RUN npm install tsx
+RUN npx tsc
+
+# Stage 2: Production
+FROM node:22-slim
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+COPY --from=builder /app/dist ./dist
 
 EXPOSE 3001
 ENV PORT=3001
 
-CMD ["npx", "tsx", "server.ts"]
+CMD ["node", "dist/server.js"]

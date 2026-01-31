@@ -5,7 +5,7 @@ import { workos, WORKOS_CLIENT_ID, BASE_URL } from "./workos.js";
 const router = Router();
 
 // In-memory stores
-const authCodes = new Map<string, { workosUserId: string; email: string | null; expiresAt: number }>();
+const authCodes = new Map<string, { workosUserId: string; email: string | null; expiresAt: number; codeChallenge?: string; codeChallengeMethod?: string }>();
 const accessTokens = new Map<string, { workosUserId: string; email: string | null; expiresAt: number }>();
 const dynamicClients = new Map<string, { client_id: string; redirect_uris: string[]; created_at: number }>();
 
@@ -18,6 +18,14 @@ setInterval(() => {
     if (data.expiresAt < now) authCodes.delete(code);
   }
 }, 5 * 60 * 1000);
+
+// Cleanup expired access tokens every 15 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of accessTokens) {
+    if (data.expiresAt < now) accessTokens.delete(token);
+  }
+}, 15 * 60 * 1000);
 
 // Resource metadata
 router.get("/.well-known/oauth-protected-resource", (_req, res) => {
@@ -66,11 +74,32 @@ router.post("/register", (req, res) => {
 
 // Authorize → redirect to WorkOS AuthKit
 router.get("/authorize", (req, res) => {
-  const { redirect_uri, state, code_challenge, code_challenge_method } = req.query;
+  const { redirect_uri, state, code_challenge, code_challenge_method, client_id } = req.query;
 
   if (!redirect_uri || !state) {
     res.status(400).json({ error: "redirect_uri and state are required" });
     return;
+  }
+
+  // Validate redirect_uri against registered client
+  if (client_id && typeof client_id === "string") {
+    const client = dynamicClients.get(client_id);
+    if (client && client.redirect_uris.length > 0) {
+      if (!client.redirect_uris.includes(redirect_uri as string)) {
+        res.status(400).json({ error: "invalid_request", error_description: "redirect_uri not registered for this client" });
+        return;
+      }
+    }
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    const uri = redirect_uri as string;
+    const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(uri);
+    const isRegistered = client_id && typeof client_id === "string" && dynamicClients.has(client_id);
+    if (!isLocalhost && !isRegistered) {
+      res.status(400).json({ error: "invalid_request", error_description: "Unregistered redirect_uri" });
+      return;
+    }
   }
 
   // Store PKCE + redirect info in state
@@ -121,6 +150,8 @@ router.get("/callback", async (req, res) => {
       workosUserId,
       email,
       expiresAt: Date.now() + 5 * 60 * 1000, // 5 min
+      codeChallenge: code_challenge || undefined,
+      codeChallengeMethod: code_challenge_method || undefined,
     });
 
     // Redirect back to MCP client
@@ -158,6 +189,22 @@ router.post("/token", async (req, res) => {
 
   // Delete used code (one-time use)
   authCodes.delete(code);
+
+  // PKCE verification
+  if (stored.codeChallenge) {
+    if (!code_verifier) {
+      res.status(400).json({ error: "invalid_grant", error_description: "code_verifier required" });
+      return;
+    }
+    const expectedChallenge = crypto
+      .createHash("sha256")
+      .update(code_verifier)
+      .digest("base64url");
+    if (expectedChallenge !== stored.codeChallenge) {
+      res.status(400).json({ error: "invalid_grant", error_description: "code_verifier mismatch" });
+      return;
+    }
+  }
 
   // Generate our own opaque access token
   const opaqueToken = crypto.randomBytes(32).toString("hex");

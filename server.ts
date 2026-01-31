@@ -50,7 +50,7 @@ app.all("/mcp", async (req, res) => {
   try {
     let userId: number;
 
-    if (process.env.DEV_USER_ID) {
+    if (process.env.DEV_USER_ID && process.env.NODE_ENV !== "production") {
       userId = Number(process.env.DEV_USER_ID);
     } else {
       userId = await authenticateToken(req);
@@ -96,7 +96,10 @@ app.all("/mcp", async (req, res) => {
       });
       return;
     }
-    throw err;
+    console.error("MCP endpoint error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "internal_error", message: "An unexpected error occurred" });
+    }
   }
 });
 

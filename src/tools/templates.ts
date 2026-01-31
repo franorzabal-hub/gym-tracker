@@ -85,11 +85,12 @@ Actions:
              MAX(st.weight) as max_weight,
              MAX(st.rpe) as max_rpe
            FROM session_exercises se
+           JOIN sessions s ON s.id = se.session_id
            LEFT JOIN sets st ON st.session_exercise_id = se.id
-           WHERE se.session_id = $1
+           WHERE se.session_id = $1 AND s.user_id = $2
            GROUP BY se.id
            ORDER BY se.sort_order`,
-          [sid]
+          [sid, userId]
         );
 
         if (sessionExercises.length === 0) {

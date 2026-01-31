@@ -79,6 +79,28 @@ describe("manage_templates tool", () => {
       expect(parsed.exercises_count).toBe(1);
     });
 
+    it("scopes session exercises query by user_id", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 5 }] });
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          { exercise_id: 1, sort_order: 0, superset_group: null, rest_seconds: null, notes: null, set_count: "4", common_reps: 8, max_weight: 80, max_rpe: 8 },
+        ],
+      });
+
+      mockClientQuery
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({});
+
+      await toolHandler({ action: "save", name: "Test", session_id: "last" });
+
+      // The session exercises query (2nd call) should include user_id
+      const sessionExQuery = mockQuery.mock.calls[1];
+      expect(sessionExQuery[0]).toContain("s.user_id");
+      expect(sessionExQuery[1]).toEqual([5, 1]); // [sid, userId]
+    });
+
     it("errors when no name provided", async () => {
       const result = await toolHandler({ action: "save" });
       expect(result.isError).toBe(true);

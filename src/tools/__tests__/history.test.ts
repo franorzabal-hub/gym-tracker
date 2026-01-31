@@ -92,6 +92,20 @@ describe("get_history tool", () => {
     expect(parsed.summary.exercises_count).toBe(0);
   });
 
+  it("handles JSON-stringified tags", async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const result = await toolHandler({ period: "week", tags: JSON.stringify(["morning"]) });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.sessions).toEqual([]);
+    // Verify the query included the tags filter with a real array
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.stringContaining("tags"),
+      expect.arrayContaining([["morning"]])
+    );
+  });
+
   it("calculates volume summary correctly", async () => {
     mockQuery.mockResolvedValueOnce({
       rows: [

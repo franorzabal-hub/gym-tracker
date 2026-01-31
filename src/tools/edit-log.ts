@@ -89,7 +89,7 @@ Parameters:
             isError: true,
           };
         }
-        await pool.query("UPDATE sessions SET deleted_at = NULL WHERE id = $1", [sessionId]);
+        await pool.query("UPDATE sessions SET deleted_at = NULL WHERE id = $1 AND user_id = $2", [sessionId, userId]);
         return {
           content: [{
             type: "text" as const,
@@ -157,7 +157,7 @@ Parameters:
           };
         }
 
-        await pool.query("UPDATE sessions SET deleted_at = NOW() WHERE id = $1", [sessionId]);
+        await pool.query("UPDATE sessions SET deleted_at = NOW() WHERE id = $1 AND user_id = $2", [sessionId, userId]);
 
         return {
           content: [{

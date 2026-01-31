@@ -22,7 +22,11 @@ Returns the session info and the exercises planned for that day (if any).
       date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session start time. Defaults to now."),
       tags: z.array(z.string()).optional().describe("Tags to label this session (e.g. ['deload', 'morning', 'outdoor'])"),
     },
-    async ({ program_day, notes, date, tags }) => {
+    async ({ program_day, notes, date, tags: rawTags }) => {
+      let tags = rawTags as any;
+      if (typeof tags === 'string') {
+        try { tags = JSON.parse(tags); } catch { tags = undefined; }
+      }
       const userId = getUserId();
 
       // Check for already active session
@@ -173,7 +177,11 @@ Optionally add or update tags on the session.`,
       force: z.boolean().optional().default(false),
       tags: z.array(z.string()).optional().describe("Tags to set on this session (replaces existing tags)"),
     },
-    async ({ notes, force, tags }) => {
+    async ({ notes, force, tags: rawTags }) => {
+      let tags = rawTags as any;
+      if (typeof tags === 'string') {
+        try { tags = JSON.parse(tags); } catch { tags = undefined; }
+      }
       const userId = getUserId();
 
       const active = await pool.query(

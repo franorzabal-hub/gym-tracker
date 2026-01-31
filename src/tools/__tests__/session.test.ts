@@ -96,6 +96,26 @@ describe("session tools", () => {
       expect(parsed.session_id).toBe(20);
       expect(parsed.program_day.label).toBe("Push");
     });
+
+    it("handles JSON-stringified tags", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z", tags: ["deload"] }],
+        });
+      mockGetActiveProgram.mockResolvedValueOnce(null);
+
+      const result = await startHandler({ tags: JSON.stringify(["deload"]) });
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(parsed.session_id).toBe(10);
+      // Verify the INSERT was called with a parsed array, not a JSON string
+      const insertCall = mockQuery.mock.calls[1];
+      // tags is the 6th param [userId, programVersionId, programDayId, notes, startedAt, tags]
+      const tagsParam = insertCall[1][5];
+      expect(Array.isArray(tagsParam)).toBe(true);
+      expect(tagsParam).toEqual(["deload"]);
+    });
   });
 
   describe("end_session", () => {

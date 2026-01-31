@@ -109,6 +109,36 @@ describe("edit_log tool", () => {
     });
   });
 
+  describe("restore_session", () => {
+    it("includes user_id in UPDATE query", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 1, started_at: "2024-01-15", deleted_at: "2024-01-16" }] })
+        .mockResolvedValueOnce({});
+
+      await toolHandler({ restore_session: 1 });
+
+      // The UPDATE query should include AND user_id = $2
+      const updateCall = mockQuery.mock.calls[1];
+      expect(updateCall[0]).toContain("user_id");
+      expect(updateCall[1]).toContain(1); // userId
+    });
+  });
+
+  describe("delete_session", () => {
+    it("includes user_id in UPDATE query", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 1, started_at: "2024-01-15", ended_at: "2024-01-15" }] })
+        .mockResolvedValueOnce({});
+
+      await toolHandler({ delete_session: 1 });
+
+      // The UPDATE query should include AND user_id = $2
+      const updateCall = mockQuery.mock.calls[1];
+      expect(updateCall[0]).toContain("user_id");
+      expect(updateCall[1]).toContain(1); // userId
+    });
+  });
+
   describe("delete_sessions bulk", () => {
     it("rejects without session IDs array", async () => {
       const result = await toolHandler({ delete_sessions: "invalid" });
