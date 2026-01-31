@@ -1,5 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { resolveExercise } from "../helpers/exercise-resolver.js";
@@ -64,9 +63,6 @@ For "activate", pass the program name.`,
     annotations: { readOnlyHint: false },
     _meta: {
       ui: { resourceUri: "ui://gym-tracker/programs.html" },
-      "openai/outputTemplate": "ui://gym-tracker/programs.html",
-      "openai/toolInvocation/invoking": "Managing program…",
-      "openai/toolInvocation/invoked": "Done",
     },
   }, async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames, include_exercises }) => {
       const userId = getUserId();

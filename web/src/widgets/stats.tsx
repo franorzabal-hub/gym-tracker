@@ -1,17 +1,17 @@
 import { createRoot } from "react-dom/client";
-import { useToolOutput, useTheme } from "../hooks.js";
+import { useToolOutput } from "../hooks.js";
+import { AppProvider } from "../app-context.js";
 import "../styles.css";
 
 function StatsWidget() {
   const data = useToolOutput();
-  const theme = useTheme();
 
   if (!data) return <div className="loading">Loading...</div>;
 
   // Multi-exercise stats
   if (data.stats) {
     return (
-      <div className={theme === "dark" ? "dark" : ""}>
+      <div>
         <div className="title">Exercise Stats</div>
         {data.stats.map((s: any, i: number) => (
           <div key={i} className="card">
@@ -30,7 +30,7 @@ function StatsWidget() {
   const sessions = data.sessions;
   if (sessions) {
     return (
-      <div className={theme === "dark" ? "dark" : ""}>
+      <div>
         <div className="title">Workout History</div>
         {data.summary && (
           <div className="grid grid-2">
@@ -53,7 +53,7 @@ function StatsWidget() {
 
   // Single exercise stats
   return (
-    <div className={theme === "dark" ? "dark" : ""}>
+    <div>
       <div className="title">{data.exercise ?? "Stats"}</div>
       {data.personal_records && (
         <div className="card">
@@ -91,4 +91,6 @@ function StatsWidget() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<StatsWidget />);
+createRoot(document.getElementById("root")!).render(
+  <AppProvider><StatsWidget /></AppProvider>
+);

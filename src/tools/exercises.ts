@@ -1,5 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { resolveExercise, searchExercises } from "../helpers/exercise-resolver.js";
@@ -57,9 +56,6 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
       annotations: {},
       _meta: {
         ui: { resourceUri: "ui://gym-tracker/exercises.html" },
-        "openai/outputTemplate": "ui://gym-tracker/exercises.html",
-        "openai/toolInvocation/invoking": "Managing exercises\u2026",
-        "openai/toolInvocation/invoked": "Done",
       },
     },
     async ({ action, name, muscle_group, equipment, aliases, rep_type, exercise_type, names: rawNames, exercises, limit, offset, alias, source, target }) => {

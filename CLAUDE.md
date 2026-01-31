@@ -35,7 +35,7 @@ Manage via: `gcloud run services update gym-tracker --region us-central1 --proje
 
 ## Stack
 
-Node.js + TypeScript, Express, CORS, `@modelcontextprotocol/sdk` (StreamableHTTP), PostgreSQL via `pg`, Zod, Vitest, WorkOS OAuth 2.1, JOSE, AsyncLocalStorage.
+Node.js + TypeScript, Express, CORS, `@modelcontextprotocol/sdk` (StreamableHTTP), `@modelcontextprotocol/ext-apps` (MCP Apps widgets), PostgreSQL via `pg`, Zod, Vitest, WorkOS OAuth 2.1, JOSE, AsyncLocalStorage.
 
 ## Project Structure
 
@@ -45,8 +45,10 @@ src/auth/                    # middleware.ts, oauth-routes.ts, workos.ts
 src/context/user-context.ts  # AsyncLocalStorage: getUserId() / runWithUser()
 src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-012
 src/tools/                   # 13 files → 15 MCP tools
-src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts, date-helpers.ts, parse-helpers.ts
+src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts, date-helpers.ts, parse-helpers.ts, tool-response.ts
+src/resources/               # register-widgets.ts — registers all widget resources
 src/tools/__tests__/         # Vitest tests (1 per tool file)
+web/                         # Widget UI (separate npm project, see "MCP Apps Widgets" section)
 ```
 
 ## Authentication & Multi-Tenancy
@@ -102,6 +104,188 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 | `manage_body_measurements` | log, history, latest — temporal tracking (weight_kg, body_fat_pct, chest_cm, etc.) |
 | `export_data` | json or csv — scopes: all, sessions, exercises, programs, measurements, prs; period filter |
 
+## MCP Apps Widgets
+
+Interactive HTML widgets rendered by MCP hosts (Claude Desktop, claude.ai, VS Code). Powered by `@modelcontextprotocol/ext-apps` and its official React hooks (`/react` subpath).
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ MCP Host (Claude Desktop / claude.ai)                           │
+│  1. Calls tool → server returns JSON data                       │
+│  2. Reads _meta.ui.resourceUri → fetches widget HTML resource   │
+│  3. Renders widget HTML in sandboxed iframe                     │
+│  4. Widget iframe ↔ Host communicate via postMessage (JSON-RPC) │
+│     - ui/initialize handshake (handled by SDK's useApp hook)    │
+│     - ui/notifications/tool-result delivers tool data to widget │
+│     - Auto-resize via ResizeObserver (enabled by default)       │
+│  5. Host injects CSS variables + color-scheme for theming       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Two npm projects
+
+| Directory | Purpose | Key packages |
+|---|---|---|
+| `/` (root) | MCP server — registers tools + widget resources | `@modelcontextprotocol/sdk`, `@modelcontextprotocol/ext-apps/server` |
+| `web/` | Widget UI — React apps compiled to single HTML files | `@modelcontextprotocol/ext-apps/react`, React, Vite |
+
+**CRITICAL:** Both projects use `@modelcontextprotocol/ext-apps` but different entry points. The **root** uses `/server` (for `registerAppTool`, `registerAppResource`, `RESOURCE_MIME_TYPE`). The **web** uses `/react` (for `useApp`, `useHostStyles`, `useDocumentTheme` hooks). Versions must stay compatible — both need `^1.0.0`.
+
+### Server side — Registering tools with widgets
+
+Each tool uses `registerAppToolWithMeta()` (wrapper around `registerAppTool` from ext-apps/server). The `_meta.ui.resourceUri` field links the tool to its widget resource:
+
+```typescript
+// src/tools/profile.ts
+registerAppToolWithMeta(server, "manage_profile", {
+  title: "Manage Profile",
+  description: "...",
+  inputSchema: { action: z.enum(["get", "update"]), data: z.record(z.any()).optional() },
+  annotations: {},
+  _meta: {
+    ui: { resourceUri: "ui://gym-tracker/profile.html" },
+  },
+}, async ({ action, data }) => { /* handler returns toolResponse({...}) */ });
+```
+
+**No capability negotiation needed.** The server creates a new `McpServer` per request (stateless). Non-UI hosts simply ignore `_meta.ui` fields. No server-side feature detection is required.
+
+Widget resources are registered in `src/resources/register-widgets.ts` using `registerAppResource()`. Each resource maps a `ui://gym-tracker/*.html` URI to a built HTML file in `web/dist/`. The mime type must be `text/html;profile=mcp-app` (use `RESOURCE_MIME_TYPE` constant).
+
+### Widget side — web/ directory
+
+```
+web/
+  package.json               # Separate npm project (npm install must run here too)
+  vite.config.ts             # Vite + react + vite-plugin-singlefile
+  build.sh                   # Loops over *.html, builds each widget separately
+  *.html                     # Entry points (profile.html, session.html, etc.)
+  test-host.html             # Dev-only: test host page served via `npx vite`
+  dist/                      # Built output — single self-contained HTML files
+  src/
+    app-context.tsx           # AppProvider: useApp + useHostStyles + toolOutput context
+    hooks.ts                 # React hooks: useToolOutput(), useCallTool(), useTheme()
+    styles.css               # Shared styles with host CSS variable aliases
+    test-host.ts             # Dev-only: test host using AppBridge (not committed)
+    widgets/                 # One React component per widget (profile.tsx, etc.)
+```
+
+**Build pipeline:** `cd web && npm run build` → runs `build.sh` → loops over each `*.html` entry point → Vite builds each with `vite-plugin-singlefile` (inlines all JS/CSS into a single HTML) → output to `web/dist/`.
+
+**Build after every widget change.** The server serves files from `web/dist/`, not source.
+
+### AppProvider + app-context.tsx
+
+All widgets are wrapped in `<AppProvider>`, which handles the SDK connection lifecycle:
+
+1. `useApp()` — creates the `App` instance, connects via `PostMessageTransport`, returns `{ app, isConnected, error }`
+2. `onAppCreated` callback — registers `app.ontoolresult` to parse tool data into React state
+3. `useHostStyles(app)` — injects host CSS variables + fonts into the document automatically
+4. Exposes `app`, `isConnected`, `error`, `toolOutput` via React context
+
+The `hooks.ts` module provides convenience hooks that read from this context:
+- `useToolOutput<T>()` — returns parsed tool result JSON (or `null` while loading)
+- `useCallTool()` — returns `{ callTool(name, args), loading, error }` using `app.callServerTool()`
+- `useTheme()` — re-exports `useDocumentTheme()` from SDK (returns `"light"` | `"dark"`)
+
+### CSS theming approach
+
+`styles.css` defines shorthand aliases that map to official host CSS variables with fallbacks:
+
+```css
+:root {
+  --bg: var(--color-background-primary, #ffffff);
+  --text: var(--color-text-primary, #1a1a1a);
+  --border: var(--color-border-primary, #e0e0e0);
+  --primary: var(--color-text-info, #2563eb);
+  --radius: var(--border-radius-md, 8px);
+  --font: var(--font-sans, -apple-system, ...);
+  /* etc. */
+}
+```
+
+- The host injects `--color-background-primary`, `--color-text-primary`, `--font-sans`, etc. via `useHostStyles()`
+- Variable names must match the SDK's `McpUiHostStylesSchema` — only predefined keys are accepted (no custom names)
+- When running outside a host (dev mode), fallback values apply
+- Dark mode is automatic: `useHostStyles()` sets `color-scheme` on the document, and badge colors use `light-dark()` CSS function
+- No `.dark` class toggle needed — widgets don't manage theme state
+
+### Widget component pattern
+
+```tsx
+// web/src/widgets/example.tsx
+import { createRoot } from "react-dom/client";
+import { useToolOutput } from "../hooks.js";
+import { AppProvider } from "../app-context.js";
+import "../styles.css";
+
+function ExampleWidget() {
+  const data = useToolOutput();     // Receives parsed tool result JSON
+  if (!data) return <div className="loading">Loading...</div>;
+  return <div>...</div>;
+}
+
+createRoot(document.getElementById("root")!).render(
+  <AppProvider><ExampleWidget /></AppProvider>
+);
+```
+
+### Adding a new widget
+
+1. Create `web/src/widgets/foo.tsx` with the React component
+2. Wrap the root render in `<AppProvider>`: `<AppProvider><FooWidget /></AppProvider>`
+3. Create `web/foo.html` entry point (minimal HTML with `<div id="root">` + `<script type="module" src="/src/widgets/foo.tsx">`)
+4. Add to `WIDGETS` array in `src/resources/register-widgets.ts` with name, URI (`ui://gym-tracker/foo.html`), file, description
+5. In the tool file, use `registerAppToolWithMeta` with `_meta: { ui: { resourceUri: "ui://gym-tracker/foo.html" } }`
+6. Build: `cd web && npm run build`
+
+### Local development
+
+1. Start server: `DEV_USER_ID=1 npm run dev` (port 3001)
+2. For Claude Desktop testing, expose with tunnel: `cloudflared tunnel --url http://localhost:3001 --protocol http2`
+3. Configure Claude Desktop with the tunnel URL as MCP endpoint
+4. After widget code changes: `cd web && npm run build`, then re-trigger the tool in Claude
+5. Use Chrome DevTools MCP to inspect widgets: take snapshots, check console for errors, verify postMessage handshake
+
+**Local test host** (no Claude Desktop needed): `cd web && npx vite --port 5173`, then open `http://localhost:5173/test-host.html`. This uses the official `AppBridge` from `@modelcontextprotocol/ext-apps/app-bridge` to simulate the host-side protocol. Widgets load from `dist/`, so rebuild first. Supports theme toggle and all 9 widgets with sample data.
+
+### How the postMessage protocol works (for debugging)
+
+The SDK handles this automatically via `useApp()`. The sequence:
+1. SDK creates `PostMessageTransport(window.parent, window.parent)`
+2. Sends `ui/initialize` JSON-RPC request via `window.parent.postMessage(data, "*")`
+3. Host responds with `ui/initialize` result (protocolVersion, hostInfo, hostCapabilities, hostContext with theme + styles)
+4. SDK sends `ui/notifications/initialized` notification
+5. Host sends `ui/notifications/tool-result` → `app.ontoolresult` fires → `useToolOutput()` updates → React re-renders
+6. SDK auto-reports size changes via `ResizeObserver` (enabled by default in `useApp`)
+
+If the widget shows "Loading..." forever, the protocol handshake failed. Common causes:
+- Host doesn't respond to `ui/initialize` (check parent window message listeners)
+- Tool result format mismatch (widget expects parsed JSON from `content[0].text`)
+- SDK version mismatch between server and client
+
+### Version compatibility
+
+| Package | Where | Required version | Why |
+|---|---|---|---|
+| `@modelcontextprotocol/ext-apps` | `web/package.json` | `^1.0.0` | Provides `/react` hooks (`useApp`, `useHostStyles`, `useDocumentTheme`) |
+| `@modelcontextprotocol/ext-apps/server` | root `package.json` | `^1.0.0` | Must match client version for `registerAppTool`/`registerAppResource` API compat |
+| `@modelcontextprotocol/sdk` | root `package.json` | `^1.24.0` | Required by ext-apps as peer dependency |
+
+After updating versions: `npm install` in both root and `web/`, then `cd web && npm run build`.
+
+### Common pitfalls
+
+- **Version mismatch**: `web/package.json` must have `@modelcontextprotocol/ext-apps: "^1.0.0"`. The `/react` subpath with `useApp()` hook requires v1.0+.
+- **Missing AppProvider**: Every widget must wrap its root render in `<AppProvider>`. Without it, `useToolOutput()` and `useCallTool()` return null/no-op.
+- **Forgot to rebuild**: Server serves `web/dist/*.html`. If you edit widget source but don't run `cd web && npm run build`, the old version is served.
+- **Two npm installs**: Root and `web/` are separate npm projects. After cloning or updating deps, run `npm install` in BOTH directories.
+- **CORS**: In dev, `getAllowedOrigins()` in server.ts allows localhost ports. For production, set `ALLOWED_ORIGINS` env var.
+- **Dockerfile**: Must include a widget build stage (`cd web && npm ci && npm run build`) before the server stage.
+- **Claude Desktop caching**: After rebuilding widgets, start a new conversation in Claude Desktop. It may cache the old MCP connection/resources from the previous conversation.
+
 ## Code Patterns
 
 ### JSON String Workaround
@@ -148,3 +332,5 @@ Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture
 - Tests for `body-measurements.ts` and `export.ts`
 - Rate limiting persistence (currently in-memory, resets on deploy)
 - Persist `STATE_SECRET` as a Cloud Run secret (currently falls back to ephemeral random)
+- Widget UIs are styled (profile, session, stats, today-plan, exercises, programs, templates, measurements); export widget intentionally shows raw JSON
+- Remove debug logging from server.ts (MCP method/resource logging) and register-widgets.ts before production

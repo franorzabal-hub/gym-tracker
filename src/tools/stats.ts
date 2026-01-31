@@ -1,5 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { findExercise } from "../helpers/exercise-resolver.js";
@@ -38,9 +37,6 @@ Examples:
       annotations: { readOnlyHint: true },
       _meta: {
         ui: { resourceUri: "ui://gym-tracker/stats.html" },
-        "openai/outputTemplate": "ui://gym-tracker/stats.html",
-        "openai/toolInvocation/invoking": "Calculating stats…",
-        "openai/toolInvocation/invoked": "Stats ready",
       },
     },
     async ({ exercise, exercises: rawExercises, period, summary_only, max_data_points, by_muscle_group }) => {

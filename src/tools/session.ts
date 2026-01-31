@@ -1,5 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import {
@@ -31,9 +30,6 @@ Returns the session info and the exercises planned for that day (if any).
       annotations: {},
       _meta: {
         ui: { resourceUri: "ui://gym-tracker/session.html" },
-        "openai/outputTemplate": "ui://gym-tracker/session.html",
-        "openai/toolInvocation/invoking": "Starting session\u2026",
-        "openai/toolInvocation/invoked": "Session started",
       },
     },
     async ({ program_day, notes, date, tags: rawTags, include_last_workout }) => {
@@ -187,9 +183,6 @@ Optionally add or update tags on the session.`,
       annotations: {},
       _meta: {
         ui: { resourceUri: "ui://gym-tracker/session.html" },
-        "openai/outputTemplate": "ui://gym-tracker/session.html",
-        "openai/toolInvocation/invoking": "Ending session\u2026",
-        "openai/toolInvocation/invoked": "Session ended",
       },
     },
     async ({ notes, force, tags: rawTags, summary_only, include_comparison }) => {
@@ -412,9 +405,6 @@ Optionally add or update tags on the session.`,
       annotations: { readOnlyHint: true },
       _meta: {
         ui: { resourceUri: "ui://gym-tracker/session.html" },
-        "openai/outputTemplate": "ui://gym-tracker/session.html",
-        "openai/toolInvocation/invoking": "Checking session\u2026",
-        "openai/toolInvocation/invoked": "Session status ready",
       },
     },
     async () => {

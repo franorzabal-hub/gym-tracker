@@ -29,7 +29,7 @@ function getAllowedOrigins(): string[] {
     return process.env.ALLOWED_ORIGINS.split(",").map(s => s.trim()).filter(Boolean);
   }
   if (!process.env.NODE_ENV || process.env.NODE_ENV === "development") {
-    return ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173"];
+    return ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173", "http://localhost:8080"];
   }
   return [];
 }
@@ -75,6 +75,11 @@ function createConfiguredServer(): McpServer {
 
 // MCP endpoint
 app.all("/mcp", async (req, res) => {
+  const method = req.body?.method ?? req.body?.map?.((m: any) => m.method) ?? "?";
+  console.log(`[MCP] ${req.method} /mcp — ${JSON.stringify(method)}`);
+  if (req.body?.method === "resources/read" || req.body?.method === "resources/list") {
+    console.log(`[MCP] Resource request params:`, JSON.stringify(req.body.params));
+  }
   try {
     let userId: number;
 

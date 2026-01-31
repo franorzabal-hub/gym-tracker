@@ -1,5 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
@@ -31,9 +30,6 @@ Examples:
       annotations: {},
       _meta: {
         ui: { resourceUri: "ui://gym-tracker/measurements.html" },
-        "openai/outputTemplate": "ui://gym-tracker/measurements.html",
-        "openai/toolInvocation/invoking": "Managing measurements\u2026",
-        "openai/toolInvocation/invoked": "Done",
       },
     },
     async ({ action, measurement_type, value, measured_at, notes, period, limit }) => {

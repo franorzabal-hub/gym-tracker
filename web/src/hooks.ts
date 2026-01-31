@@ -1,55 +1,50 @@
-import { useState, useEffect, useCallback } from "react";
-import { bridge } from "./bridge.js";
+import { useState, useCallback } from "react";
+import { useDocumentTheme } from "@modelcontextprotocol/ext-apps/react";
+import { useAppContext } from "./app-context.js";
 
-/** Hook to get the current tool output data, updates when new data arrives */
+/** Hook to get the current tool output data */
 export function useToolOutput<T = any>(): T | null {
-  const [data, setData] = useState<T | null>(() => bridge.getToolOutput());
-
-  useEffect(() => {
-    bridge.onToolResult((newData) => setData(newData));
-  }, []);
-
-  return data;
+  return useAppContext().toolOutput;
 }
 
-/** Hook to call a tool and get the result */
+/** Hook to call a tool on the MCP server */
 export function useCallTool() {
+  const { app } = useAppContext();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const callTool = useCallback(async (name: string, args: Record<string, any> = {}) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await bridge.callTool(name, args);
-      if (result?.error) setError(result.error);
-      return result;
-    } catch (err: any) {
-      setError(err.message || "Unknown error");
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const callTool = useCallback(
+    async (name: string, args: Record<string, any> = {}) => {
+      if (!app) return null;
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await app.callServerTool({ name, arguments: args });
+        const textContent = result?.content?.find(
+          (c) => c.type === "text",
+        );
+        if (textContent && "text" in textContent) {
+          try {
+            return JSON.parse(textContent.text);
+          } catch {
+            return textContent.text;
+          }
+        }
+        return result?.structuredContent ?? result;
+      } catch (err: any) {
+        setError(err.message || "Unknown error");
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [app],
+  );
 
   return { callTool, loading, error };
 }
 
-/** Hook to get the current theme */
+/** Hook to get the current theme ("light" | "dark") */
 export function useTheme(): "light" | "dark" {
-  const [theme, setTheme] = useState<"light" | "dark">(bridge.getTheme());
-
-  useEffect(() => {
-    if (bridge.host === "openai") {
-      const handler = ((event: CustomEvent) => {
-        if (event.detail?.globals?.theme) {
-          setTheme(event.detail.globals.theme);
-        }
-      }) as EventListener;
-      window.addEventListener("openai:set_globals", handler);
-      return () => window.removeEventListener("openai:set_globals", handler);
-    }
-  }, []);
-
-  return theme;
+  return useDocumentTheme();
 }

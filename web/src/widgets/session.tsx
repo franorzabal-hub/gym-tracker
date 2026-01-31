@@ -1,10 +1,10 @@
 import { createRoot } from "react-dom/client";
-import { useToolOutput, useTheme, useCallTool } from "../hooks.js";
+import { useToolOutput, useCallTool } from "../hooks.js";
+import { AppProvider } from "../app-context.js";
 import "../styles.css";
 
 function SessionWidget() {
   const data = useToolOutput();
-  const theme = useTheme();
   const { callTool, loading } = useCallTool();
 
   if (!data) return <div className="loading">Loading...</div>;
@@ -13,7 +13,7 @@ function SessionWidget() {
   if (data.active !== undefined) {
     if (!data.active) return <div className="empty">No active session</div>;
     return (
-      <div className={theme === "dark" ? "dark" : ""}>
+      <div>
         <div className="title">Active Session</div>
         <div className="grid grid-2">
           <div className="card"><div className="stat-value">{data.duration_minutes ?? 0}m</div><div className="stat-label">Duration</div></div>
@@ -31,7 +31,7 @@ function SessionWidget() {
 
   // Session started/ended view
   return (
-    <div className={theme === "dark" ? "dark" : ""}>
+    <div>
       <div className="title">{data.session_ended !== undefined ? "Session Summary" : "Session Started"}</div>
       {data.duration_minutes && <div className="card"><div className="stat-value">{Math.round(data.duration_minutes)}m</div><div className="stat-label">Duration</div></div>}
       {data.total_volume_kg && <div className="card"><div className="stat-value">{data.total_volume_kg}kg</div><div className="stat-label">Volume</div></div>}
@@ -63,4 +63,6 @@ function SessionWidget() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<SessionWidget />);
+createRoot(document.getElementById("root")!).render(
+  <AppProvider><SessionWidget /></AppProvider>
+);

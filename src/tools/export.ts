@@ -1,5 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
@@ -42,9 +41,6 @@ Examples:
       annotations: { readOnlyHint: true },
       _meta: {
         ui: { resourceUri: "ui://gym-tracker/export.html" },
-        "openai/outputTemplate": "ui://gym-tracker/export.html",
-        "openai/toolInvocation/invoking": "Exporting data\u2026",
-        "openai/toolInvocation/invoked": "Export ready",
       },
     },
     async ({ action, scope: rawScope, period: rawPeriod }) => {

@@ -1,5 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import { PoolClient } from "pg";
 import pool from "../db/connection.js";
@@ -218,9 +217,6 @@ Returns the logged sets and any new personal records achieved.`,
     annotations: { readOnlyHint: false },
     _meta: {
       ui: { resourceUri: "ui://gym-tracker/session.html" },
-      "openai/outputTemplate": "ui://gym-tracker/session.html",
-      "openai/toolInvocation/invoking": "Logging exercise…",
-      "openai/toolInvocation/invoked": "Exercise logged",
     },
   }, async (params) => {
       const userId = getUserId();

@@ -40,10 +40,12 @@ export function registerWidgetResources(server: McpServer) {
       },
       async () => {
         let html: string;
+        const filePath = path.join(DIST_DIR, widget.file);
         try {
-          html = await fs.readFile(path.join(DIST_DIR, widget.file), "utf-8");
-        } catch {
-          // If widget hasn't been built yet, return a placeholder
+          html = await fs.readFile(filePath, "utf-8");
+          console.log(`[Widget] Serving ${widget.uri} (${html.length} bytes) from ${filePath}`);
+        } catch (err) {
+          console.error(`[Widget] Failed to read ${filePath}:`, err);
           html = `<!DOCTYPE html><html><body><p>Widget not built. Run: cd web && npm run build</p></body></html>`;
         }
         return {

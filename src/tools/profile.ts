@@ -1,5 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
@@ -21,9 +20,6 @@ Example: user says "peso 82kg" → update with { "weight_kg": 82 }`,
       annotations: {},
       _meta: {
         ui: { resourceUri: "ui://gym-tracker/profile.html" },
-        "openai/outputTemplate": "ui://gym-tracker/profile.html",
-        "openai/toolInvocation/invoking": "Loading profile\u2026",
-        "openai/toolInvocation/invoked": "Profile ready",
       },
     },
     async ({ action, data }) => {

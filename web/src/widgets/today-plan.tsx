@@ -1,17 +1,17 @@
 import { createRoot } from "react-dom/client";
-import { useToolOutput, useTheme, useCallTool } from "../hooks.js";
+import { useToolOutput, useCallTool } from "../hooks.js";
+import { AppProvider } from "../app-context.js";
 import "../styles.css";
 
 function TodayPlanWidget() {
   const data = useToolOutput();
-  const theme = useTheme();
   const { callTool, loading } = useCallTool();
 
   if (!data) return <div className="loading">Loading...</div>;
 
   if (data.rest_day) {
     return (
-      <div className={theme === "dark" ? "dark" : ""}>
+      <div>
         <div className="title">Rest Day</div>
         <div className="empty">{data.message || "No workout scheduled for today"}</div>
       </div>
@@ -19,7 +19,7 @@ function TodayPlanWidget() {
   }
 
   return (
-    <div className={theme === "dark" ? "dark" : ""}>
+    <div>
       <div className="title">{data.day} — {data.program}</div>
       {data.exercises?.map((ex: any, i: number) => (
         <div key={i} className="card">
@@ -56,4 +56,6 @@ function TodayPlanWidget() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<TodayPlanWidget />);
+createRoot(document.getElementById("root")!).render(
+  <AppProvider><TodayPlanWidget /></AppProvider>
+);

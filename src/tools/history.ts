@@ -1,5 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
@@ -42,9 +41,6 @@ Examples:
       annotations: { readOnlyHint: true },
       _meta: {
         ui: { resourceUri: "ui://gym-tracker/stats.html" },
-        "openai/outputTemplate": "ui://gym-tracker/stats.html",
-        "openai/toolInvocation/invoking": "Loading history…",
-        "openai/toolInvocation/invoked": "History ready",
       },
     },
     async ({ period, exercise, program_day, tags: rawTags, session_id, limit: rawLimit, offset: rawOffset, summary_only, include_sets }) => {

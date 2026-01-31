@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "^0.1.0",
+    "@modelcontextprotocol/ext-apps": "^1.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

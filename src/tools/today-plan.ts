@@ -1,5 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getActiveProgram, inferTodayDay } from "../helpers/program-helpers.js";
@@ -19,9 +18,6 @@ Uses the active program + user's timezone to infer which day it is. Returns rest
       annotations: { readOnlyHint: true },
       _meta: {
         ui: { resourceUri: "ui://gym-tracker/today-plan.html" },
-        "openai/outputTemplate": "ui://gym-tracker/today-plan.html",
-        "openai/toolInvocation/invoking": "Loading today\u2019s plan\u2026",
-        "openai/toolInvocation/invoked": "Plan ready",
       },
     },
     async ({ include_last_workout }) => {

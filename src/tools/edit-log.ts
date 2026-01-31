@@ -1,5 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { findExercise } from "../helpers/exercise-resolver.js";
@@ -76,9 +75,6 @@ Parameters:
       annotations: { destructiveHint: true },
       _meta: {
         ui: { resourceUri: "ui://gym-tracker/session.html" },
-        "openai/outputTemplate": "ui://gym-tracker/session.html",
-        "openai/toolInvocation/invoking": "Editing log…",
-        "openai/toolInvocation/invoked": "Log updated",
       },
     },
     async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session, restore_session, delete_sessions: rawDeleteSessions }) => {

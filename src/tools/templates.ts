@@ -1,5 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
@@ -31,9 +30,6 @@ Actions:
       annotations: {},
       _meta: {
         ui: { resourceUri: "ui://gym-tracker/templates.html" },
-        "openai/outputTemplate": "ui://gym-tracker/templates.html",
-        "openai/toolInvocation/invoking": "Managing templates\u2026",
-        "openai/toolInvocation/invoked": "Done",
       },
     },
     async ({ action, name, session_id, date, names: rawNames, limit, offset }) => {
