@@ -139,11 +139,10 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           };
         }
 
-        // Check if exercise is global
-        params.push(name);
+        // Check if exercise is global (use separate params to avoid unreferenced $N)
         const checkGlobal = await pool.query(
-          `SELECT id, user_id FROM exercises WHERE LOWER(name) = LOWER($${params.length}) AND (user_id IS NULL OR user_id = $${params.length + 1}) ORDER BY user_id NULLS LAST LIMIT 1`,
-          [...params, userId]
+          `SELECT id, user_id FROM exercises WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2) ORDER BY user_id NULLS LAST LIMIT 1`,
+          [name, userId]
         );
         if (checkGlobal.rows.length === 0) {
           return {
@@ -159,6 +158,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
         }
 
         // Update only user-owned
+        params.push(name);
         params.push(userId);
         const { rows } = await pool.query(
           `UPDATE exercises SET ${updates.join(", ")} WHERE LOWER(name) = LOWER($${params.length - 1}) AND user_id = $${params.length} RETURNING id, name, muscle_group, equipment, rep_type, exercise_type`,
