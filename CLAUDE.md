@@ -31,13 +31,15 @@ src/auth/                    # middleware.ts, oauth-routes.ts, workos.ts
 src/context/user-context.ts  # AsyncLocalStorage: getUserId() / runWithUser()
 src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-012
 src/tools/                   # 13 files → 15 MCP tools
-src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts, date-helpers.ts
+src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts, date-helpers.ts, parse-helpers.ts
 src/tools/__tests__/         # Vitest tests (1 per tool file)
 ```
 
 ## Authentication & Multi-Tenancy
 
 - WorkOS OAuth 2.1: `/auth/authorize` → `/auth/callback` → Bearer token
+- PKCE S256 mandatory on `/authorize` (requires `code_challenge`) and `/token` (requires `code_verifier`)
+- In-memory rate limiting per IP: 20/min on `/authorize` and `/token`, 5/min on `/register` (429 on excess)
 - `authenticateToken()` middleware resolves Bearer → WorkOS user → `users` table (upsert)
 - `runWithUser(userId, fn)` wraps each request in AsyncLocalStorage
 - All tools call `getUserId()` to scope queries. All tables have `user_id` FK with per-user unique constraints.
@@ -86,12 +88,10 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 ## Code Patterns
 
 ### JSON String Workaround
-MCP clients may serialize arrays as JSON strings. All array params use:
+MCP clients may serialize arrays as JSON strings. All array params use `parseJsonParam<T>()` from `src/helpers/parse-helpers.ts`:
 ```typescript
-let list = rawParam as any;
-if (typeof list === 'string') {
-  try { list = JSON.parse(list); } catch { list = null; }
-}
+import { parseJsonParam } from '../helpers/parse-helpers.js';
+const list = parseJsonParam<SomeType[]>(rawParam);
 ```
 Applies to: exercises, names, days, overrides, skip, tags, bulk, delete_sessions.
 
@@ -99,11 +99,14 @@ Applies to: exercises, names, days, overrides, skip, tags, bulk, delete_sessions
 All tools return `{ content: [{ type: "text", text: JSON.stringify({...}) }] }`. Errors add `isError: true`.
 
 ### Exercise Resolver
-`resolveExercise(name, muscle_group?, equipment?, rep_type?, exercise_type?)`: exact name → alias → ILIKE → auto-create.
-`findExercise(name)`: same chain but returns null instead of auto-creating.
+`resolveExercise(name, muscle_group?, equipment?, rep_type?, exercise_type?, client?)`: exact name → alias → ILIKE → auto-create. Accepts optional `PoolClient` for transaction support.
+`findExercise(name, client?)`: same chain but returns null instead of auto-creating.
 
 ### PR Detection
-`checkPRs()` in stats-calculator.ts. Only for `exercise_type = 'strength'`. Upserts `personal_records` + appends to `pr_history`. Checks: max_weight, max_reps_at_{weight}, estimated_1rm (Epley: `weight × (1 + reps/30)`).
+`checkPRs()` in stats-calculator.ts. Only for `exercise_type = 'strength'`. Accepts optional `PoolClient` for transaction support. Upserts `personal_records` + appends to `pr_history`. Checks: max_weight, max_reps_at_{weight}, estimated_1rm (Epley: `weight × (1 + reps/30)`).
+
+### Transactions
+`log_exercise` (single and bulk) and `manage_templates` "start" action wrap their operations in `BEGIN`/`COMMIT` using `pool.connect()`. The `PoolClient` is passed through to `resolveExercise()` and `checkPRs()` for atomicity.
 
 ### Testing Pattern
 Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture `toolHandler` from `server.tool()` mock, call handler directly with params. Pool queries mocked via `mockQuery` / `mockClientQuery` (for transactions).
@@ -129,3 +132,4 @@ Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture
 
 - Better error messages in Spanish
 - Tests for `body-measurements.ts` and `export.ts`
+- Rate limiting persistence (currently in-memory, resets on deploy)
