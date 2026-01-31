@@ -26,7 +26,7 @@ $$;
 -- 3. Add trigram index on exercise names for fuzzy search (if pg_trgm was enabled)
 DO $$
 BEGIN
-  CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_exercises_name_trgm ON exercises USING gin (name gin_trgm_ops);
+  CREATE INDEX IF NOT EXISTS idx_exercises_name_trgm ON exercises USING gin (name gin_trgm_ops);
 EXCEPTION
   WHEN others THEN
     RAISE NOTICE 'Could not create trigram index, skipping';
@@ -35,7 +35,7 @@ $$;
 
 DO $$
 BEGIN
-  CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_exercise_aliases_trgm ON exercise_aliases USING gin (alias gin_trgm_ops);
+  CREATE INDEX IF NOT EXISTS idx_exercise_aliases_trgm ON exercise_aliases USING gin (alias gin_trgm_ops);
 EXCEPTION
   WHEN others THEN
     RAISE NOTICE 'Could not create trigram alias index, skipping';

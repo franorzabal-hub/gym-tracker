@@ -42,11 +42,16 @@ router.get("/.well-known/oauth-authorization-server", (_req, res) => {
 router.post("/register", async (req, res) => {
   const { client_name, redirect_uris, grant_types, response_types, token_endpoint_auth_method } = req.body;
 
+  if (!redirect_uris || !Array.isArray(redirect_uris) || redirect_uris.length === 0) {
+    res.status(400).json({ error: "invalid_client_metadata", error_description: "redirect_uris must be a non-empty array" });
+    return;
+  }
+
   const clientId = `client_${crypto.randomBytes(16).toString("hex")}`;
 
   await pool.query(
     "INSERT INTO dynamic_clients (client_id, redirect_uris) VALUES ($1, $2)",
-    [clientId, redirect_uris || []]
+    [clientId, redirect_uris]
   );
 
   res.status(201).json({
@@ -69,7 +74,7 @@ router.get("/authorize", async (req, res) => {
   }
 
   const uri = redirect_uri as string;
-  const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(uri);
+  const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(uri);
 
   // Validate redirect_uri against registered client
   if (client_id && typeof client_id === "string") {
@@ -77,8 +82,8 @@ router.get("/authorize", async (req, res) => {
       "SELECT redirect_uris FROM dynamic_clients WHERE client_id = $1",
       [client_id]
     );
-    if (rows.length > 0 && rows[0].redirect_uris.length > 0) {
-      if (!rows[0].redirect_uris.includes(uri)) {
+    if (rows.length > 0) {
+      if (rows[0].redirect_uris.length === 0 || !rows[0].redirect_uris.includes(uri)) {
         res.status(400).json({ error: "invalid_request", error_description: "redirect_uri not registered for this client" });
         return;
       }

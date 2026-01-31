@@ -59,15 +59,15 @@ describe("get_stats tool", () => {
       })
       .mockResolvedValueOnce({
         rows: [
-          { date: "2024-01-01", max_weight: 80, reps_at_max: 8 },
-          { date: "2024-01-08", max_weight: 85, reps_at_max: 8 },
           { date: "2024-01-15", max_weight: 90, reps_at_max: 6 },
+          { date: "2024-01-08", max_weight: 85, reps_at_max: 8 },
+          { date: "2024-01-01", max_weight: 80, reps_at_max: 8 },
         ],
       })
       .mockResolvedValueOnce({
         rows: [
-          { week: "2024-01-01", total_volume_kg: "3200" },
           { week: "2024-01-08", total_volume_kg: "3600" },
+          { week: "2024-01-01", total_volume_kg: "3200" },
         ],
       })
       .mockResolvedValueOnce({

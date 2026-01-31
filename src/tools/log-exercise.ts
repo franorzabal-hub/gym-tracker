@@ -62,12 +62,12 @@ async function logSingleExercise(sessionId: number, entry: ExerciseEntry) {
       updateValues.push(notes);
       paramIdx++;
     }
-    if (rest_seconds) {
+    if (rest_seconds != null) {
       updates.push(`rest_seconds = COALESCE(rest_seconds, $${paramIdx})`);
       updateValues.push(rest_seconds);
       paramIdx++;
     }
-    if (superset_group) {
+    if (superset_group != null) {
       updates.push(`superset_group = COALESCE(superset_group, $${paramIdx})`);
       updateValues.push(superset_group);
       paramIdx++;
@@ -86,7 +86,7 @@ async function logSingleExercise(sessionId: number, entry: ExerciseEntry) {
       `INSERT INTO session_exercises (session_id, exercise_id, sort_order, notes, rest_seconds, superset_group)
        VALUES ($1, $2, COALESCE((SELECT MAX(sort_order) + 1 FROM session_exercises WHERE session_id = $1), 0), $3, $4, $5)
        RETURNING id`,
-      [sessionId, resolved.id, notes || null, rest_seconds || null, superset_group || null]
+      [sessionId, resolved.id, notes || null, rest_seconds ?? null, superset_group ?? null]
     );
     se = newSe;
     startSetNumber = 0;

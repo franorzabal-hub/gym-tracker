@@ -22,7 +22,6 @@ import { registerExportTool } from "./src/tools/export.js";
 import oauthRoutes from "./src/auth/oauth-routes.js";
 import { authenticateToken, AuthError } from "./src/auth/middleware.js";
 import { runWithUser } from "./src/context/user-context.js";
-import pool from "./src/db/connection.js";
 
 function getAllowedOrigins(): string[] {
   if (process.env.ALLOWED_ORIGINS) {

@@ -186,12 +186,12 @@ async function getExerciseStats(
      WHERE s.user_id = $1 AND se.exercise_id = $2 AND st.set_type = 'working' AND st.weight IS NOT NULL AND s.deleted_at IS NULL
        ${setsDateFilter}
      GROUP BY DATE(s.started_at), se.id
-     ORDER BY date
+     ORDER BY date DESC
      ${limitClause}`,
     progressionParams
   );
 
-  const progressionData = progression.map((row) => ({
+  const progressionData = progression.reverse().map((row) => ({
     date: row.date,
     weight: row.max_weight,
     reps: row.reps_at_max,
@@ -210,7 +210,7 @@ async function getExerciseStats(
      WHERE s.user_id = $1 AND se.exercise_id = $2 AND st.set_type = 'working' AND st.weight IS NOT NULL AND s.deleted_at IS NULL
        ${setsDateFilter}
      GROUP BY week
-     ORDER BY week
+     ORDER BY week DESC
      ${limitClause}`,
     progressionParams
   );
@@ -243,7 +243,7 @@ async function getExerciseStats(
     exercise: resolved.name,
     personal_records: prMap,
     progression: progressionData,
-    volume_trend: volumeTrend.map((v) => ({
+    volume_trend: [...volumeTrend].reverse().map((v) => ({
       week: v.week,
       total_volume_kg: Math.round(Number(v.total_volume_kg)),
     })),

@@ -60,14 +60,14 @@ Examples:
       if (scope === "all" || scope === "sessions") {
         const { rows } = await pool.query(
           `SELECT s.id as session_id, s.started_at, s.ended_at, s.tags,
-            se.exercise_order, e.name as exercise_name, e.muscle_group,
+            se.sort_order, e.name as exercise_name, e.muscle_group,
             st.set_number, st.reps, st.weight, st.rpe, st.set_type, st.notes
            FROM sessions s
            JOIN session_exercises se ON se.session_id = s.id
            JOIN exercises e ON e.id = se.exercise_id
            JOIN sets st ON st.session_exercise_id = se.id
            WHERE s.user_id = $1 AND s.deleted_at IS NULL ${dateFilter}
-           ORDER BY s.started_at DESC, se.exercise_order, st.set_number`,
+           ORDER BY s.started_at DESC, se.sort_order, st.set_number`,
           [userId]
         );
         data.sessions = rows;
@@ -140,7 +140,7 @@ Examples:
       const csvParts: string[] = [];
 
       if (data.sessions && data.sessions.length > 0) {
-        const headers = ["session_id", "started_at", "ended_at", "tags", "exercise_order", "exercise_name", "muscle_group", "set_number", "reps", "weight", "rpe", "set_type", "notes"];
+        const headers = ["session_id", "started_at", "ended_at", "tags", "sort_order", "exercise_name", "muscle_group", "set_number", "reps", "weight", "rpe", "set_type", "notes"];
         const sessionRows = data.sessions.map((r: any) => ({
           ...r,
           tags: r.tags ? r.tags.join(";") : "",
