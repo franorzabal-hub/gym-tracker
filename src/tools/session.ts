@@ -231,10 +231,17 @@ Returns the session info and the exercises planned for that day (if any).
         };
       }
 
+      // If session was backdated, set ended_at relative to started_at instead of NOW()
+      const sessionStarted = new Date(active.rows[0].started_at);
+      const isBackdated = (Date.now() - sessionStarted.getTime()) > 24 * 60 * 60 * 1000;
+      const endedAt = isBackdated
+        ? new Date(sessionStarted.getTime() + 60 * 60 * 1000)
+        : new Date();
+
       await pool.query(
-        `UPDATE sessions SET ended_at = NOW(), notes = COALESCE($2, notes)
+        `UPDATE sessions SET ended_at = $2, notes = COALESCE($3, notes)
          WHERE id = $1`,
-        [sessionId, notes || null]
+        [sessionId, endedAt, notes || null]
       );
 
       const { rows: [summary] } = await pool.query(
