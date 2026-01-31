@@ -40,7 +40,9 @@ export async function getProgramDaysWithExercises(versionId: number) {
            'sort_order', pde.sort_order,
            'superset_group', pde.superset_group,
            'notes', pde.notes,
-           'rest_seconds', pde.rest_seconds
+           'rest_seconds', pde.rest_seconds,
+           'rep_type', e.rep_type,
+           'exercise_type', e.exercise_type
          ) ORDER BY pde.sort_order
        ) FILTER (WHERE pde.id IS NOT NULL), '[]') as exercises
      FROM program_days pd

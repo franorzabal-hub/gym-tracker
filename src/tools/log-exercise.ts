@@ -21,15 +21,17 @@ const exerciseEntrySchema = z.object({
   equipment: z.string().optional(),
   set_notes: z.union([z.string(), z.array(z.string())]).optional(),
   drop_percent: z.number().min(1).max(50).optional(),
+  rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
+  exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
 });
 
 type ExerciseEntry = z.infer<typeof exerciseEntrySchema>;
 
 async function logSingleExercise(sessionId: number, entry: ExerciseEntry) {
-  const { exercise, sets, reps, weight, rpe, set_type, notes, rest_seconds, superset_group, muscle_group, equipment, set_notes, drop_percent } = entry;
+  const { exercise, sets, reps, weight, rpe, set_type, notes, rest_seconds, superset_group, muscle_group, equipment, set_notes, drop_percent, rep_type, exercise_type } = entry;
 
   // Resolve exercise (pass metadata for auto-create or fill)
-  const resolved = await resolveExercise(exercise, muscle_group, equipment);
+  const resolved = await resolveExercise(exercise, muscle_group, equipment, rep_type, exercise_type);
 
   // Check if session_exercise already exists for this exercise in this session
   const { rows: existingRows } = await pool.query(
@@ -143,7 +145,8 @@ async function logSingleExercise(sessionId: number, entry: ExerciseEntry) {
       reps: s.reps,
       weight: s.weight ?? null,
       set_id: s.set_id,
-    }))
+    })),
+    resolved.exerciseType
   );
 
   return {
@@ -199,6 +202,8 @@ Returns the logged sets and any new personal records achieved.`,
       equipment: z.string().optional(),
       set_notes: z.union([z.string(), z.array(z.string())]).optional(),
       drop_percent: z.number().min(1).max(50).optional(),
+      rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
+      exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
       exercises: z.array(exerciseEntrySchema).optional(),
     },
     async (params) => {
@@ -264,6 +269,8 @@ Returns the logged sets and any new personal records achieved.`,
         equipment: params.equipment,
         set_notes: params.set_notes,
         drop_percent: params.drop_percent,
+        rep_type: params.rep_type,
+        exercise_type: params.exercise_type,
       });
 
       return {

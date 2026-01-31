@@ -23,8 +23,14 @@ export interface PRCheck {
 
 export async function checkPRs(
   exerciseId: number,
-  newSets: Array<{ reps: number; weight?: number | null; set_id: number }>
+  newSets: Array<{ reps: number; weight?: number | null; set_id: number }>,
+  exerciseType?: string
 ): Promise<PRCheck[]> {
+  // Skip PR tracking for non-strength exercises
+  if (exerciseType && exerciseType !== 'strength') {
+    return [];
+  }
+
   const userId = getUserId();
 
   // Pre-load all current PRs in one query

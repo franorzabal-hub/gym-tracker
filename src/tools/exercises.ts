@@ -9,26 +9,40 @@ export function registerExercisesTool(server: McpServer) {
     `Manage the exercise library. Actions:
 - "list": List all exercises, optionally filtered by muscle_group
 - "search": Search exercises by name/alias (fuzzy)
-- "add": Add a new exercise with optional muscle_group, equipment, and aliases
-- "update": Update muscle_group and/or equipment of an existing exercise by name
-- "delete": Delete an exercise. Use hard_delete=true for permanent removal (cascade deletes aliases, sets NULL on personal_records). Without hard_delete, returns an error (exercises have no soft delete).`,
+- "add": Add a new exercise with optional muscle_group, equipment, aliases, rep_type, exercise_type
+- "add_bulk": Add multiple exercises at once. Pass an "exercises" array with {name, muscle_group?, equipment?, aliases?, rep_type?, exercise_type?}. Returns created/existing/failed counts.
+- "update": Update muscle_group, equipment, rep_type, and/or exercise_type of an existing exercise by name
+- "delete": Delete an exercise. Use hard_delete=true for permanent removal (cascade deletes aliases, sets NULL on personal_records). Without hard_delete, returns an error (exercises have no soft delete).
+
+rep_type: "reps" (default), "seconds", "meters", "calories" - how the exercise is measured
+exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category of exercise (PRs only tracked for strength)`,
     {
-      action: z.enum(["list", "add", "search", "update", "delete"]),
+      action: z.enum(["list", "add", "search", "update", "delete", "add_bulk"]),
       name: z.string().optional(),
       muscle_group: z.string().optional(),
       equipment: z.string().optional(),
       aliases: z.array(z.string()).optional(),
       hard_delete: z.boolean().optional(),
+      rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
+      exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
+      exercises: z.array(z.object({
+        name: z.string(),
+        muscle_group: z.string().optional(),
+        equipment: z.string().optional(),
+        aliases: z.array(z.string()).optional(),
+        rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
+        exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
+      })).optional(),
     },
-    async ({ action, name, muscle_group, equipment, aliases, hard_delete }) => {
+    async ({ action, name, muscle_group, equipment, aliases, hard_delete, rep_type, exercise_type, exercises }) => {
       if (action === "list" || action === "search") {
-        const exercises = await searchExercises(
+        const results = await searchExercises(
           action === "search" ? name : undefined,
           muscle_group
         );
         return {
           content: [
-            { type: "text" as const, text: JSON.stringify({ exercises }) },
+            { type: "text" as const, text: JSON.stringify({ exercises: results }) },
           ],
         };
       }
@@ -50,15 +64,23 @@ export function registerExercisesTool(server: McpServer) {
           params.push(equipment);
           updates.push(`equipment = $${params.length}`);
         }
+        if (rep_type) {
+          params.push(rep_type);
+          updates.push(`rep_type = $${params.length}`);
+        }
+        if (exercise_type) {
+          params.push(exercise_type);
+          updates.push(`exercise_type = $${params.length}`);
+        }
         if (updates.length === 0) {
           return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Provide muscle_group and/or equipment to update" }) }],
+            content: [{ type: "text" as const, text: JSON.stringify({ error: "Provide at least one field to update (muscle_group, equipment, rep_type, exercise_type)" }) }],
             isError: true,
           };
         }
         params.push(name);
         const { rows } = await pool.query(
-          `UPDATE exercises SET ${updates.join(", ")} WHERE LOWER(name) = LOWER($${params.length}) RETURNING id, name, muscle_group, equipment`,
+          `UPDATE exercises SET ${updates.join(", ")} WHERE LOWER(name) = LOWER($${params.length}) RETURNING id, name, muscle_group, equipment, rep_type, exercise_type`,
           params
         );
         if (rows.length === 0) {
@@ -117,6 +139,63 @@ export function registerExercisesTool(server: McpServer) {
         };
       }
 
+      if (action === "add_bulk") {
+        if (!exercises || exercises.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: "exercises array required for add_bulk" }) }],
+            isError: true,
+          };
+        }
+
+        const created: string[] = [];
+        const existing: string[] = [];
+        const failed: Array<{ name: string; error: string }> = [];
+
+        for (const ex of exercises) {
+          try {
+            const resolved = await resolveExercise(
+              ex.name,
+              ex.muscle_group,
+              ex.equipment,
+              ex.rep_type,
+              ex.exercise_type
+            );
+
+            if (resolved.isNew) {
+              created.push(resolved.name);
+            } else {
+              existing.push(resolved.name);
+            }
+
+            // Insert aliases if provided
+            if (ex.aliases && ex.aliases.length > 0) {
+              for (const alias of ex.aliases) {
+                await pool
+                  .query(
+                    "INSERT INTO exercise_aliases (exercise_id, alias) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    [resolved.id, alias.toLowerCase().trim()]
+                  )
+                  .catch(() => {});
+              }
+            }
+          } catch (err: any) {
+            failed.push({ name: ex.name, error: err.message || "Unknown error" });
+          }
+        }
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              created,
+              existing,
+              failed: failed.length > 0 ? failed : undefined,
+              total: exercises.length,
+            }),
+          }],
+        };
+      }
+
       // add
       if (!name) {
         return {
@@ -125,7 +204,7 @@ export function registerExercisesTool(server: McpServer) {
         };
       }
 
-      const resolved = await resolveExercise(name, muscle_group, equipment);
+      const resolved = await resolveExercise(name, muscle_group, equipment, rep_type, exercise_type);
 
       if (aliases && aliases.length > 0) {
         for (const alias of aliases) {

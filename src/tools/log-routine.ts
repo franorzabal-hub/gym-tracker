@@ -91,7 +91,7 @@ Parameters:
 
       // Get exercises for this day
       const { rows: dayExercises } = await pool.query(
-        `SELECT pde.*, e.name as exercise_name, e.id as exercise_id
+        `SELECT pde.*, e.name as exercise_name, e.id as exercise_id, e.exercise_type
          FROM program_day_exercises pde
          JOIN exercises e ON e.id = pde.exercise_id
          WHERE pde.day_id = $1 ORDER BY pde.sort_order`,
@@ -167,7 +167,8 @@ Parameters:
             reps,
             weight: weight ?? null,
             set_id: id,
-          }))
+          })),
+          dex.exercise_type
         );
         if (prs.length > 0) allPRs.push({ exercise: dex.exercise_name, prs });
 

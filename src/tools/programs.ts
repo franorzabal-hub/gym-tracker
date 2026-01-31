@@ -174,6 +174,9 @@ For "activate", pass the program name.`,
             [prog.id]
           );
 
+          const createdExercises = new Set<string>();
+          const existingExercises = new Set<string>();
+
           for (let i = 0; i < days.length; i++) {
             const day = days[i];
             const {
@@ -187,6 +190,13 @@ For "activate", pass the program name.`,
             for (let j = 0; j < day.exercises.length; j++) {
               const ex = day.exercises[j];
               const resolved = await resolveExercise(ex.exercise);
+
+              if (resolved.isNew) {
+                createdExercises.add(resolved.name);
+              } else {
+                existingExercises.add(resolved.name);
+              }
+
               await client.query(
                 `INSERT INTO program_day_exercises
                    (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, rest_seconds, notes)
@@ -216,6 +226,11 @@ For "activate", pass the program name.`,
                 text: JSON.stringify({
                   program: { id: prog.id, name, version: 1 },
                   days_created: days.length,
+                  exercises_summary: {
+                    created: Array.from(createdExercises),
+                    existing: Array.from(existingExercises),
+                    total: createdExercises.size + existingExercises.size,
+                  },
                 }),
               },
             ],
@@ -279,6 +294,9 @@ For "activate", pass the program name.`,
             [program.id, newVersionNumber, change_description || null]
           );
 
+          const createdExercises = new Set<string>();
+          const existingExercises = new Set<string>();
+
           for (let i = 0; i < days.length; i++) {
             const day = days[i];
             const {
@@ -292,6 +310,13 @@ For "activate", pass the program name.`,
             for (let j = 0; j < day.exercises.length; j++) {
               const ex = day.exercises[j];
               const resolved = await resolveExercise(ex.exercise);
+
+              if (resolved.isNew) {
+                createdExercises.add(resolved.name);
+              } else {
+                existingExercises.add(resolved.name);
+              }
+
               await client.query(
                 `INSERT INTO program_day_exercises
                    (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, rest_seconds, notes)
@@ -321,6 +346,11 @@ For "activate", pass the program name.`,
                 text: JSON.stringify({
                   program: { name: name || program.name, version: newVersionNumber },
                   change_description,
+                  exercises_summary: {
+                    created: Array.from(createdExercises),
+                    existing: Array.from(existingExercises),
+                    total: createdExercises.size + existingExercises.size,
+                  },
                 }),
               },
             ],

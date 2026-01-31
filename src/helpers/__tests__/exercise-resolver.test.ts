@@ -22,14 +22,14 @@ describe("resolveExercise", () => {
 
   it("resolves by exact name match", async () => {
     mockQuery.mockResolvedValueOnce({
-      rows: [{ id: 1, name: "Bench Press", muscle_group: "chest", equipment: "barbell" }],
+      rows: [{ id: 1, name: "Bench Press", muscle_group: "chest", equipment: "barbell", rep_type: "reps", exercise_type: "strength" }],
     });
 
     const result = await resolveExercise("Bench Press");
 
-    expect(result).toEqual({ id: 1, name: "Bench Press", isNew: false });
+    expect(result).toEqual({ id: 1, name: "Bench Press", isNew: false, exerciseType: "strength" });
     expect(mockQuery).toHaveBeenCalledWith(
-      "SELECT id, name, muscle_group, equipment FROM exercises WHERE LOWER(name) = $1",
+      "SELECT id, name, muscle_group, equipment, rep_type, exercise_type FROM exercises WHERE LOWER(name) = $1",
       ["bench press"]
     );
   });
@@ -38,12 +38,12 @@ describe("resolveExercise", () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [] }) // exact name miss
       .mockResolvedValueOnce({
-        rows: [{ id: 2, name: "Bench Press" }],
+        rows: [{ id: 2, name: "Bench Press", muscle_group: "chest", equipment: "barbell", rep_type: "reps", exercise_type: "strength" }],
       }); // alias match
 
     const result = await resolveExercise("press banca");
 
-    expect(result).toEqual({ id: 2, name: "Bench Press", isNew: false });
+    expect(result).toEqual({ id: 2, name: "Bench Press", isNew: false, exerciseType: "strength" });
   });
 
   it("resolves by partial match (ILIKE)", async () => {
@@ -51,12 +51,12 @@ describe("resolveExercise", () => {
       .mockResolvedValueOnce({ rows: [] }) // exact miss
       .mockResolvedValueOnce({ rows: [] }) // alias miss
       .mockResolvedValueOnce({
-        rows: [{ id: 3, name: "Incline Bench Press" }],
+        rows: [{ id: 3, name: "Incline Bench Press", muscle_group: "chest", equipment: "barbell", rep_type: "reps", exercise_type: "strength" }],
       }); // partial match
 
     const result = await resolveExercise("incline bench");
 
-    expect(result).toEqual({ id: 3, name: "Incline Bench Press", isNew: false });
+    expect(result).toEqual({ id: 3, name: "Incline Bench Press", isNew: false, exerciseType: "strength" });
   });
 
   it("auto-creates exercise when no match found", async () => {
@@ -65,15 +65,15 @@ describe("resolveExercise", () => {
       .mockResolvedValueOnce({ rows: [] }) // alias miss
       .mockResolvedValueOnce({ rows: [] }) // partial miss
       .mockResolvedValueOnce({
-        rows: [{ id: 99, name: "Dragon Flag" }],
+        rows: [{ id: 99, name: "Dragon Flag", exercise_type: "strength" }],
       }); // INSERT
 
     const result = await resolveExercise("Dragon Flag");
 
-    expect(result).toEqual({ id: 99, name: "Dragon Flag", isNew: true });
+    expect(result).toEqual({ id: 99, name: "Dragon Flag", isNew: true, exerciseType: "strength" });
     expect(mockQuery).toHaveBeenCalledWith(
       expect.stringContaining("INSERT INTO exercises"),
-      ["Dragon Flag", null, null]
+      ["Dragon Flag", null, null, "reps", "strength"]
     );
   });
 
@@ -83,20 +83,20 @@ describe("resolveExercise", () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({
-        rows: [{ id: 100, name: "Cable Fly" }],
+        rows: [{ id: 100, name: "Cable Fly", exercise_type: "strength" }],
       });
 
     await resolveExercise("Cable Fly", "chest", "cable");
 
     expect(mockQuery).toHaveBeenLastCalledWith(
       expect.stringContaining("INSERT INTO exercises"),
-      ["Cable Fly", "chest", "cable"]
+      ["Cable Fly", "chest", "cable", "reps", "strength"]
     );
   });
 
   it("trims and lowercases input for matching", async () => {
     mockQuery.mockResolvedValueOnce({
-      rows: [{ id: 1, name: "Squat" }],
+      rows: [{ id: 1, name: "Squat", muscle_group: "legs", equipment: "barbell", rep_type: "reps", exercise_type: "strength" }],
     });
 
     await resolveExercise("  Squat  ");
