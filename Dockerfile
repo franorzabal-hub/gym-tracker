@@ -18,6 +18,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
+COPY src/db/migrations ./dist/src/db/migrations
 
 EXPOSE 3001
 ENV PORT=3001
