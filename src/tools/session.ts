@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import {
@@ -11,7 +12,7 @@ import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerSessionTools(server: McpServer) {
-  server.registerTool(
+  registerAppTool(server,
     "start_session",
     {
       title: "Start Session",
@@ -170,7 +171,7 @@ Returns the session info and the exercises planned for that day (if any).
     }
   );
 
-  server.registerTool(
+  registerAppTool(server,
     "end_session",
     {
       title: "End Session",
@@ -402,7 +403,7 @@ Optionally add or update tags on the session.`,
     }
   );
 
-  server.registerTool(
+  registerAppTool(server,
     "get_active_session",
     {
       title: "Get Active Session",

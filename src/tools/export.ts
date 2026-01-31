@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
@@ -23,7 +24,7 @@ function toCsv(headers: string[], rows: Record<string, any>[]): string {
 }
 
 export function registerExportTool(server: McpServer) {
-  server.registerTool(
+  registerAppTool(server,
     "export_data",
     {
       title: "Export Data",

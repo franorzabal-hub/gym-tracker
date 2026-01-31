@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { resolveExercise } from "../helpers/exercise-resolver.js";
@@ -30,7 +31,7 @@ const daySchema = z.object({
 });
 
 export function registerProgramTool(server: McpServer) {
-  server.registerTool("manage_program", {
+  registerAppTool(server, "manage_program", {
     title: "Manage Program",
     description: `Manage workout programs (routines). A program is a weekly routine like PPL, Upper/Lower, Full Body.
 Each program has versioned days with exercises. When updated, a new version is created preserving history.

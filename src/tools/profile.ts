@@ -1,11 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerProfileTool(server: McpServer) {
-  server.registerTool(
+  registerAppTool(server,
     "manage_profile",
     {
       title: "Manage Profile",

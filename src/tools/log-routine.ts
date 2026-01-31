@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { resolveExercise } from "../helpers/exercise-resolver.js";
@@ -12,7 +13,7 @@ import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js
 import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerLogRoutineTool(server: McpServer) {
-  server.registerTool("log_routine", {
+  registerAppTool(server, "log_routine", {
     title: "Log Routine",
     description: `Log an entire routine day at once. This is for when the user says something like "hice la rutina de hoy" or "completed today's workout".
 Infers the program day from the active program + today's weekday, or uses the provided program_day label.

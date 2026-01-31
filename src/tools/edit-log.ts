@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { findExercise } from "../helpers/exercise-resolver.js";
@@ -8,7 +9,7 @@ import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerEditLogTool(server: McpServer) {
-  server.registerTool(
+  registerAppTool(server,
     "edit_log",
     {
       title: "Edit Log",

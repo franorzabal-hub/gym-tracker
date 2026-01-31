@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import { PoolClient } from "pg";
 import pool from "../db/connection.js";
@@ -167,7 +168,7 @@ async function logSingleExercise(sessionId: number, entry: ExerciseEntry, client
 }
 
 export function registerLogExerciseTool(server: McpServer) {
-  server.registerTool("log_exercise", {
+  registerAppTool(server, "log_exercise", {
     title: "Log Exercise",
     description: `Log sets of an exercise to the current workout session.
 The user might say things like "hice peso muerto 100kg 5x5" or "did 3 sets of pull-ups: 10, 8, 6".

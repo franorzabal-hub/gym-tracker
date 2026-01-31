@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
@@ -6,7 +7,7 @@ import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerTemplatesTool(server: McpServer) {
-  server.registerTool(
+  registerAppTool(server,
     "manage_templates",
     {
       title: "Manage Templates",

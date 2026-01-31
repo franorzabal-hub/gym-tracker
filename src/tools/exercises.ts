@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { resolveExercise, searchExercises } from "../helpers/exercise-resolver.js";
@@ -7,7 +8,7 @@ import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js
 import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerExercisesTool(server: McpServer) {
-  server.registerTool(
+  registerAppTool(server,
     "manage_exercises",
     {
       title: "Manage Exercises",
