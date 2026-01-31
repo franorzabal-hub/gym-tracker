@@ -120,15 +120,8 @@ describe("manage_exercises tool", () => {
   });
 
   describe("delete_bulk action", () => {
-    it("rejects without hard_delete", async () => {
-      const result = await toolHandler({ action: "delete_bulk", names: ["Bench Press"] });
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain("hard_delete=true");
-    });
-
     it("rejects without names array", async () => {
-      const result = await toolHandler({ action: "delete_bulk", hard_delete: true });
+      const result = await toolHandler({ action: "delete_bulk" });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("names array required");
@@ -142,7 +135,7 @@ describe("manage_exercises tool", () => {
 
       const result = await toolHandler({
         action: "delete_bulk",
-        hard_delete: true,
+
         names: ["Bench Press", "NonExistent", "Squat"],
       });
 
@@ -156,7 +149,7 @@ describe("manage_exercises tool", () => {
 
       const result = await toolHandler({
         action: "delete_bulk",
-        hard_delete: true,
+
         names: JSON.stringify(["Bench Press"]),
       });
 

@@ -12,8 +12,8 @@ export function registerExercisesTool(server: McpServer) {
 - "add": Add a new exercise with optional muscle_group, equipment, aliases, rep_type, exercise_type
 - "add_bulk": Add multiple exercises at once. Pass an "exercises" array with {name, muscle_group?, equipment?, aliases?, rep_type?, exercise_type?}. Returns created/existing/failed counts.
 - "update": Update muscle_group, equipment, rep_type, and/or exercise_type of an existing exercise by name
-- "delete": Delete an exercise. Use hard_delete=true for permanent removal (cascade deletes aliases, sets NULL on personal_records). Without hard_delete, returns an error (exercises have no soft delete).
-- "delete_bulk": Delete multiple exercises at once. Pass "names" array (string[]) and hard_delete=true. Returns { deleted, not_found, failed }.
+- "delete": Permanently delete an exercise (cascade deletes aliases, sets NULL on personal_records). The LLM should confirm with the user before calling.
+- "delete_bulk": Delete multiple exercises at once. Pass "names" array (string[]). Returns { deleted, not_found, failed }. The LLM should confirm with the user before calling.
 - "update_bulk": Update multiple exercises at once. Pass "exercises" array with [{name, muscle_group?, equipment?, rep_type?, exercise_type?}]. Returns { updated, not_found, failed }.
 
 rep_type: "reps" (default), "seconds", "meters", "calories" - how the exercise is measured
@@ -24,7 +24,6 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
       muscle_group: z.string().optional(),
       equipment: z.string().optional(),
       aliases: z.array(z.string()).optional(),
-      hard_delete: z.boolean().optional(),
       rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
       exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
       names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of exercise names for delete_bulk"),
@@ -40,7 +39,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
         z.string(),
       ]).optional(),
     },
-    async ({ action, name, muscle_group, equipment, aliases, hard_delete, rep_type, exercise_type, names: rawNames, exercises }) => {
+    async ({ action, name, muscle_group, equipment, aliases, rep_type, exercise_type, names: rawNames, exercises }) => {
       if (action === "list" || action === "search") {
         const results = await searchExercises(
           action === "search" ? name : undefined,
@@ -107,12 +106,6 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
             isError: true,
           };
         }
-        if (!hard_delete) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Exercises can only be hard-deleted. Set hard_delete=true to permanently remove this exercise." }) }],
-            isError: true,
-          };
-        }
         // Check for references in session_exercises
         const refs = await pool.query(
           `SELECT COUNT(*) as count FROM session_exercises se
@@ -146,12 +139,6 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
       }
 
       if (action === "delete_bulk") {
-        if (!hard_delete) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "hard_delete=true is required for delete_bulk (exercises have no soft delete)" }) }],
-            isError: true,
-          };
-        }
         let namesList = rawNames as any;
         if (typeof namesList === 'string') {
           try { namesList = JSON.parse(namesList); } catch { namesList = null; }
