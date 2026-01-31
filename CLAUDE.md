@@ -21,7 +21,7 @@ Always run `npm test` before committing. TypeScript must compile cleanly (`tsc -
 
 ## Stack
 
-Node.js + TypeScript, Express, `@modelcontextprotocol/sdk` (StreamableHTTP), PostgreSQL via `pg`, Zod, Vitest, WorkOS OAuth 2.1, JOSE, AsyncLocalStorage.
+Node.js + TypeScript, Express, CORS, `@modelcontextprotocol/sdk` (StreamableHTTP), PostgreSQL via `pg`, Zod, Vitest, WorkOS OAuth 2.1, JOSE, AsyncLocalStorage.
 
 ## Project Structure
 
@@ -29,9 +29,9 @@ Node.js + TypeScript, Express, `@modelcontextprotocol/sdk` (StreamableHTTP), Pos
 server.ts                    # Express + MCP server + auth middleware
 src/auth/                    # middleware.ts, oauth-routes.ts, workos.ts
 src/context/user-context.ts  # AsyncLocalStorage: getUserId() / runWithUser()
-src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-009
-src/tools/                   # 11 files → 13 MCP tools
-src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts
+src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-012
+src/tools/                   # 13 files → 15 MCP tools
+src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts, date-helpers.ts
 src/tools/__tests__/         # Vitest tests (1 per tool file)
 ```
 
@@ -47,18 +47,23 @@ src/tools/__tests__/         # Vitest tests (1 per tool file)
 ```
 users (id, external_id UNIQUE, email, created_at, last_login)
 user_profile (user_id FK UNIQUE, data JSONB)
-exercises (name UNIQUE, muscle_group, equipment, rep_type, exercise_type)
+exercises (user_id FK nullable, name, muscle_group, equipment, rep_type, exercise_type, description)
+  → UNIQUE on (COALESCE(user_id, 0), LOWER(name)) — global (user_id NULL) + per-user
 exercise_aliases (exercise_id FK, alias UNIQUE)
 programs (user_id FK, name, is_active) → program_versions → program_days → program_day_exercises
 sessions (user_id FK, started_at, ended_at, tags TEXT[], deleted_at) → session_exercises → sets
 personal_records (user_id FK, exercise_id FK, record_type) UNIQUE per user+exercise+type
 pr_history (user_id FK, exercise_id FK, record_type, value, achieved_at)
 session_templates (user_id FK, name UNIQUE per user) → session_template_exercises
+body_measurements (user_id FK, measurement_type, value NUMERIC, measured_at, notes)
+auth_tokens (token PK, workos_user_id, email, expires_at)
+auth_codes (code PK, workos_user_id, email, expires_at, code_challenge, code_challenge_method)
+dynamic_clients (client_id PK, redirect_uris TEXT[])
 ```
 
-Key: per-set rows, program versioning, soft delete on sessions, GIN index on tags, `rep_type` (reps/seconds/meters/calories), `exercise_type` (strength/mobility/cardio/warmup — PRs only for strength).
+Key: per-set rows, program versioning, soft delete on sessions, GIN index on tags, `rep_type` (reps/seconds/meters/calories), `exercise_type` (strength/mobility/cardio/warmup — PRs only for strength). Auth tokens/codes persisted in Postgres with TTL cleanup every 15 min.
 
-## MCP Tools (13)
+## MCP Tools (15)
 
 | Tool | Actions / Params |
 |---|---|
@@ -75,6 +80,8 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 | `get_stats` | single (`exercise`) or multi (`exercises[]`), period — PRs, progression, volume, frequency |
 | `edit_log` | update/delete sets, bulk[], delete_session, restore_session, delete_sessions[] |
 | `manage_templates` | save, list, start, delete, delete_bulk |
+| `manage_body_measurements` | log, history, latest — temporal tracking (weight_kg, body_fat_pct, chest_cm, etc.) |
+| `export_data` | json or csv — scopes: all, sessions, exercises, programs, measurements, prs; period filter |
 
 ## Code Patterns
 
@@ -101,7 +108,7 @@ All tools return `{ content: [{ type: "text", text: JSON.stringify({...}) }] }`.
 ### Testing Pattern
 Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture `toolHandler` from `server.tool()` mock, call handler directly with params. Pool queries mocked via `mockQuery` / `mockClientQuery` (for transactions).
 
-## Migrations (001-009)
+## Migrations (001-012)
 
 | # | Description |
 |---|---|
@@ -114,9 +121,11 @@ Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture
 | 007 | FK ON DELETE SET NULL for sessions → program_versions/days |
 | 008 | `pr_history` table, `deleted_at` on sessions, `tags TEXT[]` (GIN) |
 | 009 | `rep_type` + `exercise_type` on exercises with CHECK constraints |
+| 010 | Exercise tenancy: `user_id` FK on exercises, global + per-user unique index |
+| 011 | Auth persistence: `auth_tokens`, `auth_codes`, `dynamic_clients` tables (replace in-memory stores) |
+| 012 | `body_measurements` table, `pg_trgm` extension + trigram indexes, `description` column on exercises |
 
 ## Pending (Phase 3)
 
 - Better error messages in Spanish
-- CSV export
-- `pg_trgm` extension for fuzzy matching
+- Tests for `body-measurements.ts` and `export.ts`
