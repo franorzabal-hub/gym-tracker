@@ -6,6 +6,7 @@ import { resolveExercise } from "../helpers/exercise-resolver.js";
 import { checkPRs } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam } from "../helpers/parse-helpers.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 const exerciseEntrySchema = z.object({
   exercise: z.string(),
@@ -166,9 +167,9 @@ async function logSingleExercise(sessionId: number, entry: ExerciseEntry, client
 }
 
 export function registerLogExerciseTool(server: McpServer) {
-  server.tool(
-    "log_exercise",
-    `Log sets of an exercise to the current workout session.
+  server.registerTool("log_exercise", {
+    title: "Log Exercise",
+    description: `Log sets of an exercise to the current workout session.
 The user might say things like "hice peso muerto 100kg 5x5" or "did 3 sets of pull-ups: 10, 8, 6".
 If no session is active, one will be created automatically.
 If the exercise doesn't exist, it will be created automatically.
@@ -192,7 +193,7 @@ Bulk mode:
 - exercises: array of exercise entries (each with the same fields as above). Logs multiple exercises in one call.
 
 Returns the logged sets and any new personal records achieved.`,
-    {
+    inputSchema: {
       exercise: z.string().optional(),
       sets: z.number().int().min(1).default(1),
       reps: z.union([z.number().int().min(1), z.array(z.number().int().min(1))]).optional(),
@@ -213,7 +214,14 @@ Returns the logged sets and any new personal records achieved.`,
       exercises: z.union([z.array(exerciseEntrySchema), z.string()]).optional(),
       minimal_response: z.boolean().optional().describe("If true, return only success status and new PRs, without echoing back all logged data"),
     },
-    async (params) => {
+    annotations: { readOnlyHint: false },
+    _meta: {
+      ui: { resourceUri: "ui://gym-tracker/session.html" },
+      "openai/outputTemplate": "ui://gym-tracker/session.html",
+      "openai/toolInvocation/invoking": "Logging exercise…",
+      "openai/toolInvocation/invoked": "Exercise logged",
+    },
+  }, async (params) => {
       const userId = getUserId();
 
       // Get or create active session
@@ -243,31 +251,17 @@ Returns the logged sets and any new personal records achieved.`,
 
           if (params.minimal_response) {
             const allPRs = results.flatMap(r => r.new_prs || []);
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: JSON.stringify({
+            return toolResponse({
                     success: true,
                     exercises_logged: results.length,
                     new_prs: allPRs.length > 0 ? allPRs : undefined,
-                  }),
-                },
-              ],
-            };
+                  });
           }
 
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
+          return toolResponse({
                   session_id: sessionId,
                   exercises_logged: results,
-                }),
-              },
-            ],
-          };
+                });
         } catch (err) {
           await client.query("ROLLBACK");
           throw err;
@@ -278,16 +272,10 @@ Returns the logged sets and any new personal records achieved.`,
 
       // Single mode
       if (!params.exercise) {
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ error: "Provide 'exercise' (single mode) or 'exercises' (bulk mode)" }) }],
-          isError: true,
-        };
+        return toolResponse({ error: "Provide 'exercise' (single mode) or 'exercises' (bulk mode)" }, true);
       }
       if (!params.reps) {
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ error: "Reps required" }) }],
-          isError: true,
-        };
+        return toolResponse({ error: "Reps required" }, true);
       }
 
       const client = await pool.connect();
@@ -313,31 +301,17 @@ Returns the logged sets and any new personal records achieved.`,
         await client.query("COMMIT");
 
         if (params.minimal_response) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
+          return toolResponse({
                   success: true,
                   exercises_logged: 1,
                   new_prs: result.new_prs || undefined,
-                }),
-              },
-            ],
-          };
+                });
         }
 
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
+        return toolResponse({
                 ...result,
                 session_id: sessionId,
-              }),
-            },
-          ],
-        };
+              });
       } catch (err) {
         await client.query("ROLLBACK");
         throw err;

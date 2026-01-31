@@ -18,6 +18,7 @@ import { registerTemplatesTool } from "./src/tools/templates.js";
 import { registerTodayPlanTool } from "./src/tools/today-plan.js";
 import { registerBodyMeasurementsTool } from "./src/tools/body-measurements.js";
 import { registerExportTool } from "./src/tools/export.js";
+import { registerWidgetResources } from "./src/resources/register-widgets.js";
 
 import oauthRoutes from "./src/auth/oauth-routes.js";
 import { authenticateToken, AuthError } from "./src/auth/middleware.js";
@@ -67,6 +68,7 @@ function createConfiguredServer(): McpServer {
   registerTodayPlanTool(server);
   registerBodyMeasurementsTool(server);
   registerExportTool(server);
+  registerWidgetResources(server);
 
   return server;
 }

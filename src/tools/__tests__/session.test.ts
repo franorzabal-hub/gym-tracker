@@ -36,7 +36,7 @@ describe("session tools", () => {
     mockInferTodayDay.mockReset();
 
     const server = {
-      tool: vi.fn((_name: string, _desc: string, _schema: any, handler: Function) => {
+      registerTool: vi.fn((_name: string, _config: any, handler: Function) => {
         if (_name === "start_session") startHandler = handler;
         if (_name === "end_session") endHandler = handler;
         if (_name === "get_active_session") getActiveHandler = handler;

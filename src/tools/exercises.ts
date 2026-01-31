@@ -4,11 +4,14 @@ import pool from "../db/connection.js";
 import { resolveExercise, searchExercises } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerExercisesTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "manage_exercises",
-    `Manage the exercise library. Actions:
+    {
+      title: "Manage Exercises",
+      description: `Use this when you need to manage the exercise library. Actions:
 - "list": List all exercises, optionally filtered by muscle_group. Supports pagination with limit/offset. Returns { exercises, total }.
 - "search": Search exercises by name/alias (fuzzy)
 - "add": Add a new exercise with optional muscle_group, equipment, aliases, rep_type, exercise_type
@@ -24,42 +27,46 @@ export function registerExercisesTool(server: McpServer) {
 
 rep_type: "reps" (default), "seconds", "meters", "calories" - how the exercise is measured
 exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category of exercise (PRs only tracked for strength)`,
-    {
-      action: z.enum(["list", "add", "search", "update", "delete", "add_bulk", "delete_bulk", "update_bulk", "list_aliases", "add_alias", "remove_alias", "merge"]),
-      name: z.string().optional(),
-      muscle_group: z.string().optional(),
-      equipment: z.string().optional(),
-      aliases: z.array(z.string()).optional(),
-      rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
-      exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
-      names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of exercise names for delete_bulk"),
-      exercises: z.union([
-        z.array(z.object({
-          name: z.string(),
-          muscle_group: z.string().optional(),
-          equipment: z.string().optional(),
-          aliases: z.array(z.string()).optional(),
-          rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
-          exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
-        })),
-        z.string(),
-      ]).optional(),
-      limit: z.number().int().optional().describe("Max exercises to return. Defaults to 100"),
-      offset: z.number().int().optional().describe("Skip first N exercises for pagination. Defaults to 0"),
-      alias: z.string().optional().describe("Alias name for add_alias/remove_alias actions"),
-      source: z.string().optional().describe("Source exercise name for merge action"),
-      target: z.string().optional().describe("Target exercise name for merge action"),
+      inputSchema: {
+        action: z.enum(["list", "add", "search", "update", "delete", "add_bulk", "delete_bulk", "update_bulk", "list_aliases", "add_alias", "remove_alias", "merge"]),
+        name: z.string().optional(),
+        muscle_group: z.string().optional(),
+        equipment: z.string().optional(),
+        aliases: z.array(z.string()).optional(),
+        rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
+        exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
+        names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of exercise names for delete_bulk"),
+        exercises: z.union([
+          z.array(z.object({
+            name: z.string(),
+            muscle_group: z.string().optional(),
+            equipment: z.string().optional(),
+            aliases: z.array(z.string()).optional(),
+            rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
+            exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
+          })),
+          z.string(),
+        ]).optional(),
+        limit: z.number().int().optional().describe("Max exercises to return. Defaults to 100"),
+        offset: z.number().int().optional().describe("Skip first N exercises for pagination. Defaults to 0"),
+        alias: z.string().optional().describe("Alias name for add_alias/remove_alias actions"),
+        source: z.string().optional().describe("Source exercise name for merge action"),
+        target: z.string().optional().describe("Target exercise name for merge action"),
+      },
+      annotations: {},
+      _meta: {
+        ui: { resourceUri: "ui://gym-tracker/exercises.html" },
+        "openai/outputTemplate": "ui://gym-tracker/exercises.html",
+        "openai/toolInvocation/invoking": "Managing exercises\u2026",
+        "openai/toolInvocation/invoked": "Done",
+      },
     },
     async ({ action, name, muscle_group, equipment, aliases, rep_type, exercise_type, names: rawNames, exercises, limit, offset, alias, source, target }) => {
       const userId = getUserId();
 
       if (action === "search") {
         const results = await searchExercises(name, muscle_group);
-        return {
-          content: [
-            { type: "text" as const, text: JSON.stringify({ exercises: results }) },
-          ],
-        };
+        return toolResponse({ exercises: results });
       }
 
       if (action === "list") {
@@ -101,19 +108,12 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           params
         );
 
-        return {
-          content: [
-            { type: "text" as const, text: JSON.stringify({ exercises: results, total }) },
-          ],
-        };
+        return toolResponse({ exercises: results, total });
       }
 
       if (action === "update") {
         if (!name) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Name required" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Name required" }, true);
         }
         const updates: string[] = [];
         const params: any[] = [];
@@ -134,10 +134,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           updates.push(`exercise_type = $${params.length}`);
         }
         if (updates.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Provide at least one field to update (muscle_group, equipment, rep_type, exercise_type)" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Provide at least one field to update (muscle_group, equipment, rep_type, exercise_type)" }, true);
         }
 
         // Check if exercise is global (use separate params to avoid unreferenced $N)
@@ -146,16 +143,10 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           [name, userId]
         );
         if (checkGlobal.rows.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: `Exercise "${name}" not found` }) }],
-            isError: true,
-          };
+          return toolResponse({ error: `Exercise "${name}" not found` }, true);
         }
         if (checkGlobal.rows[0].user_id === null) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Exercise is global and cannot be modified" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Exercise is global and cannot be modified" }, true);
         }
 
         // Update only user-owned
@@ -166,22 +157,14 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           params
         );
         if (rows.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: `Exercise "${name}" not found` }) }],
-            isError: true,
-          };
+          return toolResponse({ error: `Exercise "${name}" not found` }, true);
         }
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ updated: rows[0] }) }],
-        };
+        return toolResponse({ updated: rows[0] });
       }
 
       if (action === "delete") {
         if (!name) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Name required" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Name required" }, true);
         }
 
         // Check if exercise is global
@@ -190,16 +173,10 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           [name, userId]
         );
         if (checkGlobal.rows.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: `Exercise "${name}" not found` }) }],
-            isError: true,
-          };
+          return toolResponse({ error: `Exercise "${name}" not found` }, true);
         }
         if (checkGlobal.rows[0].user_id === null) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Exercise is global and cannot be deleted" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Exercise is global and cannot be deleted" }, true);
         }
 
         // Check for references in session_exercises
@@ -216,31 +193,20 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           [name, userId]
         );
         if (rows.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: `Exercise "${name}" not found` }) }],
-            isError: true,
-          };
+          return toolResponse({ error: `Exercise "${name}" not found` }, true);
         }
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              deleted: rows[0],
-              warning: refCount > 0
-                ? `This exercise was referenced in ${refCount} session log(s). Aliases were cascade-deleted and personal_records set to NULL.`
-                : "Exercise and aliases permanently deleted.",
-            }),
-          }],
-        };
+        return toolResponse({
+          deleted: rows[0],
+          warning: refCount > 0
+            ? `This exercise was referenced in ${refCount} session log(s). Aliases were cascade-deleted and personal_records set to NULL.`
+            : "Exercise and aliases permanently deleted.",
+        });
       }
 
       if (action === "delete_bulk") {
         const namesList = parseJsonArrayParam<string>(rawNames);
         if (!namesList || !Array.isArray(namesList) || namesList.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "names array required for delete_bulk" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "names array required for delete_bulk" }, true);
         }
 
         const deleted: string[] = [];
@@ -277,25 +243,17 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           }
         }
 
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              deleted,
-              not_found: not_found.length > 0 ? not_found : undefined,
-              failed: failed.length > 0 ? failed : undefined,
-            }),
-          }],
-        };
+        return toolResponse({
+          deleted,
+          not_found: not_found.length > 0 ? not_found : undefined,
+          failed: failed.length > 0 ? failed : undefined,
+        });
       }
 
       if (action === "update_bulk") {
         const exercisesList = parseJsonParam<any[]>(exercises);
         if (!exercisesList || !Array.isArray(exercisesList) || exercisesList.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "exercises array required for update_bulk" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "exercises array required for update_bulk" }, true);
         }
 
         const updated: string[] = [];
@@ -346,26 +304,18 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           }
         }
 
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              updated,
-              not_found: not_found.length > 0 ? not_found : undefined,
-              failed: failed.length > 0 ? failed : undefined,
-            }),
-          }],
-        };
+        return toolResponse({
+          updated,
+          not_found: not_found.length > 0 ? not_found : undefined,
+          failed: failed.length > 0 ? failed : undefined,
+        });
       }
 
       if (action === "add_bulk") {
         // Some MCP clients serialize nested arrays as JSON strings
         const exercisesList = parseJsonParam<any[]>(exercises);
         if (!exercisesList || !Array.isArray(exercisesList) || exercisesList.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "exercises array required for add_bulk" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "exercises array required for add_bulk" }, true);
         }
 
         const created: string[] = [];
@@ -404,25 +354,17 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           }
         }
 
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              created,
-              existing,
-              failed: failed.length > 0 ? failed : undefined,
-              total: exercisesList.length,
-            }),
-          }],
-        };
+        return toolResponse({
+          created,
+          existing,
+          failed: failed.length > 0 ? failed : undefined,
+          total: exercisesList.length,
+        });
       }
 
       if (action === "list_aliases") {
         if (!name) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Name required" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Name required" }, true);
         }
         const { rows } = await pool.query(
           `SELECT ea.alias FROM exercise_aliases ea
@@ -430,17 +372,12 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
            WHERE LOWER(e.name) = LOWER($1) AND (e.user_id IS NULL OR e.user_id = $2)`,
           [name, userId]
         );
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ exercise: name, aliases: rows.map((r: any) => r.alias) }) }],
-        };
+        return toolResponse({ exercise: name, aliases: rows.map((r: any) => r.alias) });
       }
 
       if (action === "add_alias") {
         if (!name || !alias) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Name and alias required" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Name and alias required" }, true);
         }
         try {
           const { rowCount } = await pool.query(
@@ -450,20 +387,12 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
             [name, alias.toLowerCase().trim(), userId]
           );
           if (!rowCount || rowCount === 0) {
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify({ error: `Exercise "${name}" not found` }) }],
-              isError: true,
-            };
+            return toolResponse({ error: `Exercise "${name}" not found` }, true);
           }
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ added_alias: alias.toLowerCase().trim(), exercise: name }) }],
-          };
+          return toolResponse({ added_alias: alias.toLowerCase().trim(), exercise: name });
         } catch (err: any) {
           if (err.code === "23505") {
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify({ error: `Alias "${alias}" already exists` }) }],
-              isError: true,
-            };
+            return toolResponse({ error: `Alias "${alias}" already exists` }, true);
           }
           throw err;
         }
@@ -471,10 +400,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
 
       if (action === "remove_alias") {
         if (!name || !alias) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Name and alias required" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Name and alias required" }, true);
         }
         const { rowCount } = await pool.query(
           `DELETE FROM exercise_aliases ea
@@ -484,22 +410,14 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           [name, alias, userId]
         );
         if (!rowCount || rowCount === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: `Alias "${alias}" not found for exercise "${name}"` }) }],
-            isError: true,
-          };
+          return toolResponse({ error: `Alias "${alias}" not found for exercise "${name}"` }, true);
         }
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ removed_alias: alias, exercise: name }) }],
-        };
+        return toolResponse({ removed_alias: alias, exercise: name });
       }
 
       if (action === "merge") {
         if (!source || !target) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Source and target exercise names required" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Source and target exercise names required" }, true);
         }
 
         const client = await pool.connect();
@@ -513,19 +431,13 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           );
           if (sourceResult.rows.length === 0) {
             await client.query("ROLLBACK");
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify({ error: `Source exercise "${source}" not found` }) }],
-              isError: true,
-            };
+            return toolResponse({ error: `Source exercise "${source}" not found` }, true);
           }
           const sourceEx = sourceResult.rows[0];
 
           if (sourceEx.user_id === null) {
             await client.query("ROLLBACK");
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify({ error: "Cannot merge a global exercise as source. Only user-owned exercises can be merged." }) }],
-              isError: true,
-            };
+            return toolResponse({ error: "Cannot merge a global exercise as source. Only user-owned exercises can be merged." }, true);
           }
 
           // Find target exercise
@@ -535,19 +447,13 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           );
           if (targetResult.rows.length === 0) {
             await client.query("ROLLBACK");
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify({ error: `Target exercise "${target}" not found` }) }],
-              isError: true,
-            };
+            return toolResponse({ error: `Target exercise "${target}" not found` }, true);
           }
           const targetEx = targetResult.rows[0];
 
           if (sourceEx.id === targetEx.id) {
             await client.query("ROLLBACK");
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify({ error: "Source and target are the same exercise" }) }],
-              isError: true,
-            };
+            return toolResponse({ error: "Source and target are the same exercise" }, true);
           }
 
           // 1. Move session_exercises (only for sessions owned by this user)
@@ -619,20 +525,15 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
 
           await client.query("COMMIT");
 
-          return {
-            content: [{
-              type: "text" as const,
-              text: JSON.stringify({
-                merged: {
-                  source: sourceEx.name,
-                  target: targetEx.name,
-                  session_exercises_moved: sessionExercisesMoved,
-                  personal_records_moved: prMoved,
-                  pr_history_moved: prHistoryMoved,
-                },
-              }),
-            }],
-          };
+          return toolResponse({
+            merged: {
+              source: sourceEx.name,
+              target: targetEx.name,
+              session_exercises_moved: sessionExercisesMoved,
+              personal_records_moved: prMoved,
+              pr_history_moved: prHistoryMoved,
+            },
+          });
         } catch (err) {
           await client.query("ROLLBACK");
           throw err;
@@ -643,10 +544,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
 
       // add
       if (!name) {
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ error: "Name required" }) }],
-          isError: true,
-        };
+        return toolResponse({ error: "Name required" }, true);
       }
 
       const resolved = await resolveExercise(name, muscle_group, equipment, rep_type, exercise_type);
@@ -662,17 +560,10 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
         }
       }
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              exercise: { id: resolved.id, name: resolved.name },
-              is_new: resolved.isNew,
-            }),
-          },
-        ],
-      };
+      return toolResponse({
+        exercise: { id: resolved.id, name: resolved.name },
+        is_new: resolved.isNew,
+      });
     }
   );
 }

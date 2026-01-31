@@ -6,11 +6,14 @@ import { estimateE1RM } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerStatsTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "get_stats",
-    `Get detailed statistics for one or more exercises. Shows personal records, progression over time, volume trends, and training frequency.
+    {
+      title: "Get Stats",
+      description: `Get detailed statistics for one or more exercises. Shows personal records, progression over time, volume trends, and training frequency.
 
 Single mode: pass "exercise" (string) for one exercise.
 Multi mode: pass "exercises" (string[]) for multiple exercises at once. Returns an array of stats.
@@ -20,7 +23,7 @@ Examples:
 - "stats de press banca del último mes" → exercise: "press banca", period: "month"
 - "¿cuánto levanto en peso muerto?" → exercise: "peso muerto"
 - "stats de press banca, sentadilla y peso muerto" → exercises: ["press banca", "sentadilla", "peso muerto"]`,
-    {
+      inputSchema: {
       exercise: z.string().optional(),
       exercises: z.union([z.array(z.string()), z.string()]).optional().describe("Array of exercise names for multi-exercise stats"),
       period: z
@@ -30,6 +33,14 @@ Examples:
       summary_only: z.boolean().optional().describe("If true, return only PRs and frequency without progression/volume data"),
       max_data_points: z.number().int().optional().describe("Max progression/volume data points to return. Defaults to 50"),
       by_muscle_group: z.boolean().optional().describe("If true, return volume breakdown by muscle group"),
+    },
+      annotations: { readOnlyHint: true },
+      _meta: {
+        ui: { resourceUri: "ui://gym-tracker/stats.html" },
+        "openai/outputTemplate": "ui://gym-tracker/stats.html",
+        "openai/toolInvocation/invoking": "Calculating stats…",
+        "openai/toolInvocation/invoked": "Stats ready",
+      },
     },
     async ({ exercise, exercises: rawExercises, period, summary_only, max_data_points, by_muscle_group }) => {
       const userId = getUserId();
@@ -45,10 +56,7 @@ Examples:
       } else if (exercise) {
         exerciseNames.push(exercise);
       } else {
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ error: "Provide 'exercise' (single) or 'exercises' (multi) parameter" }) }],
-          isError: true,
-        };
+        return toolResponse({ error: "Provide 'exercise' (single) or 'exercises' (multi) parameter" }, true);
       }
 
       const userDate = await getUserCurrentDate();
@@ -68,27 +76,20 @@ Examples:
       if (exerciseNames.length === 1) {
         const single = results[0];
         if (single.error) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify(single) }],
-            isError: true,
-          };
+          return toolResponse(single, true);
         }
         const response: any = { ...single };
         if (muscleGroupVolume) {
           response.muscle_group_volume = muscleGroupVolume;
         }
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(response) }],
-        };
+        return toolResponse(response);
       }
 
       const response: any = { stats: results };
       if (muscleGroupVolume) {
         response.muscle_group_volume = muscleGroupVolume;
       }
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(response) }],
-      };
+      return toolResponse(response);
     }
   );
 }

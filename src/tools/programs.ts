@@ -10,6 +10,7 @@ import {
 } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 const dayExerciseSchema = z.object({
   exercise: z.string(),
@@ -29,9 +30,9 @@ const daySchema = z.object({
 });
 
 export function registerProgramTool(server: McpServer) {
-  server.tool(
-    "manage_program",
-    `Manage workout programs (routines). A program is a weekly routine like PPL, Upper/Lower, Full Body.
+  server.registerTool("manage_program", {
+    title: "Manage Program",
+    description: `Manage workout programs (routines). A program is a weekly routine like PPL, Upper/Lower, Full Body.
 Each program has versioned days with exercises. When updated, a new version is created preserving history.
 
 Actions:
@@ -48,7 +49,7 @@ For "create" and "update" with days, pass the "days" array with day_label, weekd
 For "update" with days, also pass change_description explaining what changed.
 For "update" metadata only, pass new_name and/or description (no days needed).
 For "activate", pass the program name.`,
-    {
+    inputSchema: {
       action: z.enum(["list", "get", "create", "update", "activate", "delete", "delete_bulk", "history"]),
       name: z.string().optional(),
       new_name: z.string().optional().describe("New name for the program (update metadata only)"),
@@ -59,7 +60,14 @@ For "activate", pass the program name.`,
       names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of program names for delete_bulk"),
       include_exercises: z.boolean().optional().describe("If true, include exercise details for each day. Defaults to true"),
     },
-    async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames, include_exercises }) => {
+    annotations: { readOnlyHint: false },
+    _meta: {
+      ui: { resourceUri: "ui://gym-tracker/programs.html" },
+      "openai/outputTemplate": "ui://gym-tracker/programs.html",
+      "openai/toolInvocation/invoking": "Managing program…",
+      "openai/toolInvocation/invoked": "Done",
+    },
+  }, async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames, include_exercises }) => {
       const userId = getUserId();
 
       // Some MCP clients serialize nested arrays as JSON strings
@@ -77,17 +85,10 @@ For "activate", pass the program name.`,
           [userId]
         );
         const active = rows.find((r) => r.is_active);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
+        return toolResponse({
                 active_program: active ? active.name : null,
                 programs: rows,
-              }),
-            },
-          ],
-        };
+              });
       }
 
       if (action === "get") {
@@ -104,31 +105,21 @@ For "activate", pass the program name.`,
           : await getActiveProgram();
 
         if (!program) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Program not found" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Program not found" }, true);
         }
 
         const shouldIncludeExercises = include_exercises !== false;
 
         if (shouldIncludeExercises) {
           const days = await getProgramDaysWithExercises(program.version_id);
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
+          return toolResponse({
                   program: {
                     name: program.name,
                     description: program.description,
                     version: program.version_number,
                     days,
                   },
-                }),
-              },
-            ],
-          };
+                });
         } else {
           // Return days without exercises
           const { rows: days } = await pool.query(
@@ -138,35 +129,20 @@ For "activate", pass the program name.`,
              ORDER BY pd.sort_order`,
             [program.version_id]
           );
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
+          return toolResponse({
                   program: {
                     name: program.name,
                     description: program.description,
                     version: program.version_number,
                   },
                   days,
-                }),
-              },
-            ],
-          };
+                });
         }
       }
 
       if (action === "create") {
         if (!name || !days || days.length === 0) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({ error: "Name and days are required" }),
-              },
-            ],
-            isError: true,
-          };
+          return toolResponse({ error: "Name and days are required" }, true);
         }
 
         // Check if program name already exists for this user
@@ -175,17 +151,9 @@ For "activate", pass the program name.`,
           [userId, name]
         );
         if (existing.rows.length > 0) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
+          return toolResponse({
                   error: `Program "${name}" already exists. Use action "update" to modify it, or "delete" first to recreate.`,
-                }),
-              },
-            ],
-            isError: true,
-          };
+                }, true);
         }
 
         const client = await pool.connect();
@@ -256,11 +224,7 @@ For "activate", pass the program name.`,
 
           await client.query("COMMIT");
 
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
+          return toolResponse({
                   program: { id: prog.id, name, version: 1 },
                   days_created: days.length,
                   exercises_summary: {
@@ -268,10 +232,7 @@ For "activate", pass the program name.`,
                     existing: Array.from(existingExercises),
                     total: createdExercises.size + existingExercises.size,
                   },
-                }),
-              },
-            ],
-          };
+                });
         } catch (err) {
           await client.query("ROLLBACK");
           throw err;
@@ -291,10 +252,7 @@ For "activate", pass the program name.`,
           : await getActiveProgram();
 
         if (!program) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Program not found" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Program not found" }, true);
         }
 
         // Metadata-only update (no days = no new version)
@@ -310,10 +268,7 @@ For "activate", pass the program name.`,
             updates.push(`description = $${params.length}`);
           }
           if (updates.length === 0) {
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify({ error: "Provide days array for versioned update, or new_name/description for metadata update" }) }],
-              isError: true,
-            };
+            return toolResponse({ error: "Provide days array for versioned update, or new_name/description for metadata update" }, true);
           }
           params.push(program.id);
           params.push(userId);
@@ -321,17 +276,12 @@ For "activate", pass the program name.`,
             `UPDATE programs SET ${updates.join(", ")} WHERE id = $${params.length - 1} AND user_id = $${params.length} RETURNING id, name, description`,
             params
           );
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ updated: rows[0] }) }],
-          };
+          return toolResponse({ updated: rows[0] });
         }
 
         const latestVersion = await getLatestVersion(program.id);
         if (!latestVersion) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "No version found" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "No version found" }, true);
         }
 
         const newVersionNumber = latestVersion.version_number + 1;
@@ -393,11 +343,7 @@ For "activate", pass the program name.`,
 
           await client.query("COMMIT");
 
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
+          return toolResponse({
                   program: { name: name || program.name, version: newVersionNumber },
                   change_description,
                   exercises_summary: {
@@ -405,10 +351,7 @@ For "activate", pass the program name.`,
                     existing: Array.from(existingExercises),
                     total: createdExercises.size + existingExercises.size,
                   },
-                }),
-              },
-            ],
-          };
+                });
         } catch (err) {
           await client.query("ROLLBACK");
           throw err;
@@ -419,41 +362,25 @@ For "activate", pass the program name.`,
 
       if (action === "activate") {
         if (!name) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Name required" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Name required" }, true);
         }
         const prog = await pool.query(
           "SELECT id, name FROM programs WHERE user_id = $1 AND LOWER(name) = LOWER($2)",
           [userId, name]
         );
         if (prog.rows.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: `Program "${name}" not found` }) }],
-            isError: true,
-          };
+          return toolResponse({ error: `Program "${name}" not found` }, true);
         }
         await pool.query("UPDATE programs SET is_active = (id = $2) WHERE user_id = $1", [userId, prog.rows[0].id]);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
+        return toolResponse({
                 activated: prog.rows[0].name,
                 message: `"${prog.rows[0].name}" is now the active program. All other programs deactivated.`,
-              }),
-            },
-          ],
-        };
+              });
       }
 
       if (action === "delete") {
         if (!name) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Name required" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Name required" }, true);
         }
 
         if (hard_delete) {
@@ -462,22 +389,12 @@ For "activate", pass the program name.`,
             [userId, name]
           );
           if (del.rows.length === 0) {
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify({ error: `Program "${name}" not found` }) }],
-              isError: true,
-            };
+            return toolResponse({ error: `Program "${name}" not found` }, true);
           }
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
+          return toolResponse({
                   deleted: del.rows[0].name,
                   message: `"${del.rows[0].name}" has been permanently deleted with all versions, days, and exercise assignments. This is irreversible.`,
-                }),
-              },
-            ],
-          };
+                });
         }
 
         const del = await pool.query(
@@ -485,31 +402,18 @@ For "activate", pass the program name.`,
           [userId, name]
         );
         if (del.rows.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: `Program "${name}" not found` }) }],
-            isError: true,
-          };
+          return toolResponse({ error: `Program "${name}" not found` }, true);
         }
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
+        return toolResponse({
                 deactivated: del.rows[0].name,
                 message: `"${del.rows[0].name}" has been deactivated. Use "activate" to reactivate it, or use hard_delete=true to permanently remove.`,
-              }),
-            },
-          ],
-        };
+              });
       }
 
       if (action === "delete_bulk") {
         const namesList = parseJsonArrayParam<string>(rawNames);
         if (!namesList || !Array.isArray(namesList) || namesList.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "names array required for delete_bulk" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "names array required for delete_bulk" }, true);
         }
 
         const deleted: string[] = [];
@@ -539,15 +443,10 @@ For "activate", pass the program name.`,
           }
         }
 
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
+        return toolResponse({
               [hard_delete ? "deleted" : "deactivated"]: deleted,
               not_found: not_found.length > 0 ? not_found : undefined,
-            }),
-          }],
-        };
+            });
       }
 
       if (action === "history") {
@@ -561,10 +460,7 @@ For "activate", pass the program name.`,
           : await getActiveProgram();
 
         if (!program) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Program not found" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Program not found" }, true);
         }
 
         const { rows: versions } = await pool.query(
@@ -573,25 +469,13 @@ For "activate", pass the program name.`,
           [program.id]
         );
 
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
+        return toolResponse({
                 program: program.name,
                 versions,
-              }),
-            },
-          ],
-        };
+              });
       }
 
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify({ error: "Unknown action" }) },
-        ],
-        isError: true,
-      };
+      return toolResponse({ error: "Unknown action" }, true);
     }
   );
 }

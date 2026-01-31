@@ -3,11 +3,14 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerBodyMeasurementsTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "manage_body_measurements",
-    `Track body measurements over time. Use action "log" to record a measurement, "history" to see trends for a specific type, "latest" to get the most recent value of each type.
+    {
+      title: "Body Measurements",
+      description: `Track body measurements over time. Use action "log" to record a measurement, "history" to see trends for a specific type, "latest" to get the most recent value of each type.
 
 Common types: weight_kg, body_fat_pct, chest_cm, waist_cm, arm_cm, thigh_cm — or any custom type.
 
@@ -15,30 +18,32 @@ Examples:
 - "peso 82kg" → log, measurement_type: "weight_kg", value: 82
 - "historial de peso" → history, measurement_type: "weight_kg"
 - "mis medidas actuales" → latest`,
-    {
-      action: z.enum(["log", "history", "latest"]),
-      measurement_type: z.string().optional().describe("Type: weight_kg, body_fat_pct, chest_cm, waist_cm, arm_cm, thigh_cm, or any custom type"),
-      value: z.number().optional().describe("Measurement value for log action"),
-      measured_at: z.string().optional().describe("ISO date for measurement. Defaults to now"),
-      notes: z.string().optional().describe("Optional notes for log action"),
-      period: z.enum(["month", "3months", "6months", "year", "all"]).optional().describe("Time period for history action. Defaults to 3months"),
-      limit: z.number().int().optional().describe("Max data points for history. Defaults to 50"),
+      inputSchema: {
+        action: z.enum(["log", "history", "latest"]),
+        measurement_type: z.string().optional().describe("Type: weight_kg, body_fat_pct, chest_cm, waist_cm, arm_cm, thigh_cm, or any custom type"),
+        value: z.number().optional().describe("Measurement value for log action"),
+        measured_at: z.string().optional().describe("ISO date for measurement. Defaults to now"),
+        notes: z.string().optional().describe("Optional notes for log action"),
+        period: z.enum(["month", "3months", "6months", "year", "all"]).optional().describe("Time period for history action. Defaults to 3months"),
+        limit: z.number().int().optional().describe("Max data points for history. Defaults to 50"),
+      },
+      annotations: {},
+      _meta: {
+        ui: { resourceUri: "ui://gym-tracker/measurements.html" },
+        "openai/outputTemplate": "ui://gym-tracker/measurements.html",
+        "openai/toolInvocation/invoking": "Managing measurements\u2026",
+        "openai/toolInvocation/invoked": "Done",
+      },
     },
     async ({ action, measurement_type, value, measured_at, notes, period, limit }) => {
       const userId = getUserId();
 
       if (action === "log") {
         if (!measurement_type) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "measurement_type is required for log action" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "measurement_type is required for log action" }, true);
         }
         if (value === undefined || value === null) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "value is required for log action" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "value is required for log action" }, true);
         }
 
         const measuredAtDate = measured_at ? new Date(measured_at + 'T00:00:00') : new Date();
@@ -69,17 +74,12 @@ Examples:
           };
         }
 
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result) }],
-        };
+        return toolResponse(result);
       }
 
       if (action === "history") {
         if (!measurement_type) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "measurement_type is required for history action" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "measurement_type is required for history action" }, true);
         }
 
         const effectivePeriod = period || "3months";
@@ -132,9 +132,7 @@ Examples:
           stats = { min, max, average: avg, change, data_points: rows.length };
         }
 
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ measurement_type, period: effectivePeriod, stats, history: rows }) }],
-        };
+        return toolResponse({ measurement_type, period: effectivePeriod, stats, history: rows });
       }
 
       // latest
@@ -147,9 +145,7 @@ Examples:
           [userId, measurement_type]
         );
 
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ latest: rows[0] || null }) }],
-        };
+        return toolResponse({ latest: rows[0] || null });
       }
 
       const { rows } = await pool.query(
@@ -159,9 +155,7 @@ Examples:
         [userId]
       );
 
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify({ latest: rows }) }],
-      };
+      return toolResponse({ latest: rows });
     }
   );
 }

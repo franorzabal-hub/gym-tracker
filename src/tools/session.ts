@@ -8,21 +8,32 @@ import {
 } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerSessionTools(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "start_session",
-    `Start a new workout session. Optionally specify a program_day label (e.g. "Push", "Pull", "Legs").
+    {
+      title: "Start Session",
+      description: `Use this when you need to start a new workout session. Optionally specify a program_day label (e.g. "Push", "Pull", "Legs").
 If not specified, it will infer from the active program + today's weekday.
 Returns the session info and the exercises planned for that day (if any).
 
 - date: optional ISO date string (e.g. "2025-01-28") to backdate the session. Useful for logging past workouts.`,
-    {
-      program_day: z.string().optional(),
-      notes: z.string().optional(),
-      date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session start time. Defaults to now."),
-      tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to label this session (e.g. ['deload', 'morning', 'outdoor'])"),
-      include_last_workout: z.boolean().optional().describe("If true, include last workout comparison. Defaults to true"),
+      inputSchema: {
+        program_day: z.string().optional(),
+        notes: z.string().optional(),
+        date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session start time. Defaults to now."),
+        tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to label this session (e.g. ['deload', 'morning', 'outdoor'])"),
+        include_last_workout: z.boolean().optional().describe("If true, include last workout comparison. Defaults to true"),
+      },
+      annotations: {},
+      _meta: {
+        ui: { resourceUri: "ui://gym-tracker/session.html" },
+        "openai/outputTemplate": "ui://gym-tracker/session.html",
+        "openai/toolInvocation/invoking": "Starting session\u2026",
+        "openai/toolInvocation/invoked": "Session started",
+      },
     },
     async ({ program_day, notes, date, tags: rawTags, include_last_workout }) => {
       const tags = parseJsonArrayParam<string>(rawTags);
@@ -34,19 +45,11 @@ Returns the session info and the exercises planned for that day (if any).
         [userId]
       );
       if (active.rows.length > 0) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error: "There is already an active session",
-                session_id: active.rows[0].id,
-                started_at: active.rows[0].started_at,
-              }),
-            },
-          ],
-          isError: true,
-        };
+        return toolResponse({
+          error: "There is already an active session",
+          session_id: active.rows[0].id,
+          started_at: active.rows[0].started_at,
+        }, true);
       }
 
       let programVersionId: number | null = null;
@@ -163,22 +166,30 @@ Returns the session info and the exercises planned for that day (if any).
         }
       }
 
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result) }],
-      };
+      return toolResponse(result);
     }
   );
 
-  server.tool(
+  server.registerTool(
     "end_session",
-    `End the current active workout session. Returns a summary with duration, exercises count, total sets, and total volume.
-Optionally add or update tags on the session.`,
     {
-      notes: z.string().optional(),
-      force: z.boolean().optional().default(false),
-      tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to set on this session (replaces existing tags)"),
-      summary_only: z.boolean().optional().describe("If true, return only summary totals without per-exercise set details"),
-      include_comparison: z.boolean().optional().describe("If true, include comparison with previous session. Defaults to true"),
+      title: "End Session",
+      description: `Use this when you need to end the current active workout session. Returns a summary with duration, exercises count, total sets, and total volume.
+Optionally add or update tags on the session.`,
+      inputSchema: {
+        notes: z.string().optional(),
+        force: z.boolean().optional().default(false),
+        tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to set on this session (replaces existing tags)"),
+        summary_only: z.boolean().optional().describe("If true, return only summary totals without per-exercise set details"),
+        include_comparison: z.boolean().optional().describe("If true, include comparison with previous session. Defaults to true"),
+      },
+      annotations: {},
+      _meta: {
+        ui: { resourceUri: "ui://gym-tracker/session.html" },
+        "openai/outputTemplate": "ui://gym-tracker/session.html",
+        "openai/toolInvocation/invoking": "Ending session\u2026",
+        "openai/toolInvocation/invoked": "Session ended",
+      },
     },
     async ({ notes, force, tags: rawTags, summary_only, include_comparison }) => {
       const tags = parseJsonArrayParam<string>(rawTags);
@@ -189,12 +200,7 @@ Optionally add or update tags on the session.`,
         [userId]
       );
       if (active.rows.length === 0) {
-        return {
-          content: [
-            { type: "text" as const, text: JSON.stringify({ error: "No active session" }) },
-          ],
-          isError: true,
-        };
+        return toolResponse({ error: "No active session" }, true);
       }
 
       const sessionId = active.rows[0].id;
@@ -214,33 +220,19 @@ Optionally add or update tags on the session.`,
       const setCount = Number(exerciseCheck.set_count);
 
       if (exerciseCount === 0 && !force) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                warning: "Session has no exercises logged. Pass force: true to close anyway, or log exercises first.",
-                session_id: sessionId,
-                started_at: active.rows[0].started_at,
-              }),
-            },
-          ],
-        };
+        return toolResponse({
+          warning: "Session has no exercises logged. Pass force: true to close anyway, or log exercises first.",
+          session_id: sessionId,
+          started_at: active.rows[0].started_at,
+        });
       }
 
       if (exerciseCount > 0 && setCount === 0 && !force) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                warning: `Session has ${exerciseCount} planned exercise(s) but no sets logged. Log sets with log_exercise or pass force: true to close anyway.`,
-                session_id: sessionId,
-                started_at: active.rows[0].started_at,
-              }),
-            },
-          ],
-        };
+        return toolResponse({
+          warning: `Session has ${exerciseCount} planned exercise(s) but no sets logged. Log sets with log_exercise or pass force: true to close anyway.`,
+          session_id: sessionId,
+          started_at: active.rows[0].started_at,
+        });
       }
 
       // If session was backdated, set ended_at relative to started_at instead of NOW()
@@ -284,25 +276,18 @@ Optionally add or update tags on the session.`,
           [sessionId, userId]
         );
 
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                session_id: sessionId,
-                duration_minutes: Math.round(summary.duration_minutes),
-                exercises_count: Number(summary.exercises_count),
-                total_sets: Number(summary.total_sets),
-                total_volume_kg: Math.round(Number(summary.total_volume_kg)),
-                new_prs: newPrs.map((pr: any) => ({
-                  exercise: pr.exercise,
-                  record_type: pr.record_type,
-                  value: pr.value,
-                })),
-              }),
-            },
-          ],
-        };
+        return toolResponse({
+          session_id: sessionId,
+          duration_minutes: Math.round(summary.duration_minutes),
+          exercises_count: Number(summary.exercises_count),
+          total_sets: Number(summary.total_sets),
+          total_volume_kg: Math.round(Number(summary.total_volume_kg)),
+          new_prs: newPrs.map((pr: any) => ({
+            exercise: pr.exercise,
+            record_type: pr.record_type,
+            value: pr.value,
+          })),
+        });
       }
 
       // Get exercises grouped by superset
@@ -400,34 +385,37 @@ Optionally add or update tags on the session.`,
         }
       }
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              session_id: sessionId,
-              duration_minutes: Math.round(summary.duration_minutes),
-              exercises_count: Number(summary.exercises_count),
-              total_sets: Number(summary.total_sets),
-              total_volume_kg: Math.round(Number(summary.total_volume_kg)),
-              exercises: exerciseDetails.map((e: any) => ({
-                name: e.name,
-                superset_group: e.superset_group,
-                sets: e.sets,
-              })),
-              supersets: Object.keys(supersets).length > 0 ? supersets : undefined,
-              comparison: comparison || undefined,
-            }),
-          },
-        ],
-      };
+      return toolResponse({
+        session_id: sessionId,
+        duration_minutes: Math.round(summary.duration_minutes),
+        exercises_count: Number(summary.exercises_count),
+        total_sets: Number(summary.total_sets),
+        total_volume_kg: Math.round(Number(summary.total_volume_kg)),
+        exercises: exerciseDetails.map((e: any) => ({
+          name: e.name,
+          superset_group: e.superset_group,
+          sets: e.sets,
+        })),
+        supersets: Object.keys(supersets).length > 0 ? supersets : undefined,
+        comparison: comparison || undefined,
+      });
     }
   );
 
-  server.tool(
+  server.registerTool(
     "get_active_session",
-    `Check if there is an active (open) workout session. Returns session details with exercises logged so far, or indicates no active session.`,
-    {},
+    {
+      title: "Get Active Session",
+      description: `Use this when you need to check if there is an active (open) workout session. Returns session details with exercises logged so far, or indicates no active session.`,
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+      _meta: {
+        ui: { resourceUri: "ui://gym-tracker/session.html" },
+        "openai/outputTemplate": "ui://gym-tracker/session.html",
+        "openai/toolInvocation/invoking": "Checking session\u2026",
+        "openai/toolInvocation/invoked": "Session status ready",
+      },
+    },
     async () => {
       const userId = getUserId();
 
@@ -437,9 +425,7 @@ Optionally add or update tags on the session.`,
       );
 
       if (rows.length === 0) {
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ active: false }) }],
-        };
+        return toolResponse({ active: false });
       }
 
       const session = rows[0];
@@ -470,24 +456,19 @@ Optionally add or update tags on the session.`,
         [session.id]
       );
 
-      return {
-        content: [{
-          type: "text" as const,
-          text: JSON.stringify({
-            active: true,
-            session_id: session.id,
-            started_at: session.started_at,
-            duration_minutes: durationMinutes,
-            program_day: programDay,
-            tags: session.tags || [],
-            exercises: exerciseDetails.map((e: any) => ({
-              name: e.name,
-              superset_group: e.superset_group,
-              sets: e.sets,
-            })),
-          }),
-        }],
-      };
+      return toolResponse({
+        active: true,
+        session_id: session.id,
+        started_at: session.started_at,
+        duration_minutes: durationMinutes,
+        program_day: programDay,
+        tags: session.tags || [],
+        exercises: exerciseDetails.map((e: any) => ({
+          name: e.name,
+          superset_group: e.superset_group,
+          sets: e.sets,
+        })),
+      });
     }
   );
 }

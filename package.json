@@ -8,12 +8,14 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "tsc",
+    "build:widgets": "cd web && npm run build",
     "serve": "node dist/server.js",
     "migrate": "tsx src/db/migrate.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.0.1",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "@workos-inc/node": "^8.0.0",
     "cors": "^2.8.5",

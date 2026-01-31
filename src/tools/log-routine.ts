@@ -9,11 +9,12 @@ import {
 import { checkPRs } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerLogRoutineTool(server: McpServer) {
-  server.tool(
-    "log_routine",
-    `Log an entire routine day at once. This is for when the user says something like "hice la rutina de hoy" or "completed today's workout".
+  server.registerTool("log_routine", {
+    title: "Log Routine",
+    description: `Log an entire routine day at once. This is for when the user says something like "hice la rutina de hoy" or "completed today's workout".
 Infers the program day from the active program + today's weekday, or uses the provided program_day label.
 
 You can override specific exercises (different weight/reps) or skip exercises entirely.
@@ -24,7 +25,7 @@ Parameters:
 - overrides: array of { exercise, sets?, reps?, weight?, rpe? } to override template values
 - skip: array of exercise names to skip
 - auto_end: whether to auto-close the session (default true). Set false to keep it open for additional exercises.`,
-    {
+    inputSchema: {
       program_day: z.string().optional(),
       overrides: z.union([
         z.array(
@@ -44,7 +45,14 @@ Parameters:
       tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to label this session (e.g. ['deload', 'morning'])"),
       minimal_response: z.boolean().optional().describe("If true, return only success status and new PRs, without echoing back all logged data"),
     },
-    async ({ program_day, overrides: rawOverrides, skip: rawSkip, auto_end, date, tags: rawTags, minimal_response }) => {
+    annotations: { readOnlyHint: false },
+    _meta: {
+      ui: { resourceUri: "ui://gym-tracker/session.html" },
+      "openai/outputTemplate": "ui://gym-tracker/session.html",
+      "openai/toolInvocation/invoking": "Logging routine…",
+      "openai/toolInvocation/invoked": "Routine logged",
+    },
+  }, async ({ program_day, overrides: rawOverrides, skip: rawSkip, auto_end, date, tags: rawTags, minimal_response }) => {
       const userId = getUserId();
 
       // Some MCP clients serialize nested arrays as JSON strings
@@ -55,15 +63,7 @@ Parameters:
       // Resolve program and day info before starting the transaction
       const activeProgram = await getActiveProgram();
       if (!activeProgram) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "No active program found" }),
-            },
-          ],
-          isError: true,
-        };
+        return toolResponse({ error: "No active program found" }, true);
       }
 
       // Find the day
@@ -86,17 +86,9 @@ Parameters:
       }
 
       if (!dayRow) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
+        return toolResponse({
                 error: "No program day found for today. Specify a day label or check program weekday assignments.",
-              }),
-            },
-          ],
-          isError: true,
-        };
+              }, true);
       }
 
       // Get exercises for this day
@@ -132,19 +124,11 @@ Parameters:
         );
         if (active.rows.length > 0) {
           await client.query("ROLLBACK");
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
+          return toolResponse({
                   error: "There is already an active session. End it first or use log_exercise to add exercises to it.",
                   session_id: active.rows[0].id,
                   started_at: active.rows[0].started_at,
-                }),
-              },
-            ],
-            isError: true,
-          };
+                }, true);
         }
 
         // Create session
@@ -232,26 +216,15 @@ Parameters:
         await client.query("COMMIT");
 
         if (minimal_response) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
+          return toolResponse({
                   success: true,
                   session_id: session.id,
                   exercises_logged: exercisesLogged.length,
                   new_prs: allPRs.length > 0 ? allPRs : undefined,
-                }),
-              },
-            ],
-          };
+                });
         }
 
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
+        return toolResponse({
                 session_id: session.id,
                 day_label: dayRow.day_label,
                 exercises_logged: exercisesLogged,
@@ -260,10 +233,7 @@ Parameters:
                 new_prs: allPRs.length > 0 ? allPRs : undefined,
                 session_ended: shouldEnd,
                 ...(shouldEnd ? {} : { hint: "Session is still open. Use log_exercise to add more exercises, then end_session when done." }),
-              }),
-            },
-          ],
-        };
+              });
       } catch (err) {
         await client.query("ROLLBACK");
         throw err;

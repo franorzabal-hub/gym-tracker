@@ -3,6 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 function escapeCsvValue(val: any): string {
   if (val === null || val === undefined) return "";
@@ -22,18 +23,28 @@ function toCsv(headers: string[], rows: Record<string, any>[]): string {
 }
 
 export function registerExportTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "export_data",
-    `Export user data as JSON or CSV. Use scope to choose what to export: all, sessions, exercises, programs, measurements, prs.
+    {
+      title: "Export Data",
+      description: `Export user data as JSON or CSV. Use scope to choose what to export: all, sessions, exercises, programs, measurements, prs.
 
 Examples:
 - "exportar mis datos" → json, scope: "all"
 - "csv de mis sesiones del último mes" → csv, scope: "sessions", period: "month"
 - "descargar mis ejercicios" → json, scope: "exercises"`,
-    {
-      action: z.enum(["json", "csv"]),
-      scope: z.enum(["all", "sessions", "exercises", "programs", "measurements", "prs"]).optional().describe("What data to export. Defaults to all"),
-      period: z.enum(["month", "3months", "year", "all"]).optional().describe("Time period filter. Defaults to all"),
+      inputSchema: {
+        action: z.enum(["json", "csv"]),
+        scope: z.enum(["all", "sessions", "exercises", "programs", "measurements", "prs"]).optional().describe("What data to export. Defaults to all"),
+        period: z.enum(["month", "3months", "year", "all"]).optional().describe("Time period filter. Defaults to all"),
+      },
+      annotations: { readOnlyHint: true },
+      _meta: {
+        ui: { resourceUri: "ui://gym-tracker/export.html" },
+        "openai/outputTemplate": "ui://gym-tracker/export.html",
+        "openai/toolInvocation/invoking": "Exporting data\u2026",
+        "openai/toolInvocation/invoked": "Export ready",
+      },
     },
     async ({ action, scope: rawScope, period: rawPeriod }) => {
       const userId = getUserId();
@@ -137,9 +148,7 @@ Examples:
       }
 
       if (action === "json") {
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ export: data }) }],
-        };
+        return toolResponse({ export: data });
       }
 
       // CSV
@@ -185,6 +194,7 @@ Examples:
       const csvOutput = csvParts.join("\n\n");
 
       return {
+        structuredContent: { format: "csv", data },
         content: [{ type: "text" as const, text: csvOutput || "No data to export" }],
       };
     }

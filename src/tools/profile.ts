@@ -2,17 +2,28 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerProfileTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "manage_profile",
-    `Manage user profile data. Use action "get" to retrieve the current profile (call this at conversation start for context).
+    {
+      title: "Manage Profile",
+      description: `Use this when you need to manage user profile data. Use action "get" to retrieve the current profile (call this at conversation start for context).
 Use action "update" to save any user info like name, age, weight, height, goals, injuries, preferences.
 The data field accepts any JSON object — it merges with existing data.
 Example: user says "peso 82kg" → update with { "weight_kg": 82 }`,
-    {
-      action: z.enum(["get", "update"]),
-      data: z.record(z.any()).optional(),
+      inputSchema: {
+        action: z.enum(["get", "update"]),
+        data: z.record(z.any()).optional(),
+      },
+      annotations: {},
+      _meta: {
+        ui: { resourceUri: "ui://gym-tracker/profile.html" },
+        "openai/outputTemplate": "ui://gym-tracker/profile.html",
+        "openai/toolInvocation/invoking": "Loading profile\u2026",
+        "openai/toolInvocation/invoked": "Profile ready",
+      },
     },
     async ({ action, data }) => {
       const userId = getUserId();
@@ -22,22 +33,12 @@ Example: user says "peso 82kg" → update with { "weight_kg": 82 }`,
           "SELECT data FROM user_profile WHERE user_id = $1 LIMIT 1",
           [userId]
         );
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ profile: rows[0]?.data || {} }),
-            },
-          ],
-        };
+        return toolResponse({ profile: rows[0]?.data || {} });
       }
 
       // update
       if (!data || Object.keys(data).length === 0) {
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ error: "No data provided" }) }],
-          isError: true,
-        };
+        return toolResponse({ error: "No data provided" }, true);
       }
 
       const { rows } = await pool.query(
@@ -49,14 +50,7 @@ Example: user says "peso 82kg" → update with { "weight_kg": 82 }`,
         [userId, JSON.stringify(data)]
       );
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ profile: rows[0].data }),
-          },
-        ],
-      };
+      return toolResponse({ profile: rows[0].data });
     }
   );
 }

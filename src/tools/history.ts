@@ -4,11 +4,14 @@ import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerHistoryTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "get_history",
-    `Get workout history. Shows past sessions with exercises and sets.
+    {
+      title: "Get History",
+      description: `Get workout history. Shows past sessions with exercises and sets.
 Use period to filter: "today", "week", "month", "year", or a number of days.
 Optionally filter by exercise name or program_day label.
 Use session_id to fetch a specific session by ID (ignores other filters).
@@ -18,7 +21,7 @@ Examples:
 - "¿qué entrené esta semana?" → period: "week"
 - "historial de press banca" → exercise: "press banca"
 - "¿qué hice hoy?" → period: "today"`,
-    {
+      inputSchema: {
       period: z
         .union([
           z.enum(["today", "week", "month", "year"]),
@@ -34,6 +37,14 @@ Examples:
       offset: z.number().int().optional().describe("Skip first N sessions for pagination. Defaults to 0"),
       summary_only: z.boolean().optional().describe("If true, return only session summaries without exercise/set details"),
       include_sets: z.boolean().optional().describe("If true, include individual set details per exercise. Defaults to true"),
+    },
+      annotations: { readOnlyHint: true },
+      _meta: {
+        ui: { resourceUri: "ui://gym-tracker/stats.html" },
+        "openai/outputTemplate": "ui://gym-tracker/stats.html",
+        "openai/toolInvocation/invoking": "Loading history…",
+        "openai/toolInvocation/invoked": "History ready",
+      },
     },
     async ({ period, exercise, program_day, tags: rawTags, session_id, limit: rawLimit, offset: rawOffset, summary_only, include_sets }) => {
       const tags = parseJsonArrayParam<string>(rawTags);
@@ -73,19 +84,14 @@ Examples:
             total_volume_kg: Math.round(Number(s.total_volume_kg)),
           }));
 
-          return {
-            content: [{
-              type: "text" as const,
-              text: JSON.stringify({
-                sessions: mapped,
-                summary: {
-                  total_sessions: mapped.length,
-                  total_volume_kg: mapped.reduce((acc, s) => acc + s.total_volume_kg, 0),
-                  exercises_count: mapped.reduce((acc, s) => acc + s.exercises_count, 0),
-                },
-              }),
-            }],
-          };
+          return toolResponse({
+            sessions: mapped,
+            summary: {
+              total_sessions: mapped.length,
+              total_volume_kg: mapped.reduce((acc, s) => acc + s.total_volume_kg, 0),
+              exercises_count: mapped.reduce((acc, s) => acc + s.exercises_count, 0),
+            },
+          });
         }
 
         // Full session with exercises (and optionally sets)
@@ -161,19 +167,14 @@ Examples:
           }
         }
 
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              sessions,
-              summary: {
-                total_sessions: sessions.length,
-                total_volume_kg: Math.round(totalVolume),
-                exercises_count: exerciseSet.size,
-              },
-            }),
-          }],
-        };
+        return toolResponse({
+          sessions,
+          summary: {
+            total_sessions: sessions.length,
+            total_volume_kg: Math.round(totalVolume),
+            exercises_count: exerciseSet.size,
+          },
+        });
       }
 
       // --- Normal mode: period-based filtering ---
@@ -256,19 +257,14 @@ Examples:
           total_volume_kg: Math.round(Number(s.total_volume_kg)),
         }));
 
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              sessions: mapped,
-              summary: {
-                total_sessions: mapped.length,
-                total_volume_kg: mapped.reduce((acc, s) => acc + s.total_volume_kg, 0),
-                exercises_count: mapped.reduce((max, s) => max + s.exercises_count, 0),
-              },
-            }),
-          }],
-        };
+        return toolResponse({
+          sessions: mapped,
+          summary: {
+            total_sessions: mapped.length,
+            total_volume_kg: mapped.reduce((acc, s) => acc + s.total_volume_kg, 0),
+            exercises_count: mapped.reduce((max, s) => max + s.exercises_count, 0),
+          },
+        });
       }
 
       // Full mode (with or without sets)
@@ -349,21 +345,14 @@ Examples:
         }
       }
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              sessions,
-              summary: {
-                total_sessions: totalSessions,
-                total_volume_kg: Math.round(totalVolume),
-                exercises_count: exerciseSet.size,
-              },
-            }),
-          },
-        ],
-      };
+      return toolResponse({
+        sessions,
+        summary: {
+          total_sessions: totalSessions,
+          total_volume_kg: Math.round(totalVolume),
+          exercises_count: exerciseSet.size,
+        },
+      });
     }
   );
 }

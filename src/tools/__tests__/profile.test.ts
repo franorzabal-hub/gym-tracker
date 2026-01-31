@@ -21,7 +21,7 @@ describe("manage_profile tool", () => {
   beforeEach(() => {
     mockQuery.mockReset();
     const server = {
-      tool: vi.fn((_name: string, _desc: string, _schema: any, handler: Function) => {
+      registerTool: vi.fn((_name: string, _config: any, handler: Function) => {
         toolHandler = handler;
       }),
     } as unknown as McpServer;
@@ -29,11 +29,10 @@ describe("manage_profile tool", () => {
   });
 
   it("registers with correct name", () => {
-    const server = { tool: vi.fn() } as unknown as McpServer;
+    const server = { registerTool: vi.fn() } as unknown as McpServer;
     registerProfileTool(server);
-    expect(server.tool).toHaveBeenCalledWith(
+    expect(server.registerTool).toHaveBeenCalledWith(
       "manage_profile",
-      expect.any(String),
       expect.any(Object),
       expect.any(Function)
     );

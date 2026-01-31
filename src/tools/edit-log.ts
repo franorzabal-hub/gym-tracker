@@ -5,11 +5,14 @@ import { findExercise } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerEditLogTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "edit_log",
-    `Edit or delete previously logged sets, or delete entire sessions.
+    {
+      title: "Edit Log",
+      description: `Edit or delete previously logged sets, or delete entire sessions.
 
 Examples:
 - "No, eran 80kg" → update weight on the last logged exercise
@@ -32,7 +35,7 @@ Parameters:
 - delete_session: session ID to soft-delete (sets deleted_at timestamp, can be restored)
 - restore_session: session ID to restore (clears deleted_at timestamp)
 - delete_sessions: array of session IDs for bulk soft-delete. Returns { deleted, not_found }.`,
-    {
+      inputSchema: {
       exercise: z.string().optional(),
       session: z
         .union([z.enum(["today", "last"]), z.string()])
@@ -69,6 +72,14 @@ Parameters:
       restore_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to restore from soft-delete. Clears the deleted_at timestamp."),
       delete_sessions: z.union([z.array(z.number().int()), z.string()]).optional().describe("Array of session IDs for bulk soft-delete."),
     },
+      annotations: { destructiveHint: true },
+      _meta: {
+        ui: { resourceUri: "ui://gym-tracker/session.html" },
+        "openai/outputTemplate": "ui://gym-tracker/session.html",
+        "openai/toolInvocation/invoking": "Editing log…",
+        "openai/toolInvocation/invoked": "Log updated",
+      },
+    },
     async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session, restore_session, delete_sessions: rawDeleteSessions }) => {
       const userId = getUserId();
 
@@ -80,38 +91,24 @@ Parameters:
           [sessionId, userId]
         );
         if (sessionRows.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: `Session ${restore_session} not found` }) }],
-            isError: true,
-          };
+          return toolResponse({ error: `Session ${restore_session} not found` }, true);
         }
         if (!sessionRows[0].deleted_at) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: `Session ${restore_session} is not deleted` }) }],
-            isError: true,
-          };
+          return toolResponse({ error: `Session ${restore_session} is not deleted` }, true);
         }
         await pool.query("UPDATE sessions SET deleted_at = NULL WHERE id = $1 AND user_id = $2", [sessionId, userId]);
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              restored_session: sessionId,
-              started_at: sessionRows[0].started_at,
-              message: "Session restored successfully.",
-            }),
-          }],
-        };
+        return toolResponse({
+          restored_session: sessionId,
+          started_at: sessionRows[0].started_at,
+          message: "Session restored successfully.",
+        });
       }
 
       // --- Bulk delete sessions mode ---
       if (rawDeleteSessions !== undefined && rawDeleteSessions !== null) {
         const sessionIds = parseJsonArrayParam<number>(rawDeleteSessions);
         if (!sessionIds || !Array.isArray(sessionIds) || sessionIds.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "delete_sessions requires an array of session IDs" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "delete_sessions requires an array of session IDs" }, true);
         }
 
         const deleted: number[] = [];
@@ -130,15 +127,10 @@ Parameters:
           }
         }
 
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              deleted,
-              not_found: not_found.length > 0 ? not_found : undefined,
-            }),
-          }],
-        };
+        return toolResponse({
+          deleted,
+          not_found: not_found.length > 0 ? not_found : undefined,
+        });
       }
 
       // --- Delete session mode (soft delete) ---
@@ -150,24 +142,16 @@ Parameters:
           [sessionId, userId]
         );
         if (sessionRows.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: `Session ${delete_session} not found` }) }],
-            isError: true,
-          };
+          return toolResponse({ error: `Session ${delete_session} not found` }, true);
         }
 
         await pool.query("UPDATE sessions SET deleted_at = NOW() WHERE id = $1 AND user_id = $2", [sessionId, userId]);
 
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              deleted_session: sessionId,
-              started_at: sessionRows[0].started_at,
-              message: "Session soft-deleted. Use restore_session to undo.",
-            }),
-          }],
-        };
+        return toolResponse({
+          deleted_session: sessionId,
+          started_at: sessionRows[0].started_at,
+          message: "Session soft-deleted. Use restore_session to undo.",
+        });
       }
 
       // --- Bulk mode ---
@@ -190,33 +174,15 @@ Parameters:
           });
           results.push(result);
         }
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ bulk_results: results }) }],
-        };
+        return toolResponse({ bulk_results: results });
       }
 
       // --- Single mode ---
       if (!exercise) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "exercise is required for single mode" }),
-            },
-          ],
-          isError: true,
-        };
+        return toolResponse({ error: "exercise is required for single mode" }, true);
       }
       if (!action) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "action is required for single mode" }),
-            },
-          ],
-          isError: true,
-        };
+        return toolResponse({ error: "action is required for single mode" }, true);
       }
 
       const userDate = await getUserCurrentDate();
@@ -233,15 +199,10 @@ Parameters:
       });
 
       if (result.error) {
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result) }],
-          isError: true,
-        };
+        return toolResponse(result, true);
       }
 
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result) }],
-      };
+      return toolResponse(result);
     }
   );
 }

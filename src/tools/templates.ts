@@ -3,11 +3,14 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerTemplatesTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "manage_templates",
-    `Manage session templates — save a workout as a reusable template, list templates, or start a new session from one.
+    {
+      title: "Manage Templates",
+      description: `Manage session templates — save a workout as a reusable template, list templates, or start a new session from one.
 
 Actions:
 - "save": Save a completed session as a template. Pass session_id (or "last" for the most recent ended session) and a name.
@@ -15,14 +18,22 @@ Actions:
 - "start": Start a new session pre-populated from a template. Pass template name. Exercises are logged as session_exercises (no sets yet — use log_exercise to fill them in).
 - "delete": Delete a template by name.
 - "delete_bulk": Delete multiple templates at once. Pass "names" array. Returns { deleted, not_found }.`,
-    {
-      action: z.enum(["save", "list", "start", "delete", "delete_bulk"]),
-      name: z.string().optional(),
-      session_id: z.union([z.number().int(), z.literal("last")]).optional(),
-      date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session when using 'start'. Defaults to now."),
-      names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of template names for delete_bulk"),
-      limit: z.number().int().optional().describe("Max templates to return. Defaults to 50"),
-      offset: z.number().int().optional().describe("Skip first N templates for pagination. Defaults to 0"),
+      inputSchema: {
+        action: z.enum(["save", "list", "start", "delete", "delete_bulk"]),
+        name: z.string().optional(),
+        session_id: z.union([z.number().int(), z.literal("last")]).optional(),
+        date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session when using 'start'. Defaults to now."),
+        names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of template names for delete_bulk"),
+        limit: z.number().int().optional().describe("Max templates to return. Defaults to 50"),
+        offset: z.number().int().optional().describe("Skip first N templates for pagination. Defaults to 0"),
+      },
+      annotations: {},
+      _meta: {
+        ui: { resourceUri: "ui://gym-tracker/templates.html" },
+        "openai/outputTemplate": "ui://gym-tracker/templates.html",
+        "openai/toolInvocation/invoking": "Managing templates\u2026",
+        "openai/toolInvocation/invoked": "Done",
+      },
     },
     async ({ action, name, session_id, date, names: rawNames, limit, offset }) => {
       const userId = getUserId();
@@ -60,17 +71,12 @@ Actions:
            LIMIT $2 OFFSET $3`,
           [userId, effectiveLimit, effectiveOffset]
         );
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ templates, total }) }],
-        };
+        return toolResponse({ templates, total });
       }
 
       if (action === "save") {
         if (!name) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Name required" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Name required" }, true);
         }
 
         // Resolve session_id
@@ -81,10 +87,7 @@ Actions:
             [userId]
           );
           if (rows.length === 0) {
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify({ error: "No completed sessions found" }) }],
-              isError: true,
-            };
+            return toolResponse({ error: "No completed sessions found" }, true);
           }
           sid = rows[0].id;
         } else {
@@ -108,10 +111,7 @@ Actions:
         );
 
         if (sessionExercises.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Session has no exercises" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Session has no exercises" }, true);
         }
 
         const client = await pool.connect();
@@ -145,23 +145,15 @@ Actions:
 
           await client.query("COMMIT");
 
-          return {
-            content: [{
-              type: "text" as const,
-              text: JSON.stringify({
-                template: { id: tmpl.id, name },
-                exercises_count: sessionExercises.length,
-                source_session_id: sid,
-              }),
-            }],
-          };
+          return toolResponse({
+            template: { id: tmpl.id, name },
+            exercises_count: sessionExercises.length,
+            source_session_id: sid,
+          });
         } catch (err: any) {
           await client.query("ROLLBACK");
           if (err.code === "23505") {
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify({ error: `Template "${name}" already exists` }) }],
-              isError: true,
-            };
+            return toolResponse({ error: `Template "${name}" already exists` }, true);
           }
           throw err;
         } finally {
@@ -171,10 +163,7 @@ Actions:
 
       if (action === "start") {
         if (!name) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Template name required" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Template name required" }, true);
         }
 
         // Check no active session
@@ -183,13 +172,7 @@ Actions:
           [userId]
         );
         if (active.rows.length > 0) {
-          return {
-            content: [{
-              type: "text" as const,
-              text: JSON.stringify({ error: "There is already an active session", session_id: active.rows[0].id }),
-            }],
-            isError: true,
-          };
+          return toolResponse({ error: "There is already an active session", session_id: active.rows[0].id }, true);
         }
 
         // Find template
@@ -198,10 +181,7 @@ Actions:
           [userId, name]
         );
         if (templates.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: `Template "${name}" not found` }) }],
-            isError: true,
-          };
+          return toolResponse({ error: `Template "${name}" not found` }, true);
         }
 
         // Get template exercises
@@ -236,25 +216,20 @@ Actions:
 
           await startClient.query("COMMIT");
 
-          return {
-            content: [{
-              type: "text" as const,
-              text: JSON.stringify({
-                session_id: session.id,
-                started_at: session.started_at,
-                template: name,
-                planned_exercises: templateExercises.map((te: any) => ({
-                  exercise: te.exercise_name,
-                  target_sets: te.target_sets,
-                  target_reps: te.target_reps,
-                  target_weight: te.target_weight,
-                  target_rpe: te.target_rpe,
-                  rest_seconds: te.rest_seconds,
-                  superset_group: te.superset_group,
-                })),
-              }),
-            }],
-          };
+          return toolResponse({
+            session_id: session.id,
+            started_at: session.started_at,
+            template: name,
+            planned_exercises: templateExercises.map((te: any) => ({
+              exercise: te.exercise_name,
+              target_sets: te.target_sets,
+              target_reps: te.target_reps,
+              target_weight: te.target_weight,
+              target_rpe: te.target_rpe,
+              rest_seconds: te.rest_seconds,
+              superset_group: te.superset_group,
+            })),
+          });
         } catch (err) {
           await startClient.query("ROLLBACK");
           throw err;
@@ -265,33 +240,22 @@ Actions:
 
       if (action === "delete") {
         if (!name) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "Template name required" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "Template name required" }, true);
         }
         const { rows } = await pool.query(
           "DELETE FROM session_templates WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
           [userId, name]
         );
         if (rows.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: `Template "${name}" not found` }) }],
-            isError: true,
-          };
+          return toolResponse({ error: `Template "${name}" not found` }, true);
         }
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ deleted: rows[0].name }) }],
-        };
+        return toolResponse({ deleted: rows[0].name });
       }
 
       if (action === "delete_bulk") {
         const namesList = parseJsonArrayParam<string>(rawNames);
         if (!namesList || !Array.isArray(namesList) || namesList.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ error: "names array required for delete_bulk" }) }],
-            isError: true,
-          };
+          return toolResponse({ error: "names array required for delete_bulk" }, true);
         }
 
         const deleted: string[] = [];
@@ -309,21 +273,13 @@ Actions:
           }
         }
 
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              deleted,
-              not_found: not_found.length > 0 ? not_found : undefined,
-            }),
-          }],
-        };
+        return toolResponse({
+          deleted,
+          not_found: not_found.length > 0 ? not_found : undefined,
+        });
       }
 
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify({ error: "Unknown action" }) }],
-        isError: true,
-      };
+      return toolResponse({ error: "Unknown action" }, true);
     }
   );
 }
