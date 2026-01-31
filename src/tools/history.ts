@@ -3,6 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
+import { parseJsonParam } from "../helpers/parse-helpers.js";
 
 export function registerHistoryTool(server: McpServer) {
   server.tool(
@@ -35,10 +36,7 @@ Examples:
       include_sets: z.boolean().optional().describe("If true, include individual set details per exercise. Defaults to true"),
     },
     async ({ period, exercise, program_day, tags: rawTags, session_id, limit: rawLimit, offset: rawOffset, summary_only, include_sets }) => {
-      let tags = rawTags as any;
-      if (typeof tags === 'string') {
-        try { tags = JSON.parse(tags); } catch { tags = undefined; }
-      }
+      const tags = parseJsonParam<string[]>(rawTags);
       const userId = getUserId();
       const effectiveLimit = rawLimit ?? 50;
       const effectiveOffset = rawOffset ?? 0;

@@ -9,6 +9,7 @@ import {
   cloneVersion,
 } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
+import { parseJsonParam } from "../helpers/parse-helpers.js";
 
 const dayExerciseSchema = z.object({
   exercise: z.string(),
@@ -62,10 +63,7 @@ For "activate", pass the program name.`,
       const userId = getUserId();
 
       // Some MCP clients serialize nested arrays as JSON strings
-      let days = rawDays as any;
-      if (typeof days === 'string') {
-        try { days = JSON.parse(days); } catch { days = undefined; }
-      }
+      const days = parseJsonParam<any[]>(rawDays);
 
       if (action === "list") {
         const { rows } = await pool.query(
@@ -318,8 +316,9 @@ For "activate", pass the program name.`,
             };
           }
           params.push(program.id);
+          params.push(userId);
           const { rows } = await pool.query(
-            `UPDATE programs SET ${updates.join(", ")} WHERE id = $${params.length} RETURNING id, name, description`,
+            `UPDATE programs SET ${updates.join(", ")} WHERE id = $${params.length - 1} AND user_id = $${params.length} RETURNING id, name, description`,
             params
           );
           return {
@@ -505,10 +504,7 @@ For "activate", pass the program name.`,
       }
 
       if (action === "delete_bulk") {
-        let namesList = rawNames as any;
-        if (typeof namesList === 'string') {
-          try { namesList = JSON.parse(namesList); } catch { namesList = null; }
-        }
+        const namesList = parseJsonParam<string[]>(rawNames);
         if (!namesList || !Array.isArray(namesList) || namesList.length === 0) {
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ error: "names array required for delete_bulk" }) }],

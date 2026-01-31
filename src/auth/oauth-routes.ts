@@ -5,6 +5,37 @@ import pool from "../db/connection.js";
 
 const router = Router();
 
+// --- Rate limiting (in-memory) ---
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+
+function checkRateLimit(ip: string, limit: number): boolean {
+  const now = Date.now();
+  const windowMs = 60 * 1000; // 1 minute window
+  const entry = rateLimitMap.get(ip);
+
+  if (!entry || now - entry.windowStart > windowMs) {
+    rateLimitMap.set(ip, { count: 1, windowStart: now });
+    return true;
+  }
+
+  entry.count++;
+  if (entry.count > limit) {
+    return false;
+  }
+  return true;
+}
+
+// Cleanup stale rate limit entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  const windowMs = 60 * 1000;
+  for (const [key, entry] of rateLimitMap) {
+    if (now - entry.windowStart > windowMs) {
+      rateLimitMap.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
 // Cleanup expired tokens/codes every 15 minutes
 setInterval(async () => {
   try {
@@ -40,6 +71,12 @@ router.get("/.well-known/oauth-authorization-server", (_req, res) => {
 
 // Dynamic Client Registration (RFC 7591)
 router.post("/register", async (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || "unknown";
+  if (!checkRateLimit(`register:${ip}`, 5)) {
+    res.status(429).json({ error: "too_many_requests", error_description: "Rate limit exceeded. Try again later." });
+    return;
+  }
+
   const { client_name, redirect_uris, grant_types, response_types, token_endpoint_auth_method } = req.body;
 
   if (!redirect_uris || !Array.isArray(redirect_uris) || redirect_uris.length === 0) {
@@ -66,10 +103,26 @@ router.post("/register", async (req, res) => {
 
 // Authorize → redirect to WorkOS AuthKit
 router.get("/authorize", async (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || "unknown";
+  if (!checkRateLimit(`authorize:${ip}`, 20)) {
+    res.status(429).json({ error: "too_many_requests", error_description: "Rate limit exceeded. Try again later." });
+    return;
+  }
+
   const { redirect_uri, state, code_challenge, code_challenge_method, client_id } = req.query;
 
   if (!redirect_uri || !state) {
     res.status(400).json({ error: "redirect_uri and state are required" });
+    return;
+  }
+
+  // PKCE S256 is mandatory
+  if (!code_challenge) {
+    res.status(400).json({ error: "invalid_request", error_description: "code_challenge is required. PKCE (S256) is mandatory." });
+    return;
+  }
+  if (code_challenge_method !== "S256") {
+    res.status(400).json({ error: "invalid_request", error_description: "code_challenge_method must be S256" });
     return;
   }
 
@@ -175,6 +228,12 @@ router.get("/callback", async (req, res) => {
 
 // Token exchange
 router.post("/token", async (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || "unknown";
+  if (!checkRateLimit(`token:${ip}`, 20)) {
+    res.status(429).json({ error: "too_many_requests", error_description: "Rate limit exceeded. Try again later." });
+    return;
+  }
+
   const { grant_type, code, code_verifier } = req.body;
 
   if (grant_type !== "authorization_code") {
@@ -184,6 +243,11 @@ router.post("/token", async (req, res) => {
 
   if (!code) {
     res.status(400).json({ error: "invalid_request", error_description: "Missing code" });
+    return;
+  }
+
+  if (!code_verifier) {
+    res.status(400).json({ error: "invalid_request", error_description: "code_verifier is required. PKCE (S256) is mandatory." });
     return;
   }
 
@@ -200,20 +264,19 @@ router.post("/token", async (req, res) => {
 
   const stored = rows[0];
 
-  // PKCE verification
-  if (stored.code_challenge) {
-    if (!code_verifier) {
-      res.status(400).json({ error: "invalid_grant", error_description: "code_verifier required" });
-      return;
-    }
-    const expectedChallenge = crypto
-      .createHash("sha256")
-      .update(code_verifier)
-      .digest("base64url");
-    if (expectedChallenge !== stored.code_challenge) {
-      res.status(400).json({ error: "invalid_grant", error_description: "code_verifier mismatch" });
-      return;
-    }
+  // PKCE verification — code_challenge must exist (enforced at /authorize)
+  if (!stored.code_challenge) {
+    res.status(400).json({ error: "invalid_grant", error_description: "Auth code was issued without PKCE challenge. Re-authorize with code_challenge." });
+    return;
+  }
+
+  const expectedChallenge = crypto
+    .createHash("sha256")
+    .update(code_verifier)
+    .digest("base64url");
+  if (expectedChallenge !== stored.code_challenge) {
+    res.status(400).json({ error: "invalid_grant", error_description: "code_verifier mismatch" });
+    return;
   }
 
   // Generate our own opaque access token

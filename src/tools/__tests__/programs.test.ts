@@ -171,6 +171,10 @@ describe("manage_program tool", () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.updated.name).toBe("New PPL");
       expect(parsed.updated.description).toBe("Updated desc");
+
+      // Verify the UPDATE query includes user_id in WHERE clause
+      const updateCall = mockQuery.mock.calls[1];
+      expect(updateCall[0]).toContain("user_id");
     });
 
     it("rejects metadata update with no fields", async () => {

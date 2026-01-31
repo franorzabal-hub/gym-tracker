@@ -1,11 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockQuery } = vi.hoisted(() => ({
-  mockQuery: vi.fn(),
-}));
+const { mockQuery, mockClientQuery, mockClient } = vi.hoisted(() => {
+  const mockClientQuery = vi.fn();
+  const mockClient = { query: mockClientQuery, release: vi.fn() };
+  return {
+    mockQuery: vi.fn(),
+    mockClientQuery,
+    mockClient,
+  };
+});
 
 vi.mock("../../db/connection.js", () => ({
-  default: { query: mockQuery, connect: vi.fn() },
+  default: {
+    query: mockQuery,
+    connect: vi.fn().mockResolvedValue(mockClient),
+  },
 }));
 
 vi.mock("../../helpers/exercise-resolver.js", () => ({
@@ -29,6 +38,8 @@ let toolHandler: Function;
 describe("manage_exercises tool", () => {
   beforeEach(() => {
     mockQuery.mockReset();
+    mockClientQuery.mockReset();
+    mockClient.release.mockReset();
     mockResolve.mockReset();
     mockSearch.mockReset();
 
@@ -306,6 +317,32 @@ describe("manage_exercises tool", () => {
         expect.stringContaining("INSERT INTO exercise_aliases"),
         [50, "cruces en polea"]
       );
+    });
+  });
+
+  describe("merge action", () => {
+    it("scopes session_exercises update by user_id", async () => {
+      // Find source exercise (user-owned)
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 10, name: "Old Exercise", user_id: 1 }] }) // source
+        .mockResolvedValueOnce({ rows: [{ id: 20, name: "Target Exercise" }] }) // target
+        .mockResolvedValueOnce({ rowCount: 2 }) // UPDATE session_exercises
+        .mockResolvedValueOnce({}) // DELETE source PRs (conflict)
+        .mockResolvedValueOnce({}) // DELETE target PRs (conflict)
+        .mockResolvedValueOnce({ rowCount: 0 }) // UPDATE remaining source PRs
+        .mockResolvedValueOnce({ rowCount: 0 }) // UPDATE pr_history
+        .mockResolvedValueOnce({}) // UPDATE aliases
+        .mockResolvedValueOnce({}) // DELETE remaining aliases
+        .mockResolvedValueOnce({}) // DELETE source exercise
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({ action: "merge", source: "Old Exercise", target: "Target Exercise" });
+
+      // Verify the session_exercises UPDATE includes user_id filter
+      const updateCall = mockClientQuery.mock.calls[3]; // 4th call (0-indexed)
+      expect(updateCall[0]).toContain("session_id IN (SELECT id FROM sessions WHERE user_id =");
+      expect(updateCall[1]).toContain(1); // userId
     });
   });
 });

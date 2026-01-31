@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
+import { getUserCurrentDate } from "../helpers/date-helpers.js";
 
 export function registerBodyMeasurementsTool(server: McpServer) {
   server.tool(
@@ -84,29 +85,36 @@ Examples:
         const effectivePeriod = period || "3months";
         const effectiveLimit = limit || 50;
 
-        let dateFilter: string;
+        const userDate = await getUserCurrentDate();
+        let dateFilter = "";
+        const hasDateFilter = effectivePeriod !== "all";
         switch (effectivePeriod) {
           case "month":
-            dateFilter = "AND measured_at >= NOW() - INTERVAL '30 days'";
+            dateFilter = "AND measured_at >= $3::date - INTERVAL '30 days'";
             break;
           case "3months":
-            dateFilter = "AND measured_at >= NOW() - INTERVAL '90 days'";
+            dateFilter = "AND measured_at >= $3::date - INTERVAL '90 days'";
             break;
           case "6months":
-            dateFilter = "AND measured_at >= NOW() - INTERVAL '180 days'";
+            dateFilter = "AND measured_at >= $3::date - INTERVAL '180 days'";
             break;
           case "year":
-            dateFilter = "AND measured_at >= NOW() - INTERVAL '365 days'";
+            dateFilter = "AND measured_at >= $3::date - INTERVAL '365 days'";
             break;
           default:
             dateFilter = "";
         }
 
+        const queryParams: any[] = hasDateFilter
+          ? [userId, measurement_type, userDate, effectiveLimit]
+          : [userId, measurement_type, effectiveLimit];
+        const limitParam = hasDateFilter ? "$4" : "$3";
+
         const { rows } = await pool.query(
           `SELECT value, measured_at, notes FROM body_measurements
            WHERE user_id = $1 AND measurement_type = $2 ${dateFilter}
-           ORDER BY measured_at DESC LIMIT $3`,
-          [userId, measurement_type, effectiveLimit]
+           ORDER BY measured_at DESC LIMIT ${limitParam}`,
+          queryParams
         );
 
         // Calculate stats

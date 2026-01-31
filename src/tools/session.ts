@@ -7,6 +7,7 @@ import {
   getProgramDaysWithExercises,
 } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
+import { parseJsonParam } from "../helpers/parse-helpers.js";
 
 export function registerSessionTools(server: McpServer) {
   server.tool(
@@ -24,10 +25,7 @@ Returns the session info and the exercises planned for that day (if any).
       include_last_workout: z.boolean().optional().describe("If true, include last workout comparison. Defaults to true"),
     },
     async ({ program_day, notes, date, tags: rawTags, include_last_workout }) => {
-      let tags = rawTags as any;
-      if (typeof tags === 'string') {
-        try { tags = JSON.parse(tags); } catch { tags = undefined; }
-      }
+      const tags = parseJsonParam<string[]>(rawTags);
       const userId = getUserId();
 
       // Check for already active session
@@ -183,10 +181,7 @@ Optionally add or update tags on the session.`,
       include_comparison: z.boolean().optional().describe("If true, include comparison with previous session. Defaults to true"),
     },
     async ({ notes, force, tags: rawTags, summary_only, include_comparison }) => {
-      let tags = rawTags as any;
-      if (typeof tags === 'string') {
-        try { tags = JSON.parse(tags); } catch { tags = undefined; }
-      }
+      const tags = parseJsonParam<string[]>(rawTags);
       const userId = getUserId();
 
       const active = await pool.query(

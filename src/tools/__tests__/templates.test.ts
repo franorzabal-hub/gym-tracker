@@ -114,7 +114,7 @@ describe("manage_templates tool", () => {
   });
 
   describe("start action", () => {
-    it("creates session from template", async () => {
+    it("creates session from template in a transaction", async () => {
       // Check no active session
       mockQuery.mockResolvedValueOnce({ rows: [] });
       // Find template
@@ -125,16 +125,21 @@ describe("manage_templates tool", () => {
           { exercise_id: 1, exercise_name: "Bench Press", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: 8, sort_order: 0, superset_group: null, rest_seconds: 120 },
         ],
       });
-      // Create session
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 20, started_at: "2024-01-15T10:00:00Z" }] });
-      // Insert session_exercise
-      mockQuery.mockResolvedValueOnce({});
+
+      // Transaction: BEGIN, INSERT session, INSERT session_exercise, COMMIT
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 20, started_at: "2024-01-15T10:00:00Z" }] }) // INSERT session
+        .mockResolvedValueOnce({}) // INSERT session_exercise
+        .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({ action: "start", name: "My Template" });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.session_id).toBe(20);
       expect(parsed.template).toBe("My Template");
       expect(parsed.planned_exercises).toHaveLength(1);
+      expect(mockClientQuery).toHaveBeenCalledWith("BEGIN");
+      expect(mockClientQuery).toHaveBeenCalledWith("COMMIT");
     });
 
     it("errors when active session exists", async () => {

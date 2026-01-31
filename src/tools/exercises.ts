@@ -3,6 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { resolveExercise, searchExercises } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
+import { parseJsonParam } from "../helpers/parse-helpers.js";
 
 export function registerExercisesTool(server: McpServer) {
   server.tool(
@@ -234,10 +235,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
       }
 
       if (action === "delete_bulk") {
-        let namesList = rawNames as any;
-        if (typeof namesList === 'string') {
-          try { namesList = JSON.parse(namesList); } catch { namesList = null; }
-        }
+        const namesList = parseJsonParam<string[]>(rawNames);
         if (!namesList || !Array.isArray(namesList) || namesList.length === 0) {
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ error: "names array required for delete_bulk" }) }],
@@ -292,10 +290,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
       }
 
       if (action === "update_bulk") {
-        let exercisesList = exercises as any;
-        if (typeof exercisesList === 'string') {
-          try { exercisesList = JSON.parse(exercisesList); } catch { exercisesList = null; }
-        }
+        const exercisesList = parseJsonParam<any[]>(exercises);
         if (!exercisesList || !Array.isArray(exercisesList) || exercisesList.length === 0) {
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ error: "exercises array required for update_bulk" }) }],
@@ -365,10 +360,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
 
       if (action === "add_bulk") {
         // Some MCP clients serialize nested arrays as JSON strings
-        let exercisesList = exercises as any;
-        if (typeof exercisesList === 'string') {
-          try { exercisesList = JSON.parse(exercisesList); } catch { exercisesList = null; }
-        }
+        const exercisesList = parseJsonParam<any[]>(exercises);
         if (!exercisesList || !Array.isArray(exercisesList) || exercisesList.length === 0) {
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ error: "exercises array required for add_bulk" }) }],
@@ -558,10 +550,10 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
             };
           }
 
-          // 1. Move session_exercises
+          // 1. Move session_exercises (only for sessions owned by this user)
           const seResult = await client.query(
-            `UPDATE session_exercises SET exercise_id = $1 WHERE exercise_id = $2`,
-            [targetEx.id, sourceEx.id]
+            `UPDATE session_exercises SET exercise_id = $1 WHERE exercise_id = $2 AND session_id IN (SELECT id FROM sessions WHERE user_id = $3)`,
+            [targetEx.id, sourceEx.id, userId]
           );
           const sessionExercisesMoved = seResult.rowCount || 0;
 

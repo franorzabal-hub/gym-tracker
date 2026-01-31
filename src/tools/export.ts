@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
+import { getUserCurrentDate } from "../helpers/date-helpers.js";
 
 function escapeCsvValue(val: any): string {
   if (val === null || val === undefined) return "";
@@ -39,22 +40,25 @@ Examples:
       const scope = rawScope || "all";
       const period = rawPeriod || "all";
 
-      let dateFilter: string;
+      const userDate = await getUserCurrentDate();
+      let dateFilter = "";
+      const hasDateFilter = period !== "all";
       switch (period) {
         case "month":
-          dateFilter = "AND s.started_at >= NOW() - INTERVAL '30 days'";
+          dateFilter = "AND s.started_at >= $2::date - INTERVAL '30 days'";
           break;
         case "3months":
-          dateFilter = "AND s.started_at >= NOW() - INTERVAL '90 days'";
+          dateFilter = "AND s.started_at >= $2::date - INTERVAL '90 days'";
           break;
         case "year":
-          dateFilter = "AND s.started_at >= NOW() - INTERVAL '365 days'";
+          dateFilter = "AND s.started_at >= $2::date - INTERVAL '365 days'";
           break;
         default:
           dateFilter = "";
       }
 
       const data: Record<string, any> = {};
+      const sessionParams: any[] = hasDateFilter ? [userId, userDate] : [userId];
 
       // Sessions
       if (scope === "all" || scope === "sessions") {
@@ -68,7 +72,7 @@ Examples:
            JOIN sets st ON st.session_exercise_id = se.id
            WHERE s.user_id = $1 AND s.deleted_at IS NULL ${dateFilter}
            ORDER BY s.started_at DESC, se.sort_order, st.set_number`,
-          [userId]
+          sessionParams
         );
         data.sessions = rows;
       }

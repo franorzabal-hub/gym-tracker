@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
+import { parseJsonParam } from "../helpers/parse-helpers.js";
 
 export function registerTemplatesTool(server: McpServer) {
   server.tool(
@@ -76,7 +77,7 @@ Actions:
         let sid: number;
         if (session_id === "last" || session_id === undefined) {
           const { rows } = await pool.query(
-            "SELECT id FROM sessions WHERE user_id = $1 AND ended_at IS NOT NULL ORDER BY ended_at DESC LIMIT 1",
+            "SELECT id FROM sessions WHERE user_id = $1 AND ended_at IS NOT NULL AND deleted_at IS NULL ORDER BY ended_at DESC LIMIT 1",
             [userId]
           );
           if (rows.length === 0) {
@@ -213,41 +214,53 @@ Actions:
           [templates[0].id]
         );
 
-        // Create session
-        const startedAt = date ? new Date(date) : new Date();
-        const { rows: [session] } = await pool.query(
-          "INSERT INTO sessions (user_id, started_at) VALUES ($1, $2) RETURNING id, started_at",
-          [userId, startedAt]
-        );
+        // Create session + pre-populate in a transaction
+        const startClient = await pool.connect();
+        try {
+          await startClient.query("BEGIN");
 
-        // Pre-populate session_exercises
-        for (const te of templateExercises) {
-          await pool.query(
-            `INSERT INTO session_exercises (session_id, exercise_id, sort_order, superset_group, rest_seconds, notes)
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [session.id, te.exercise_id, te.sort_order, te.superset_group || null, te.rest_seconds || null, te.notes || null]
+          const startedAt = date ? new Date(date) : new Date();
+          const { rows: [session] } = await startClient.query(
+            "INSERT INTO sessions (user_id, started_at) VALUES ($1, $2) RETURNING id, started_at",
+            [userId, startedAt]
           );
-        }
 
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              session_id: session.id,
-              started_at: session.started_at,
-              template: name,
-              planned_exercises: templateExercises.map((te: any) => ({
-                exercise: te.exercise_name,
-                target_sets: te.target_sets,
-                target_reps: te.target_reps,
-                target_weight: te.target_weight,
-                target_rpe: te.target_rpe,
-                rest_seconds: te.rest_seconds,
-                superset_group: te.superset_group,
-              })),
-            }),
-          }],
-        };
+          // Pre-populate session_exercises
+          for (const te of templateExercises) {
+            await startClient.query(
+              `INSERT INTO session_exercises (session_id, exercise_id, sort_order, superset_group, rest_seconds, notes)
+               VALUES ($1, $2, $3, $4, $5, $6)`,
+              [session.id, te.exercise_id, te.sort_order, te.superset_group || null, te.rest_seconds || null, te.notes || null]
+            );
+          }
+
+          await startClient.query("COMMIT");
+
+          return {
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({
+                session_id: session.id,
+                started_at: session.started_at,
+                template: name,
+                planned_exercises: templateExercises.map((te: any) => ({
+                  exercise: te.exercise_name,
+                  target_sets: te.target_sets,
+                  target_reps: te.target_reps,
+                  target_weight: te.target_weight,
+                  target_rpe: te.target_rpe,
+                  rest_seconds: te.rest_seconds,
+                  superset_group: te.superset_group,
+                })),
+              }),
+            }],
+          };
+        } catch (err) {
+          await startClient.query("ROLLBACK");
+          throw err;
+        } finally {
+          startClient.release();
+        }
       }
 
       if (action === "delete") {
@@ -273,10 +286,7 @@ Actions:
       }
 
       if (action === "delete_bulk") {
-        let namesList = rawNames as any;
-        if (typeof namesList === 'string') {
-          try { namesList = JSON.parse(namesList); } catch { namesList = null; }
-        }
+        const namesList = parseJsonParam<string[]>(rawNames);
         if (!namesList || !Array.isArray(namesList) || namesList.length === 0) {
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ error: "names array required for delete_bulk" }) }],

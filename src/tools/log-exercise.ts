@@ -1,9 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { PoolClient } from "pg";
 import pool from "../db/connection.js";
 import { resolveExercise } from "../helpers/exercise-resolver.js";
 import { checkPRs } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
+import { parseJsonParam } from "../helpers/parse-helpers.js";
 
 const exerciseEntrySchema = z.object({
   exercise: z.string(),
@@ -27,21 +29,24 @@ const exerciseEntrySchema = z.object({
 
 type ExerciseEntry = z.infer<typeof exerciseEntrySchema>;
 
-async function logSingleExercise(sessionId: number, entry: ExerciseEntry) {
+async function logSingleExercise(sessionId: number, entry: ExerciseEntry, client?: PoolClient) {
   const { exercise, sets, reps, weight, rpe, set_type, notes, rest_seconds, superset_group, muscle_group, equipment, set_notes, drop_percent, rep_type, exercise_type } = entry;
+  const q = client || pool;
 
   // Resolve exercise (pass metadata for auto-create or fill)
-  const resolved = await resolveExercise(exercise, muscle_group, equipment, rep_type, exercise_type);
+  const resolved = await resolveExercise(exercise, muscle_group, equipment, rep_type, exercise_type, client);
 
   // Check if session_exercise already exists for this exercise in this session
-  const { rows: existingRows } = await pool.query(
+  const userId = getUserId();
+  const { rows: existingRows } = await q.query(
     `SELECT se.id, COALESCE(MAX(s.set_number), 0) AS max_set_number
      FROM session_exercises se
+     JOIN sessions sess ON sess.id = se.session_id
      LEFT JOIN sets s ON s.session_exercise_id = se.id
-     WHERE se.session_id = $1 AND se.exercise_id = $2
+     WHERE se.session_id = $1 AND se.exercise_id = $2 AND sess.user_id = $3
      GROUP BY se.id
      LIMIT 1`,
-    [sessionId, resolved.id]
+    [sessionId, resolved.id, userId]
   );
 
   let se: { id: number };
@@ -75,14 +80,14 @@ async function logSingleExercise(sessionId: number, entry: ExerciseEntry) {
 
     if (updates.length > 0) {
       updateValues.push(se.id);
-      await pool.query(
+      await q.query(
         `UPDATE session_exercises SET ${updates.join(", ")} WHERE id = $${paramIdx}`,
         updateValues
       );
     }
   } else {
     // Create new session_exercise
-    const { rows: [newSe] } = await pool.query(
+    const { rows: [newSe] } = await q.query(
       `INSERT INTO session_exercises (session_id, exercise_id, sort_order, notes, rest_seconds, superset_group)
        VALUES ($1, $2, COALESCE((SELECT MAX(sort_order) + 1 FROM session_exercises WHERE session_id = $1), 0), $3, $4, $5)
        RETURNING id`,
@@ -122,7 +127,7 @@ async function logSingleExercise(sessionId: number, entry: ExerciseEntry) {
     if (set_type === 'drop' && weight && drop_percent) {
       setWeight = Math.max(0, Math.round((weight * (1 - (i * drop_percent / 100))) * 10) / 10);
     }
-    const { rows: [inserted] } = await pool.query(
+    const { rows: [inserted] } = await q.query(
       `INSERT INTO sets (session_exercise_id, set_number, set_type, reps, weight, rpe, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
       [se.id, startSetNumber + i + 1, set_type, repsArray[i], setWeight, rpe || null, setNote]
@@ -146,7 +151,8 @@ async function logSingleExercise(sessionId: number, entry: ExerciseEntry) {
       weight: s.weight ?? null,
       set_id: s.set_id,
     })),
-    resolved.exerciseType
+    resolved.exerciseType,
+    client
   );
 
   return {
@@ -224,43 +230,50 @@ Returns the logged sets and any new personal records achieved.`,
       const sessionId = sessionRes.rows[0].id;
 
       // Bulk mode — some MCP clients serialize nested arrays as JSON strings
-      let exercisesList = params.exercises as any;
-      if (typeof exercisesList === 'string') {
-        try { exercisesList = JSON.parse(exercisesList); } catch { exercisesList = null; }
-      }
+      const exercisesList = parseJsonParam<ExerciseEntry[]>(params.exercises);
       if (exercisesList && Array.isArray(exercisesList) && exercisesList.length > 0) {
-        const results = [];
-        for (const entry of exercisesList) {
-          results.push(await logSingleExercise(sessionId, entry));
-        }
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          const results = [];
+          for (const entry of exercisesList) {
+            results.push(await logSingleExercise(sessionId, entry, client));
+          }
+          await client.query("COMMIT");
 
-        if (params.minimal_response) {
-          const allPRs = results.flatMap(r => r.new_prs || []);
+          if (params.minimal_response) {
+            const allPRs = results.flatMap(r => r.new_prs || []);
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify({
+                    success: true,
+                    exercises_logged: results.length,
+                    new_prs: allPRs.length > 0 ? allPRs : undefined,
+                  }),
+                },
+              ],
+            };
+          }
+
           return {
             content: [
               {
                 type: "text" as const,
                 text: JSON.stringify({
-                  success: true,
-                  exercises_logged: results.length,
-                  new_prs: allPRs.length > 0 ? allPRs : undefined,
+                  session_id: sessionId,
+                  exercises_logged: results,
                 }),
               },
             ],
           };
+        } catch (err) {
+          await client.query("ROLLBACK");
+          throw err;
+        } finally {
+          client.release();
         }
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                session_id: sessionId,
-                exercises_logged: results,
-              }),
-            },
-          ],
-        };
       }
 
       // Single mode
@@ -277,50 +290,60 @@ Returns the logged sets and any new personal records achieved.`,
         };
       }
 
-      const result = await logSingleExercise(sessionId, {
-        exercise: params.exercise,
-        sets: params.sets,
-        reps: params.reps,
-        weight: params.weight,
-        rpe: params.rpe,
-        set_type: params.set_type,
-        notes: params.notes,
-        rest_seconds: params.rest_seconds,
-        superset_group: params.superset_group,
-        muscle_group: params.muscle_group,
-        equipment: params.equipment,
-        set_notes: params.set_notes,
-        drop_percent: params.drop_percent,
-        rep_type: params.rep_type,
-        exercise_type: params.exercise_type,
-      });
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const result = await logSingleExercise(sessionId, {
+          exercise: params.exercise,
+          sets: params.sets,
+          reps: params.reps,
+          weight: params.weight,
+          rpe: params.rpe,
+          set_type: params.set_type,
+          notes: params.notes,
+          rest_seconds: params.rest_seconds,
+          superset_group: params.superset_group,
+          muscle_group: params.muscle_group,
+          equipment: params.equipment,
+          set_notes: params.set_notes,
+          drop_percent: params.drop_percent,
+          rep_type: params.rep_type,
+          exercise_type: params.exercise_type,
+        }, client);
+        await client.query("COMMIT");
 
-      if (params.minimal_response) {
+        if (params.minimal_response) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  success: true,
+                  exercises_logged: 1,
+                  new_prs: result.new_prs || undefined,
+                }),
+              },
+            ],
+          };
+        }
+
         return {
           content: [
             {
               type: "text" as const,
               text: JSON.stringify({
-                success: true,
-                exercises_logged: 1,
-                new_prs: result.new_prs || undefined,
+                ...result,
+                session_id: sessionId,
               }),
             },
           ],
         };
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
       }
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              ...result,
-              session_id: sessionId,
-            }),
-          },
-        ],
-      };
     }
   );
 }

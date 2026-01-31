@@ -8,6 +8,7 @@ import {
 } from "../helpers/program-helpers.js";
 import { checkPRs } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
+import { parseJsonParam } from "../helpers/parse-helpers.js";
 
 export function registerLogRoutineTool(server: McpServer) {
   server.tool(
@@ -47,13 +48,9 @@ Parameters:
       const userId = getUserId();
 
       // Some MCP clients serialize nested arrays as JSON strings
-      const parseIfString = (v: any) => {
-        if (typeof v === 'string') { try { return JSON.parse(v); } catch { return undefined; } }
-        return v;
-      };
-      const overrides = parseIfString(rawOverrides);
-      const skip = parseIfString(rawSkip);
-      const tags = parseIfString(rawTags);
+      const overrides = parseJsonParam<any[]>(rawOverrides);
+      const skip = parseJsonParam<string[]>(rawSkip);
+      const tags = parseJsonParam<string[]>(rawTags);
 
       // Resolve program and day info before starting the transaction
       const activeProgram = await getActiveProgram();
