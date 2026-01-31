@@ -23,6 +23,8 @@ Examples:
 - "Borrá la sesión 42" → soft-delete an entire session
 - "Restaurá la sesión 42" → restore a soft-deleted session
 
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.
+
 Parameters:
 - exercise: name or alias (required for single mode, ignored if bulk or delete_session is used)
 - session: "today" (default), "last", or a date string

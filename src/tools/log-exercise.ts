@@ -192,7 +192,9 @@ Single exercise mode:
 Bulk mode:
 - exercises: array of exercise entries (each with the same fields as above). Logs multiple exercises in one call.
 
-Returns the logged sets and any new personal records achieved.`,
+Returns the logged sets and any new personal records achieved.
+
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or highlight new PRs.`,
     inputSchema: {
       exercise: z.string().optional(),
       sets: z.number().int().min(1).default(1),

@@ -48,7 +48,9 @@ Actions:
 For "create" and "update" with days, pass the "days" array with day_label, weekdays (ISO: 1=Mon..7=Sun), and exercises.
 For "update" with days, also pass change_description explaining what changed.
 For "update" metadata only, pass new_name and/or description (no days needed).
-For "activate", pass the program name.`,
+For "activate", pass the program name.
+
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
     inputSchema: {
       action: z.enum(["list", "get", "create", "update", "activate", "delete", "delete_bulk", "history"]),
       name: z.string().optional(),

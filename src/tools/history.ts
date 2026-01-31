@@ -20,7 +20,9 @@ Use limit/offset for pagination. Use summary_only for lightweight summaries.
 Examples:
 - "¿qué entrené esta semana?" → period: "week"
 - "historial de press banca" → exercise: "press banca"
-- "¿qué hice hoy?" → period: "today"`,
+- "¿qué hice hoy?" → period: "today"
+
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
       inputSchema: {
       period: z
         .union([

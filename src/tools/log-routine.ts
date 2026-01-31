@@ -24,7 +24,9 @@ Parameters:
 - program_day: day label to log (e.g. "Push"). If omitted, infers from today's weekday.
 - overrides: array of { exercise, sets?, reps?, weight?, rpe? } to override template values
 - skip: array of exercise names to skip
-- auto_end: whether to auto-close the session (default true). Set false to keep it open for additional exercises.`,
+- auto_end: whether to auto-close the session (default true). Set false to keep it open for additional exercises.
+
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or highlight new PRs.`,
     inputSchema: {
       program_day: z.string().optional(),
       overrides: z.union([

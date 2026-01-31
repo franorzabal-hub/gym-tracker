@@ -11,7 +11,9 @@ export function registerTodayPlanTool(server: McpServer) {
     {
       title: "Get Today's Plan",
       description: `Get today's planned workout without starting a session. Returns the program day, exercises with targets, and last workout comparison.
-Uses the active program + user's timezone to infer which day it is. Returns rest_day if no day is mapped to today.`,
+Uses the active program + user's timezone to infer which day it is. Returns rest_day if no day is mapped to today.
+
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
       inputSchema: {
         include_last_workout: z.boolean().optional().describe("If true, include last workout data. Defaults to true"),
       },

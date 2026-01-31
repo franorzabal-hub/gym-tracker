@@ -19,7 +19,9 @@ export function registerSessionTools(server: McpServer) {
 If not specified, it will infer from the active program + today's weekday.
 Returns the session info and the exercises planned for that day (if any).
 
-- date: optional ISO date string (e.g. "2025-01-28") to backdate the session. Useful for logging past workouts.`,
+- date: optional ISO date string (e.g. "2025-01-28") to backdate the session. Useful for logging past workouts.
+
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
       inputSchema: {
         program_day: z.string().optional(),
         notes: z.string().optional(),
@@ -172,7 +174,9 @@ Returns the session info and the exercises planned for that day (if any).
     {
       title: "End Session",
       description: `Use this when you need to end the current active workout session. Returns a summary with duration, exercises count, total sets, and total volume.
-Optionally add or update tags on the session.`,
+Optionally add or update tags on the session.
+
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
       inputSchema: {
         notes: z.string().optional(),
         force: z.boolean().optional().default(false),
@@ -400,7 +404,9 @@ Optionally add or update tags on the session.`,
     "get_active_session",
     {
       title: "Get Active Session",
-      description: `Use this when you need to check if there is an active (open) workout session. Returns session details with exercises logged so far, or indicates no active session.`,
+      description: `Use this when you need to check if there is an active (open) workout session. Returns session details with exercises logged so far, or indicates no active session.
+
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
       inputSchema: {},
       annotations: { readOnlyHint: true },
       _meta: {

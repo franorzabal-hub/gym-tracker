@@ -32,7 +32,9 @@ export function registerExportTool(server: McpServer) {
 Examples:
 - "exportar mis datos" → json, scope: "all"
 - "csv de mis sesiones del último mes" → csv, scope: "sessions", period: "month"
-- "descargar mis ejercicios" → json, scope: "exercises"`,
+- "descargar mis ejercicios" → json, scope: "exercises"
+
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
       inputSchema: {
         action: z.enum(["json", "csv"]),
         scope: z.enum(["all", "sessions", "exercises", "programs", "measurements", "prs"]).optional().describe("What data to export. Defaults to all"),

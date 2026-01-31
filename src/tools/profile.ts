@@ -12,7 +12,9 @@ export function registerProfileTool(server: McpServer) {
       description: `Use this when you need to manage user profile data. Use action "get" to retrieve the current profile (call this at conversation start for context).
 Use action "update" to save any user info like name, age, weight, height, goals, injuries, preferences.
 The data field accepts any JSON object — it merges with existing data.
-Example: user says "peso 82kg" → update with { "weight_kg": 82 }`,
+Example: user says "peso 82kg" → update with { "weight_kg": 82 }
+
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
       inputSchema: {
         action: z.enum(["get", "update"]),
         data: z.record(z.any()).optional(),

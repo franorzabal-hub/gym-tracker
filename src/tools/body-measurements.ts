@@ -17,7 +17,9 @@ Common types: weight_kg, body_fat_pct, chest_cm, waist_cm, arm_cm, thigh_cm — 
 Examples:
 - "peso 82kg" → log, measurement_type: "weight_kg", value: 82
 - "historial de peso" → history, measurement_type: "weight_kg"
-- "mis medidas actuales" → latest`,
+- "mis medidas actuales" → latest
+
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
       inputSchema: {
         action: z.enum(["log", "history", "latest"]),
         measurement_type: z.string().optional().describe("Type: weight_kg, body_fat_pct, chest_cm, waist_cm, arm_cm, thigh_cm, or any custom type"),

@@ -17,7 +17,9 @@ Actions:
 - "list": List all saved templates with their exercises.
 - "start": Start a new session pre-populated from a template. Pass template name. Exercises are logged as session_exercises (no sets yet — use log_exercise to fill them in).
 - "delete": Delete a template by name.
-- "delete_bulk": Delete multiple templates at once. Pass "names" array. Returns { deleted, not_found }.`,
+- "delete_bulk": Delete multiple templates at once. Pass "names" array. Returns { deleted, not_found }.
+
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
       inputSchema: {
         action: z.enum(["save", "list", "start", "delete", "delete_bulk"]),
         name: z.string().optional(),

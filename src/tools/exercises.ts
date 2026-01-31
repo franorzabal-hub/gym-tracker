@@ -26,7 +26,9 @@ export function registerExercisesTool(server: McpServer) {
 - "merge": Merge two exercises: move all session data from source to target, then delete source. Pass source + target names.
 
 rep_type: "reps" (default), "seconds", "meters", "calories" - how the exercise is measured
-exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category of exercise (PRs only tracked for strength)`,
+exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category of exercise (PRs only tracked for strength)
+
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
       inputSchema: {
         action: z.enum(["list", "add", "search", "update", "delete", "add_bulk", "delete_bulk", "update_bulk", "list_aliases", "add_alias", "remove_alias", "merge"]),
         name: z.string().optional(),

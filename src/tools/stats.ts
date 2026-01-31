@@ -22,7 +22,9 @@ Examples:
 - "¿cómo voy en sentadilla?" → exercise: "sentadilla"
 - "stats de press banca del último mes" → exercise: "press banca", period: "month"
 - "¿cuánto levanto en peso muerto?" → exercise: "peso muerto"
-- "stats de press banca, sentadilla y peso muerto" → exercises: ["press banca", "sentadilla", "peso muerto"]`,
+- "stats de press banca, sentadilla y peso muerto" → exercises: ["press banca", "sentadilla", "peso muerto"]
+
+IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
       inputSchema: {
       exercise: z.string().optional(),
       exercises: z.union([z.array(z.string()), z.string()]).optional().describe("Array of exercise names for multi-exercise stats"),
