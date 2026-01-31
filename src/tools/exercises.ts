@@ -25,14 +25,17 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
       hard_delete: z.boolean().optional(),
       rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
       exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
-      exercises: z.array(z.object({
-        name: z.string(),
-        muscle_group: z.string().optional(),
-        equipment: z.string().optional(),
-        aliases: z.array(z.string()).optional(),
-        rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
-        exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
-      })).optional(),
+      exercises: z.union([
+        z.array(z.object({
+          name: z.string(),
+          muscle_group: z.string().optional(),
+          equipment: z.string().optional(),
+          aliases: z.array(z.string()).optional(),
+          rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
+          exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
+        })),
+        z.string(),
+      ]).optional(),
     },
     async ({ action, name, muscle_group, equipment, aliases, hard_delete, rep_type, exercise_type, exercises }) => {
       if (action === "list" || action === "search") {

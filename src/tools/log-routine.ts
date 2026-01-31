@@ -25,8 +25,8 @@ Parameters:
 - auto_end: whether to auto-close the session (default true). Set false to keep it open for additional exercises.`,
     {
       program_day: z.string().optional(),
-      overrides: z
-        .array(
+      overrides: z.union([
+        z.array(
           z.object({
             exercise: z.string(),
             sets: z.number().int().optional(),
@@ -34,12 +34,13 @@ Parameters:
             weight: z.number().optional(),
             rpe: z.number().optional(),
           })
-        )
-        .optional(),
-      skip: z.array(z.string()).optional(),
+        ),
+        z.string(),
+      ]).optional(),
+      skip: z.union([z.array(z.string()), z.string()]).optional(),
       auto_end: z.boolean().optional().describe("Whether to auto-close the session after logging. Default true. Set false to keep session open for additional exercises."),
       date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session. Defaults to now."),
-      tags: z.array(z.string()).optional().describe("Tags to label this session (e.g. ['deload', 'morning'])"),
+      tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to label this session (e.g. ['deload', 'morning'])"),
     },
     async ({ program_day, overrides: rawOverrides, skip: rawSkip, auto_end, date, tags: rawTags }) => {
       const userId = getUserId();

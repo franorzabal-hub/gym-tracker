@@ -204,7 +204,7 @@ Returns the logged sets and any new personal records achieved.`,
       drop_percent: z.number().min(1).max(50).optional(),
       rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
       exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
-      exercises: z.array(exerciseEntrySchema).optional(),
+      exercises: z.union([z.array(exerciseEntrySchema), z.string()]).optional(),
     },
     async (params) => {
       const userId = getUserId();
