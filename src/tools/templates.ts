@@ -4,10 +4,10 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerTemplatesTool(server: McpServer) {
-  registerAppTool(server,
+  registerAppToolWithMeta(server,
     "manage_templates",
     {
       title: "Manage Templates",

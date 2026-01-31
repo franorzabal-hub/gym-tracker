@@ -10,10 +10,10 @@ import {
 import { checkPRs } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerLogRoutineTool(server: McpServer) {
-  registerAppTool(server, "log_routine", {
+  registerAppToolWithMeta(server, "log_routine", {
     title: "Log Routine",
     description: `Log an entire routine day at once. This is for when the user says something like "hice la rutina de hoy" or "completed today's workout".
 Infers the program day from the active program + today's weekday, or uses the provided program_day label.

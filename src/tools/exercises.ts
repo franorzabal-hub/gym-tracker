@@ -5,10 +5,10 @@ import pool from "../db/connection.js";
 import { resolveExercise, searchExercises } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerExercisesTool(server: McpServer) {
-  registerAppTool(server,
+  registerAppToolWithMeta(server,
     "manage_exercises",
     {
       title: "Manage Exercises",

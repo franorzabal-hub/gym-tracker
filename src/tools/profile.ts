@@ -3,10 +3,10 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerProfileTool(server: McpServer) {
-  registerAppTool(server,
+  registerAppToolWithMeta(server,
     "manage_profile",
     {
       title: "Manage Profile",

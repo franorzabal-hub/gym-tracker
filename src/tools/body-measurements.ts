@@ -4,10 +4,10 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerBodyMeasurementsTool(server: McpServer) {
-  registerAppTool(server,
+  registerAppToolWithMeta(server,
     "manage_body_measurements",
     {
       title: "Body Measurements",

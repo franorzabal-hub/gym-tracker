@@ -7,7 +7,7 @@ import { resolveExercise } from "../helpers/exercise-resolver.js";
 import { checkPRs } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 const exerciseEntrySchema = z.object({
   exercise: z.string(),
@@ -168,7 +168,7 @@ async function logSingleExercise(sessionId: number, entry: ExerciseEntry, client
 }
 
 export function registerLogExerciseTool(server: McpServer) {
-  registerAppTool(server, "log_exercise", {
+  registerAppToolWithMeta(server, "log_exercise", {
     title: "Log Exercise",
     description: `Log sets of an exercise to the current workout session.
 The user might say things like "hice peso muerto 100kg 5x5" or "did 3 sets of pull-ups: 10, 8, 6".

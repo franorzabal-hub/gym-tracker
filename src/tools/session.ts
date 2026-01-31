@@ -9,10 +9,10 @@ import {
 } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerSessionTools(server: McpServer) {
-  registerAppTool(server,
+  registerAppToolWithMeta(server,
     "start_session",
     {
       title: "Start Session",
@@ -171,7 +171,7 @@ Returns the session info and the exercises planned for that day (if any).
     }
   );
 
-  registerAppTool(server,
+  registerAppToolWithMeta(server,
     "end_session",
     {
       title: "End Session",
@@ -403,7 +403,7 @@ Optionally add or update tags on the session.`,
     }
   );
 
-  registerAppTool(server,
+  registerAppToolWithMeta(server,
     "get_active_session",
     {
       title: "Get Active Session",

@@ -4,10 +4,10 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getActiveProgram, inferTodayDay } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerTodayPlanTool(server: McpServer) {
-  registerAppTool(server,
+  registerAppToolWithMeta(server,
     "get_today_plan",
     {
       title: "Get Today's Plan",

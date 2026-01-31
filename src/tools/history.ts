@@ -5,10 +5,10 @@ import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerHistoryTool(server: McpServer) {
-  registerAppTool(server,
+  registerAppToolWithMeta(server,
     "get_history",
     {
       title: "Get History",

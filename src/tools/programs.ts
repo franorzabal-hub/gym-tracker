@@ -11,7 +11,7 @@ import {
 } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 const dayExerciseSchema = z.object({
   exercise: z.string(),
@@ -31,7 +31,7 @@ const daySchema = z.object({
 });
 
 export function registerProgramTool(server: McpServer) {
-  registerAppTool(server, "manage_program", {
+  registerAppToolWithMeta(server, "manage_program", {
     title: "Manage Program",
     description: `Manage workout programs (routines). A program is a weekly routine like PPL, Upper/Lower, Full Body.
 Each program has versioned days with exercises. When updated, a new version is created preserving history.

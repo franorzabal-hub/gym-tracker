@@ -4,7 +4,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
-import { toolResponse } from "../helpers/tool-response.js";
+import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 function escapeCsvValue(val: any): string {
   if (val === null || val === undefined) return "";
@@ -24,7 +24,7 @@ function toCsv(headers: string[], rows: Record<string, any>[]): string {
 }
 
 export function registerExportTool(server: McpServer) {
-  registerAppTool(server,
+  registerAppToolWithMeta(server,
     "export_data",
     {
       title: "Export Data",
