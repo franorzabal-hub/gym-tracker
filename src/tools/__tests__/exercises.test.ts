@@ -68,6 +68,57 @@ describe("manage_exercises tool", () => {
     });
   });
 
+  describe("add_bulk action", () => {
+    it("rejects when exercises array missing", async () => {
+      const result = await toolHandler({ action: "add_bulk" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("exercises array required");
+    });
+
+    it("creates new exercises and identifies existing ones", async () => {
+      mockResolve
+        .mockResolvedValueOnce({ id: 1, name: "Plancha", isNew: true, exerciseType: "mobility" })
+        .mockResolvedValueOnce({ id: 2, name: "Bench Press", isNew: false, exerciseType: "strength" });
+
+      const result = await toolHandler({
+        action: "add_bulk",
+        exercises: [
+          { name: "Plancha", rep_type: "seconds", exercise_type: "mobility" },
+          { name: "Bench Press" },
+        ],
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.created).toEqual(["Plancha"]);
+      expect(parsed.existing).toEqual(["Bench Press"]);
+      expect(parsed.total).toBe(2);
+      expect(mockResolve).toHaveBeenCalledWith("Plancha", undefined, undefined, "seconds", "mobility");
+      expect(mockResolve).toHaveBeenCalledWith("Bench Press", undefined, undefined, undefined, undefined);
+    });
+
+    it("inserts aliases for bulk exercises", async () => {
+      mockResolve.mockResolvedValueOnce({ id: 10, name: "Plancha", isNew: true });
+      mockQuery.mockResolvedValue({});
+
+      await toolHandler({
+        action: "add_bulk",
+        exercises: [
+          { name: "Plancha", aliases: ["plank", "tabla"] },
+        ],
+      });
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining("INSERT INTO exercise_aliases"),
+        [10, "plank"]
+      );
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining("INSERT INTO exercise_aliases"),
+        [10, "tabla"]
+      );
+    });
+  });
+
   describe("add action", () => {
     it("rejects when name missing", async () => {
       const result = await toolHandler({ action: "add" });

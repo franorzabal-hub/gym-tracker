@@ -159,6 +159,49 @@ describe("manage_program tool", () => {
     });
   });
 
+  describe("update action", () => {
+    it("updates metadata only when no days provided", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // find program
+        .mockResolvedValueOnce({ rows: [{ id: 1, name: "New PPL", description: "Updated desc" }] }); // UPDATE
+
+      const result = await toolHandler({
+        action: "update", name: "PPL", new_name: "New PPL", description: "Updated desc",
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.updated.name).toBe("New PPL");
+      expect(parsed.updated.description).toBe("Updated desc");
+    });
+
+    it("rejects metadata update with no fields", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1 }] }); // find program
+
+      const result = await toolHandler({ action: "update", name: "PPL" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Provide days array");
+    });
+
+    it("creates new version when days provided", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1 }] }); // find program
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 6 }] }) // INSERT version
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "update", name: "PPL", change_description: "Added leg day",
+        days: [{ day_label: "Legs", exercises: [{ exercise: "Squat", sets: 5, reps: 5 }] }],
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.program.version).toBe(3);
+      expect(parsed.exercises_summary).toBeDefined();
+    });
+  });
+
   describe("activate action", () => {
     it("activates a program by name", async () => {
       mockQuery
