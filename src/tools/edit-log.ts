@@ -60,17 +60,18 @@ Parameters:
           notes: z.string().optional(),
         }).optional(),
       })).optional(),
-      delete_session: z.number().int().optional().describe("Session ID to delete entirely. Removes all exercises, sets, and the session record."),
+      delete_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to delete entirely. Removes all exercises, sets, and the session record."),
     },
     async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session }) => {
       const userId = getUserId();
 
       // --- Delete session mode ---
-      if (delete_session) {
+      if (delete_session !== undefined && delete_session !== null) {
+        const sessionId = Number(delete_session);
         // Verify ownership
         const { rows: sessionRows } = await pool.query(
           "SELECT id, started_at, ended_at FROM sessions WHERE id = $1 AND user_id = $2",
-          [delete_session, userId]
+          [sessionId, userId]
         );
         if (sessionRows.length === 0) {
           return {
@@ -84,16 +85,16 @@ Parameters:
           `DELETE FROM sets WHERE session_exercise_id IN (
              SELECT id FROM session_exercises WHERE session_id = $1
            )`,
-          [delete_session]
+          [sessionId]
         );
-        await pool.query("DELETE FROM session_exercises WHERE session_id = $1", [delete_session]);
-        await pool.query("DELETE FROM sessions WHERE id = $1", [delete_session]);
+        await pool.query("DELETE FROM session_exercises WHERE session_id = $1", [sessionId]);
+        await pool.query("DELETE FROM sessions WHERE id = $1", [sessionId]);
 
         return {
           content: [{
             type: "text" as const,
             text: JSON.stringify({
-              deleted_session: delete_session,
+              deleted_session: sessionId,
               started_at: sessionRows[0].started_at,
               message: "Session and all associated data permanently deleted.",
             }),
