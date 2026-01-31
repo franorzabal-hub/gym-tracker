@@ -6,14 +6,10 @@ import { estimateE1RM } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerStatsTool(server: McpServer) {
-  registerAppToolWithMeta(server,
-    "get_stats",
-    {
-      title: "Get Stats",
-      description: `Get detailed statistics for one or more exercises. Shows personal records, progression over time, volume trends, and training frequency.
+  server.tool("get_stats", `Get detailed statistics for one or more exercises. Shows personal records, progression over time, volume trends, and training frequency.
 
 Single mode: pass "exercise" (string) for one exercise.
 Multi mode: pass "exercises" (string[]) for multiple exercises at once. Returns an array of stats.
@@ -22,10 +18,7 @@ Examples:
 - "¿cómo voy en sentadilla?" → exercise: "sentadilla"
 - "stats de press banca del último mes" → exercise: "press banca", period: "month"
 - "¿cuánto levanto en peso muerto?" → exercise: "peso muerto"
-- "stats de press banca, sentadilla y peso muerto" → exercises: ["press banca", "sentadilla", "peso muerto"]
-
-IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
-      inputSchema: {
+- "stats de press banca, sentadilla y peso muerto" → exercises: ["press banca", "sentadilla", "peso muerto"]`, {
       exercise: z.string().optional(),
       exercises: z.union([z.array(z.string()), z.string()]).optional().describe("Array of exercise names for multi-exercise stats"),
       period: z
@@ -35,11 +28,6 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
       summary_only: z.boolean().optional().describe("If true, return only PRs and frequency without progression/volume data"),
       max_data_points: z.number().int().optional().describe("Max progression/volume data points to return. Defaults to 50"),
       by_muscle_group: z.boolean().optional().describe("If true, return volume breakdown by muscle group"),
-    },
-      annotations: { readOnlyHint: true },
-      _meta: {
-        ui: { resourceUri: "ui://gym-tracker/stats.html" },
-      },
     },
     async ({ exercise, exercises: rawExercises, period, summary_only, max_data_points, by_muscle_group }) => {
       const userId = getUserId();
@@ -81,14 +69,14 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         if (muscleGroupVolume) {
           response.muscle_group_volume = muscleGroupVolume;
         }
-        return widgetResponse(`Stats for ${single.exercise}.`, response);
+        return toolResponse(response);
       }
 
       const response: any = { stats: results };
       if (muscleGroupVolume) {
         response.muscle_group_volume = muscleGroupVolume;
       }
-      return widgetResponse(`Stats for ${results.length} exercise(s).`, response);
+      return toolResponse(response);
     }
   );
 }

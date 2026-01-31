@@ -2,27 +2,18 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
-import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerProfileTool(server: McpServer) {
-  registerAppToolWithMeta(server,
+  server.tool(
     "manage_profile",
-    {
-      title: "Manage Profile",
-      description: `Use this when you need to manage user profile data. Use action "get" to retrieve the current profile (call this at conversation start for context).
+    `Use this when you need to manage user profile data. Use action "get" to retrieve the current profile (call this at conversation start for context).
 Use action "update" to save any user info like name, age, weight, height, goals, injuries, preferences.
 The data field accepts any JSON object — it merges with existing data.
-Example: user says "peso 82kg" → update with { "weight_kg": 82 }
-
-IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
-      inputSchema: {
-        action: z.enum(["get", "update"]),
-        data: z.record(z.any()).optional(),
-      },
-      annotations: {},
-      _meta: {
-        ui: { resourceUri: "ui://gym-tracker/profile.html" },
-      },
+Example: user says "peso 82kg" → update with { "weight_kg": 82 }`,
+    {
+      action: z.enum(["get", "update"]),
+      data: z.record(z.any()).optional(),
     },
     async ({ action, data }) => {
       const userId = getUserId();
@@ -33,10 +24,8 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           [userId]
         );
         const profile = rows[0]?.data || {};
-        return widgetResponse(
-          profile.name ? `Profile loaded for ${profile.name}.` : "Profile is empty.",
-          { profile }
-        );
+
+        return toolResponse({ profile });
       }
 
       // update
@@ -54,10 +43,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
       );
 
       const updated = rows[0].data;
-      return widgetResponse(
-        `Profile updated: ${Object.keys(data).join(", ")}.`,
-        { profile: updated }
-      );
+      return toolResponse({ profile: updated });
     }
   );
 }

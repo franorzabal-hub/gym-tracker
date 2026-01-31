@@ -3,24 +3,17 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerTemplatesTool(server: McpServer) {
-  registerAppToolWithMeta(server,
-    "manage_templates",
-    {
-      title: "Manage Templates",
-      description: `Manage session templates — save a workout as a reusable template, list templates, or start a new session from one.
+  server.tool("manage_templates", `Manage session templates — save a workout as a reusable template, list templates, or start a new session from one.
 
 Actions:
 - "save": Save a completed session as a template. Pass session_id (or "last" for the most recent ended session) and a name.
 - "list": List all saved templates with their exercises.
 - "start": Start a new session pre-populated from a template. Pass template name. Exercises are logged as session_exercises (no sets yet — use log_exercise to fill them in).
 - "delete": Delete a template by name.
-- "delete_bulk": Delete multiple templates at once. Pass "names" array. Returns { deleted, not_found }.
-
-IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
-      inputSchema: {
+- "delete_bulk": Delete multiple templates at once. Pass "names" array. Returns { deleted, not_found }.`, {
         action: z.enum(["save", "list", "start", "delete", "delete_bulk"]),
         name: z.string().optional(),
         session_id: z.union([z.number().int(), z.literal("last")]).optional(),
@@ -29,11 +22,6 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         limit: z.number().int().optional().describe("Max templates to return. Defaults to 50"),
         offset: z.number().int().optional().describe("Skip first N templates for pagination. Defaults to 0"),
       },
-      annotations: {},
-      _meta: {
-        ui: { resourceUri: "ui://gym-tracker/templates.html" },
-      },
-    },
     async ({ action, name, session_id, date, names: rawNames, limit, offset }) => {
       const userId = getUserId();
 
@@ -70,7 +58,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
            LIMIT $2 OFFSET $3`,
           [userId, effectiveLimit, effectiveOffset]
         );
-        return widgetResponse(`${total} template(s).`, { templates, total });
+        return toolResponse({ templates, total });
       }
 
       if (action === "save") {
@@ -144,7 +132,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
           await client.query("COMMIT");
 
-          return widgetResponse(`Template '${name}' saved with ${sessionExercises.length} exercises.`, {
+          return toolResponse({
             template: { id: tmpl.id, name },
             exercises_count: sessionExercises.length,
             source_session_id: sid,
@@ -215,7 +203,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
           await startClient.query("COMMIT");
 
-          return widgetResponse(`Session started from template '${name}'.`, {
+          return toolResponse({
             session_id: session.id,
             started_at: session.started_at,
             template: name,
@@ -248,7 +236,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         if (rows.length === 0) {
           return toolResponse({ error: `Template "${name}" not found` }, true);
         }
-        return widgetResponse(`Template '${rows[0].name}' deleted.`, { deleted: rows[0].name });
+        return toolResponse({ deleted: rows[0].name });
       }
 
       if (action === "delete_bulk") {
@@ -272,7 +260,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           }
         }
 
-        return widgetResponse(`${deleted.length} template(s) deleted.`, {
+        return toolResponse({
           deleted,
           not_found: not_found.length > 0 ? not_found : undefined,
         });

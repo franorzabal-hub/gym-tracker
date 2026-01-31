@@ -21,7 +21,7 @@ describe("manage_profile tool", () => {
   beforeEach(() => {
     mockQuery.mockReset();
     const server = {
-      registerTool: vi.fn((_name: string, _config: any, handler: Function) => {
+      tool: vi.fn((_name: string, _desc: any, _schema: any, handler: Function) => {
         toolHandler = handler;
       }),
     } as unknown as McpServer;
@@ -29,10 +29,11 @@ describe("manage_profile tool", () => {
   });
 
   it("registers with correct name", () => {
-    const server = { registerTool: vi.fn() } as unknown as McpServer;
+    const server = { tool: vi.fn() } as unknown as McpServer;
     registerProfileTool(server);
-    expect(server.registerTool).toHaveBeenCalledWith(
+    expect(server.tool).toHaveBeenCalledWith(
       "manage_profile",
+      expect.any(String),
       expect.any(Object),
       expect.any(Function)
     );
@@ -44,16 +45,14 @@ describe("manage_profile tool", () => {
     });
 
     const result = await toolHandler({ action: "get" });
-    expect(result.structuredContent.profile).toEqual({ name: "Franco", weight_kg: 80 });
-    expect(result.content[0].text).toContain("Franco");
+    expect(JSON.parse(result.content[0].text).profile).toEqual({ name: "Franco", weight_kg: 80 });
   });
 
   it("get action returns empty profile when no data", async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const result = await toolHandler({ action: "get" });
-    expect(result.structuredContent.profile).toEqual({});
-    expect(result.content[0].text).toBe("Profile is empty.");
+    expect(JSON.parse(result.content[0].text).profile).toEqual({});
   });
 
   it("update action merges data", async () => {
@@ -62,7 +61,7 @@ describe("manage_profile tool", () => {
     });
 
     const result = await toolHandler({ action: "update", data: { weight_kg: 82 } });
-    expect(result.structuredContent.profile).toBeDefined();
+    expect(JSON.parse(result.content[0].text).profile).toBeDefined();
     expect(mockQuery).toHaveBeenCalledWith(
       expect.stringContaining("ON CONFLICT (user_id)"),
       [1, JSON.stringify({ weight_kg: 82 })]

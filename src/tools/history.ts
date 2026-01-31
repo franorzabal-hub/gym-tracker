@@ -4,14 +4,10 @@ import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerHistoryTool(server: McpServer) {
-  registerAppToolWithMeta(server,
-    "get_history",
-    {
-      title: "Get History",
-      description: `Get workout history. Shows past sessions with exercises and sets.
+  server.tool("get_history", `Get workout history. Shows past sessions with exercises and sets.
 Use period to filter: "today", "week", "month", "year", or a number of days.
 Optionally filter by exercise name or program_day label.
 Use session_id to fetch a specific session by ID (ignores other filters).
@@ -20,10 +16,7 @@ Use limit/offset for pagination. Use summary_only for lightweight summaries.
 Examples:
 - "¿qué entrené esta semana?" → period: "week"
 - "historial de press banca" → exercise: "press banca"
-- "¿qué hice hoy?" → period: "today"
-
-IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
-      inputSchema: {
+- "¿qué hice hoy?" → period: "today"`, {
       period: z
         .union([
           z.enum(["today", "week", "month", "year"]),
@@ -39,11 +32,6 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
       offset: z.number().int().optional().describe("Skip first N sessions for pagination. Defaults to 0"),
       summary_only: z.boolean().optional().describe("If true, return only session summaries without exercise/set details"),
       include_sets: z.boolean().optional().describe("If true, include individual set details per exercise. Defaults to true"),
-    },
-      annotations: { readOnlyHint: true },
-      _meta: {
-        ui: { resourceUri: "ui://gym-tracker/stats.html" },
-      },
     },
     async ({ period, exercise, program_day, tags: rawTags, session_id, limit: rawLimit, offset: rawOffset, summary_only, include_sets }) => {
       const tags = parseJsonArrayParam<string>(rawTags);
@@ -88,7 +76,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
               total_volume_kg: mapped.reduce((acc, s) => acc + s.total_volume_kg, 0),
               exercises_count: mapped.reduce((acc, s) => acc + s.exercises_count, 0),
             };
-          return widgetResponse(`${summary.total_sessions} session(s) found.`, { sessions: mapped, summary });
+          return toolResponse({ sessions: mapped, summary });
         }
 
         // Full session with exercises (and optionally sets)
@@ -169,7 +157,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
             total_volume_kg: Math.round(totalVolume),
             exercises_count: exerciseSet.size,
           };
-        return widgetResponse(`${summary.total_sessions} session(s), ${summary.total_volume_kg}kg total volume.`, { sessions, summary });
+        return toolResponse({ sessions, summary });
       }
 
       // --- Normal mode: period-based filtering ---
@@ -257,7 +245,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
             total_volume_kg: mapped.reduce((acc, s) => acc + s.total_volume_kg, 0),
             exercises_count: mapped.reduce((max, s) => max + s.exercises_count, 0),
           };
-        return widgetResponse(`${summary.total_sessions} session(s) in period.`, { sessions: mapped, summary });
+        return toolResponse({ sessions: mapped, summary });
       }
 
       // Full mode (with or without sets)
@@ -343,7 +331,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           total_volume_kg: Math.round(totalVolume),
           exercises_count: exerciseSet.size,
         };
-      return widgetResponse(`${summary.total_sessions} session(s), ${summary.total_volume_kg}kg total volume.`, { sessions, summary });
+      return toolResponse({ sessions, summary });
     }
   );
 }

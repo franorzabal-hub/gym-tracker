@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
-import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 function escapeCsvValue(val: any): string {
   if (val === null || val === undefined) return "";
@@ -23,27 +23,18 @@ function toCsv(headers: string[], rows: Record<string, any>[]): string {
 }
 
 export function registerExportTool(server: McpServer) {
-  registerAppToolWithMeta(server,
+  server.tool(
     "export_data",
-    {
-      title: "Export Data",
-      description: `Export user data as JSON or CSV. Use scope to choose what to export: all, sessions, exercises, programs, measurements, prs.
+    `Export user data as JSON or CSV. Use scope to choose what to export: all, sessions, exercises, programs, measurements, prs.
 
 Examples:
 - "exportar mis datos" → json, scope: "all"
 - "csv de mis sesiones del último mes" → csv, scope: "sessions", period: "month"
-- "descargar mis ejercicios" → json, scope: "exercises"
-
-IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
-      inputSchema: {
-        action: z.enum(["json", "csv"]),
-        scope: z.enum(["all", "sessions", "exercises", "programs", "measurements", "prs"]).optional().describe("What data to export. Defaults to all"),
-        period: z.enum(["month", "3months", "year", "all"]).optional().describe("Time period filter. Defaults to all"),
-      },
-      annotations: { readOnlyHint: true },
-      _meta: {
-        ui: { resourceUri: "ui://gym-tracker/export.html" },
-      },
+- "descargar mis ejercicios" → json, scope: "exercises"`,
+    {
+      action: z.enum(["json", "csv"]),
+      scope: z.enum(["all", "sessions", "exercises", "programs", "measurements", "prs"]).optional().describe("What data to export. Defaults to all"),
+      period: z.enum(["month", "3months", "year", "all"]).optional().describe("Time period filter. Defaults to all"),
     },
     async ({ action, scope: rawScope, period: rawPeriod }) => {
       const userId = getUserId();
@@ -147,7 +138,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
       }
 
       if (action === "json") {
-        return widgetResponse("Data exported as JSON.", { export: data });
+        return toolResponse({ export: data });
       }
 
       // CSV
@@ -192,10 +183,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
       const csvOutput = csvParts.join("\n\n");
 
-      return {
-        structuredContent: { format: "csv", data },
-        content: [{ type: "text" as const, text: csvOutput || "No data to export" }],
-      };
+      return { content: [{ type: "text" as const, text: csvOutput || "No data to export" }] };
     }
   );
 }

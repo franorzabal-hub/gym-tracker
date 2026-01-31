@@ -30,7 +30,7 @@ describe("edit_log tool", () => {
     mockQuery.mockReset();
 
     const server = {
-      registerTool: vi.fn((_name: string, _config: any, handler: Function) => {
+      tool: vi.fn((_name: string, _desc: string, _schema: any, handler: Function) => {
         toolHandler = handler;
       }),
     } as unknown as McpServer;
@@ -53,7 +53,7 @@ describe("edit_log tool", () => {
       const result = await toolHandler({
         exercise: "Bench Press", session: "today", action: "update", updates: { weight: 85 },
       });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
 
       expect(parsed.sets_updated).toBe(3);
       expect(parsed.updated_sets).toHaveLength(3);
@@ -73,7 +73,7 @@ describe("edit_log tool", () => {
       const result = await toolHandler({
         exercise: "Bench Press", action: "update", updates: { reps: 10 }, set_numbers: [2],
       });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.sets_updated).toBe(1);
     });
 
@@ -95,7 +95,7 @@ describe("edit_log tool", () => {
       const result = await toolHandler({
         exercise: "Bench Press", action: "delete", set_numbers: [3],
       });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.deleted).toBe(true);
       expect(parsed.set_numbers).toEqual([3]);
     });
@@ -107,7 +107,7 @@ describe("edit_log tool", () => {
         .mockResolvedValueOnce({});
 
       const result = await toolHandler({ exercise: "Bench Press", action: "delete" });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.deleted).toBe(true);
       expect(parsed.scope).toBe("all");
     });
@@ -147,7 +147,7 @@ describe("edit_log tool", () => {
     it("rejects without session IDs array", async () => {
       const result = await toolHandler({ delete_sessions: "[]" });
       expect(result.isError).toBe(true);
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("array of session IDs");
     });
 
@@ -158,7 +158,7 @@ describe("edit_log tool", () => {
         .mockResolvedValueOnce({ rows: [{ id: 3 }] });
 
       const result = await toolHandler({ delete_sessions: [1, 2, 3] });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
 
       expect(parsed.deleted).toEqual([1, 3]);
       expect(parsed.not_found).toEqual([2]);
@@ -168,7 +168,7 @@ describe("edit_log tool", () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 5 }] });
 
       const result = await toolHandler({ delete_sessions: JSON.stringify([5]) });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.deleted).toEqual([5]);
     });
   });

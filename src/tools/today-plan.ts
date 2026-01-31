@@ -3,24 +3,15 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getActiveProgram, inferTodayDay } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
-import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerTodayPlanTool(server: McpServer) {
-  registerAppToolWithMeta(server,
+  server.tool(
     "get_today_plan",
+    `Get today's planned workout without starting a session. Returns the program day, exercises with targets, and last workout comparison.
+Uses the active program + user's timezone to infer which day it is. Returns rest_day if no day is mapped to today.`,
     {
-      title: "Get Today's Plan",
-      description: `Get today's planned workout without starting a session. Returns the program day, exercises with targets, and last workout comparison.
-Uses the active program + user's timezone to infer which day it is. Returns rest_day if no day is mapped to today.
-
-IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
-      inputSchema: {
-        include_last_workout: z.boolean().optional().describe("If true, include last workout data. Defaults to true"),
-      },
-      annotations: { readOnlyHint: true },
-      _meta: {
-        ui: { resourceUri: "ui://gym-tracker/today-plan.html" },
-      },
+      include_last_workout: z.boolean().optional().describe("If true, include last workout data. Defaults to true"),
     },
     async ({ include_last_workout }) => {
       const userId = getUserId();
@@ -39,7 +30,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
       const todayDay = await inferTodayDay(activeProgram.id, timezone);
       if (!todayDay) {
-        return widgetResponse("Rest day — no workout scheduled.", { program: activeProgram.name, rest_day: true });
+        return toolResponse({ program: activeProgram.name, rest_day: true });
       }
 
       // Get exercises for today's day
@@ -94,7 +85,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         }
       }
 
-      return widgetResponse(`Today: ${result.day} — ${exercises.length} exercise(s).`, result);
+      return toolResponse(result);
     }
   );
 }

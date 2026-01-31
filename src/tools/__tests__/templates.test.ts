@@ -34,7 +34,7 @@ describe("manage_templates tool", () => {
     mockRelease.mockReset();
 
     const server = {
-      registerTool: vi.fn((_name: string, _config: any, handler: Function) => {
+      tool: vi.fn((_name: string, _desc: string, _schema: any, handler: Function) => {
         toolHandler = handler;
       }),
     } as unknown as McpServer;
@@ -53,10 +53,10 @@ describe("manage_templates tool", () => {
       });
 
       const result = await toolHandler({ action: "list" });
-      expect(result.structuredContent.templates).toHaveLength(1);
-      expect(result.structuredContent.templates[0].name).toBe("Push Day");
-      expect(result.structuredContent.total).toBe(1);
-      expect(result.content[0].text).toContain("template(s)");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.templates).toHaveLength(1);
+      expect(parsed.templates[0].name).toBe("Push Day");
+      expect(parsed.total).toBe(1);
     });
   });
 
@@ -78,8 +78,9 @@ describe("manage_templates tool", () => {
         .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({ action: "save", name: "My Template", session_id: "last" });
-      expect(result.structuredContent.template.name).toBe("My Template");
-      expect(result.structuredContent.exercises_count).toBe(1);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.template.name).toBe("My Template");
+      expect(parsed.exercises_count).toBe(1);
       expect(result.content[0].text).toContain("My Template");
     });
 
@@ -134,9 +135,10 @@ describe("manage_templates tool", () => {
         .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({ action: "start", name: "My Template" });
-      expect(result.structuredContent.session_id).toBe(20);
-      expect(result.structuredContent.template).toBe("My Template");
-      expect(result.structuredContent.planned_exercises).toHaveLength(1);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.session_id).toBe(20);
+      expect(parsed.template).toBe("My Template");
+      expect(parsed.planned_exercises).toHaveLength(1);
       expect(result.content[0].text).toContain("My Template");
       expect(mockClientQuery).toHaveBeenCalledWith("BEGIN");
       expect(mockClientQuery).toHaveBeenCalledWith("COMMIT");
@@ -171,8 +173,9 @@ describe("manage_templates tool", () => {
         names: ["Push Day", "NonExistent", "Leg Day"],
       });
 
-      expect(result.structuredContent.deleted).toEqual(["Push Day", "Leg Day"]);
-      expect(result.structuredContent.not_found).toEqual(["NonExistent"]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deleted).toEqual(["Push Day", "Leg Day"]);
+      expect(parsed.not_found).toEqual(["NonExistent"]);
       expect(result.content[0].text).toContain("deleted");
     });
 
@@ -184,7 +187,8 @@ describe("manage_templates tool", () => {
         names: JSON.stringify(["Push Day"]),
       });
 
-      expect(result.structuredContent.deleted).toEqual(["Push Day"]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deleted).toEqual(["Push Day"]);
     });
   });
 
@@ -193,7 +197,8 @@ describe("manage_templates tool", () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ name: "Old Template" }] });
 
       const result = await toolHandler({ action: "delete", name: "Old Template" });
-      expect(result.structuredContent.deleted).toBe("Old Template");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deleted).toBe("Old Template");
       expect(result.content[0].text).toContain("Old Template");
     });
 

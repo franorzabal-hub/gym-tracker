@@ -3,36 +3,27 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
-import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerBodyMeasurementsTool(server: McpServer) {
-  registerAppToolWithMeta(server,
+  server.tool(
     "manage_body_measurements",
-    {
-      title: "Body Measurements",
-      description: `Track body measurements over time. Use action "log" to record a measurement, "history" to see trends for a specific type, "latest" to get the most recent value of each type.
+    `Track body measurements over time. Use action "log" to record a measurement, "history" to see trends for a specific type, "latest" to get the most recent value of each type.
 
 Common types: weight_kg, body_fat_pct, chest_cm, waist_cm, arm_cm, thigh_cm — or any custom type.
 
 Examples:
 - "peso 82kg" → log, measurement_type: "weight_kg", value: 82
 - "historial de peso" → history, measurement_type: "weight_kg"
-- "mis medidas actuales" → latest
-
-IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
-      inputSchema: {
-        action: z.enum(["log", "history", "latest"]),
-        measurement_type: z.string().optional().describe("Type: weight_kg, body_fat_pct, chest_cm, waist_cm, arm_cm, thigh_cm, or any custom type"),
-        value: z.number().optional().describe("Measurement value for log action"),
-        measured_at: z.string().optional().describe("ISO date for measurement. Defaults to now"),
-        notes: z.string().optional().describe("Optional notes for log action"),
-        period: z.enum(["month", "3months", "6months", "year", "all"]).optional().describe("Time period for history action. Defaults to 3months"),
-        limit: z.number().int().optional().describe("Max data points for history. Defaults to 50"),
-      },
-      annotations: {},
-      _meta: {
-        ui: { resourceUri: "ui://gym-tracker/measurements.html" },
-      },
+- "mis medidas actuales" → latest`,
+    {
+      action: z.enum(["log", "history", "latest"]),
+      measurement_type: z.string().optional().describe("Type: weight_kg, body_fat_pct, chest_cm, waist_cm, arm_cm, thigh_cm, or any custom type"),
+      value: z.number().optional().describe("Measurement value for log action"),
+      measured_at: z.string().optional().describe("ISO date for measurement. Defaults to now"),
+      notes: z.string().optional().describe("Optional notes for log action"),
+      period: z.enum(["month", "3months", "6months", "year", "all"]).optional().describe("Time period for history action. Defaults to 3months"),
+      limit: z.number().int().optional().describe("Max data points for history. Defaults to 50"),
     },
     async ({ action, measurement_type, value, measured_at, notes, period, limit }) => {
       const userId = getUserId();
@@ -73,7 +64,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           };
         }
 
-        return widgetResponse(`${measurement_type}: ${value} logged.`, result);
+        return toolResponse(result);
       }
 
       if (action === "history") {
@@ -131,7 +122,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           stats = { min, max, average: avg, change, data_points: rows.length };
         }
 
-        return widgetResponse(`${rows.length} ${measurement_type} measurements.`, { measurement_type, period: effectivePeriod, stats, history: rows });
+        return toolResponse({ measurement_type, period: effectivePeriod, stats, history: rows });
       }
 
       // latest
@@ -145,7 +136,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         );
 
         const latest = rows[0] || null;
-        return widgetResponse(latest ? `Latest ${measurement_type}: ${latest.value}.` : `No ${measurement_type} data.`, { latest });
+        return toolResponse({ latest });
       }
 
       const { rows } = await pool.query(
@@ -155,7 +146,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         [userId]
       );
 
-      return widgetResponse(`${rows.length} measurement type(s).`, { latest: rows });
+      return toolResponse({ latest: rows });
     }
   );
 }

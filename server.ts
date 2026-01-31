@@ -5,6 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { runMigrations } from "./src/db/run-migrations.js";
 
+import { registerOnboardingTool } from "./src/tools/onboarding.js";
 import { registerProfileTool } from "./src/tools/profile.js";
 import { registerExercisesTool } from "./src/tools/exercises.js";
 import { registerSessionTools } from "./src/tools/session.js";
@@ -18,6 +19,7 @@ import { registerTemplatesTool } from "./src/tools/templates.js";
 import { registerTodayPlanTool } from "./src/tools/today-plan.js";
 import { registerBodyMeasurementsTool } from "./src/tools/body-measurements.js";
 import { registerExportTool } from "./src/tools/export.js";
+import { registerDisplayTools } from "./src/tools/display.js";
 import { registerWidgetResources } from "./src/resources/register-widgets.js";
 
 import oauthRoutes from "./src/auth/oauth-routes.js";
@@ -50,11 +52,21 @@ app.use(oauthRoutes);
 
 // Create a fully configured MCP server instance
 function createConfiguredServer(): McpServer {
-  const server = new McpServer({
-    name: "gym-tracker",
-    version: "1.0.0",
-  });
+  const server = new McpServer(
+    { name: "gym-tracker", version: "1.0.0" },
+    {
+      instructions: `You are a gym training partner. The user talks naturally in Spanish or English, and you call tools to manage their training.
 
+CRITICAL — First message of every conversation:
+1. Call get_onboarding_status BEFORE responding to the user.
+2. If is_new_user is true, start the onboarding flow: ask for their name, then guide them through profile setup and program selection step by step.
+3. If is_new_user is false, greet them by name (from profile) and help with whatever they need.
+
+Never skip step 1. Always check onboarding status first.`,
+    }
+  );
+
+  registerOnboardingTool(server);
   registerProfileTool(server);
   registerExercisesTool(server);
   registerSessionTools(server);
@@ -68,6 +80,7 @@ function createConfiguredServer(): McpServer {
   registerTodayPlanTool(server);
   registerBodyMeasurementsTool(server);
   registerExportTool(server);
+  registerDisplayTools(server);
   registerWidgetResources(server);
 
   return server;

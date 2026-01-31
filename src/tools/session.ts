@@ -8,31 +8,22 @@ import {
 } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerSessionTools(server: McpServer) {
-  registerAppToolWithMeta(server,
+  server.tool(
     "start_session",
-    {
-      title: "Start Session",
-      description: `Use this when you need to start a new workout session. Optionally specify a program_day label (e.g. "Push", "Pull", "Legs").
+    `Use this when you need to start a new workout session. Optionally specify a program_day label (e.g. "Push", "Pull", "Legs").
 If not specified, it will infer from the active program + today's weekday.
 Returns the session info and the exercises planned for that day (if any).
 
-- date: optional ISO date string (e.g. "2025-01-28") to backdate the session. Useful for logging past workouts.
-
-IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
-      inputSchema: {
-        program_day: z.string().optional(),
-        notes: z.string().optional(),
-        date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session start time. Defaults to now."),
-        tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to label this session (e.g. ['deload', 'morning', 'outdoor'])"),
-        include_last_workout: z.boolean().optional().describe("If true, include last workout comparison. Defaults to true"),
-      },
-      annotations: {},
-      _meta: {
-        ui: { resourceUri: "ui://gym-tracker/session.html" },
-      },
+- date: optional ISO date string (e.g. "2025-01-28") to backdate the session. Useful for logging past workouts.`,
+    {
+      program_day: z.string().optional(),
+      notes: z.string().optional(),
+      date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session start time. Defaults to now."),
+      tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to label this session (e.g. ['deload', 'morning', 'outdoor'])"),
+      include_last_workout: z.boolean().optional().describe("If true, include last workout comparison. Defaults to true"),
     },
     async ({ program_day, notes, date, tags: rawTags, include_last_workout }) => {
       const tags = parseJsonArrayParam<string>(rawTags);
@@ -165,33 +156,20 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         }
       }
 
-      const dayLabel = result.program_day?.label;
-      return widgetResponse(
-        `Session started${dayLabel ? ` (${dayLabel})` : ""}.`,
-        result
-      );
+      return toolResponse(result);
     }
   );
 
-  registerAppToolWithMeta(server,
+  server.tool(
     "end_session",
+    `Use this when you need to end the current active workout session. Returns a summary with duration, exercises count, total sets, and total volume.
+Optionally add or update tags on the session.`,
     {
-      title: "End Session",
-      description: `Use this when you need to end the current active workout session. Returns a summary with duration, exercises count, total sets, and total volume.
-Optionally add or update tags on the session.
-
-IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
-      inputSchema: {
-        notes: z.string().optional(),
-        force: z.boolean().optional().default(false),
-        tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to set on this session (replaces existing tags)"),
-        summary_only: z.boolean().optional().describe("If true, return only summary totals without per-exercise set details"),
-        include_comparison: z.boolean().optional().describe("If true, include comparison with previous session. Defaults to true"),
-      },
-      annotations: {},
-      _meta: {
-        ui: { resourceUri: "ui://gym-tracker/session.html" },
-      },
+      notes: z.string().optional(),
+      force: z.boolean().optional().default(false),
+      tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to set on this session (replaces existing tags)"),
+      summary_only: z.boolean().optional().describe("If true, return only summary totals without per-exercise set details"),
+      include_comparison: z.boolean().optional().describe("If true, include comparison with previous session. Defaults to true"),
     },
     async ({ notes, force, tags: rawTags, summary_only, include_comparison }) => {
       const tags = parseJsonArrayParam<string>(rawTags);
@@ -286,10 +264,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           total_volume_kg: Math.round(Number(summary.total_volume_kg)),
           new_prs: newPrs.map((pr: any) => ({ exercise: pr.exercise, record_type: pr.record_type, value: pr.value })),
         };
-        return widgetResponse(
-          `Session ended. ${summaryData.exercises_count} exercises, ${summaryData.total_sets} sets, ${summaryData.total_volume_kg}kg volume.${newPrs.length > 0 ? ` ${newPrs.length} new PR(s)!` : ""}`,
-          summaryData
-        );
+        return toolResponse(summaryData);
       }
 
       // Get exercises grouped by superset
@@ -397,26 +372,14 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         supersets: Object.keys(supersets).length > 0 ? supersets : undefined,
         comparison: comparison || undefined,
       };
-      return widgetResponse(
-        `Session ended. ${endData.duration_minutes}min, ${endData.exercises_count} exercises, ${endData.total_sets} sets, ${endData.total_volume_kg}kg volume.`,
-        endData
-      );
+      return toolResponse(endData);
     }
   );
 
-  registerAppToolWithMeta(server,
+  server.tool(
     "get_active_session",
-    {
-      title: "Get Active Session",
-      description: `Use this when you need to check if there is an active (open) workout session. Returns session details with exercises logged so far, or indicates no active session.
-
-IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
-      inputSchema: {},
-      annotations: { readOnlyHint: true },
-      _meta: {
-        ui: { resourceUri: "ui://gym-tracker/session.html" },
-      },
-    },
+    `Use this when you need to check if there is an active (open) workout session. Returns session details with exercises logged so far, or indicates no active session.`,
+    {},
     async () => {
       const userId = getUserId();
 
@@ -426,7 +389,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
       );
 
       if (rows.length === 0) {
-        return widgetResponse("No active session.", { active: false });
+        return toolResponse({ active: false });
       }
 
       const session = rows[0];
@@ -466,10 +429,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         tags: session.tags || [],
         exercises: exerciseDetails.map((e: any) => ({ name: e.name, superset_group: e.superset_group, sets: e.sets })),
       };
-      return widgetResponse(
-        `Active session${programDay ? ` (${programDay})` : ""}: ${exerciseDetails.length} exercise(s), ${durationMinutes}min.`,
-        activeData
-      );
+      return toolResponse(activeData);
     }
   );
 }

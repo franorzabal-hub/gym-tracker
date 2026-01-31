@@ -9,12 +9,10 @@ import {
 import { checkPRs } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerLogRoutineTool(server: McpServer) {
-  registerAppToolWithMeta(server, "log_routine", {
-    title: "Log Routine",
-    description: `Log an entire routine day at once. This is for when the user says something like "hice la rutina de hoy" or "completed today's workout".
+  server.tool("log_routine", `Log an entire routine day at once. This is for when the user says something like "hice la rutina de hoy" or "completed today's workout".
 Infers the program day from the active program + today's weekday, or uses the provided program_day label.
 
 You can override specific exercises (different weight/reps) or skip exercises entirely.
@@ -24,10 +22,7 @@ Parameters:
 - program_day: day label to log (e.g. "Push"). If omitted, infers from today's weekday.
 - overrides: array of { exercise, sets?, reps?, weight?, rpe? } to override template values
 - skip: array of exercise names to skip
-- auto_end: whether to auto-close the session (default true). Set false to keep it open for additional exercises.
-
-IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or highlight new PRs.`,
-    inputSchema: {
+- auto_end: whether to auto-close the session (default true). Set false to keep it open for additional exercises.`, {
       program_day: z.string().optional(),
       overrides: z.union([
         z.array(
@@ -46,12 +41,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
       date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session. Defaults to now."),
       tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to label this session (e.g. ['deload', 'morning'])"),
       minimal_response: z.boolean().optional().describe("If true, return only success status and new PRs, without echoing back all logged data"),
-    },
-    annotations: { readOnlyHint: false },
-    _meta: {
-      ui: { resourceUri: "ui://gym-tracker/session.html" },
-    },
-  }, async ({ program_day, overrides: rawOverrides, skip: rawSkip, auto_end, date, tags: rawTags, minimal_response }) => {
+    }, async ({ program_day, overrides: rawOverrides, skip: rawSkip, auto_end, date, tags: rawTags, minimal_response }) => {
       const userId = getUserId();
 
       // Some MCP clients serialize nested arrays as JSON strings
@@ -215,15 +205,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         await client.query("COMMIT");
 
         if (minimal_response) {
-          return widgetResponse(
-                  `${exercisesLogged.length} exercises logged.${allPRs.length > 0 ? ` New PRs: ${allPRs.map((p: any) => p.exercise).join(", ")}` : ""}`,
-                  { success: true, session_id: session.id, exercises_logged: exercisesLogged.length, new_prs: allPRs.length > 0 ? allPRs : undefined },
-                );
+          return toolResponse({ success: true, session_id: session.id, exercises_logged: exercisesLogged.length, new_prs: allPRs.length > 0 ? allPRs : undefined });
         }
 
-        return widgetResponse(
-                `Routine '${dayRow.day_label}' logged: ${exercisesLogged.length} exercises, ${totalSets} sets, ${Math.round(totalVolume)}kg.`,
-                {
+        return toolResponse({
                   session_id: session.id,
                   day_label: dayRow.day_label,
                   exercises_logged: exercisesLogged,
@@ -232,8 +217,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
                   new_prs: allPRs.length > 0 ? allPRs : undefined,
                   session_ended: shouldEnd,
                   ...(shouldEnd ? {} : { hint: "Session is still open. Use log_exercise to add more exercises, then end_session when done." }),
-                },
-              );
+                });
       } catch (err) {
         await client.query("ROLLBACK");
         throw err;

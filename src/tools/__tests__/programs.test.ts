@@ -52,7 +52,7 @@ describe("manage_program tool", () => {
     mockGetDays.mockReset();
 
     const server = {
-      registerTool: vi.fn((_name: string, _config: any, handler: Function) => {
+      tool: vi.fn((_name: string, _desc: string, _schema: any, handler: Function) => {
         toolHandler = handler;
       }),
     } as unknown as McpServer;
@@ -69,7 +69,7 @@ describe("manage_program tool", () => {
       });
 
       const result = await toolHandler({ action: "list" });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.active_program).toBe("PPL");
       expect(parsed.programs).toHaveLength(2);
     });
@@ -80,7 +80,7 @@ describe("manage_program tool", () => {
       });
 
       const result = await toolHandler({ action: "list" });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.active_program).toBeNull();
     });
   });
@@ -93,7 +93,7 @@ describe("manage_program tool", () => {
       mockGetDays.mockResolvedValueOnce([{ id: 1, day_label: "Push", exercises: [] }]);
 
       const result = await toolHandler({ action: "get", name: "PPL" });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.program.name).toBe("PPL");
       expect(parsed.program.version).toBe(2);
     });
@@ -119,7 +119,7 @@ describe("manage_program tool", () => {
         action: "create", name: "PPL",
         days: [{ day_label: "Push", exercises: [{ exercise: "Bench Press", sets: 3, reps: 10 }] }],
       });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("already exists");
     });
 
@@ -138,7 +138,7 @@ describe("manage_program tool", () => {
         action: "create", name: "PPL", description: "Push Pull Legs",
         days: [{ day_label: "Push", weekdays: [1, 4], exercises: [{ exercise: "Bench Press", sets: 4, reps: 8, weight: 80 }] }],
       });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.program.name).toBe("PPL");
       expect(parsed.days_created).toBe(1);
     });
@@ -168,7 +168,7 @@ describe("manage_program tool", () => {
       const result = await toolHandler({
         action: "update", name: "PPL", new_name: "New PPL", description: "Updated desc",
       });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.updated.name).toBe("New PPL");
       expect(parsed.updated.description).toBe("Updated desc");
 
@@ -182,7 +182,7 @@ describe("manage_program tool", () => {
 
       const result = await toolHandler({ action: "update", name: "PPL" });
       expect(result.isError).toBe(true);
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("Provide days array");
     });
 
@@ -200,7 +200,7 @@ describe("manage_program tool", () => {
         action: "update", name: "PPL", change_description: "Added leg day",
         days: [{ day_label: "Legs", exercises: [{ exercise: "Squat", sets: 5, reps: 5 }] }],
       });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.program.version).toBe(3);
       expect(parsed.exercises_summary).toBeDefined();
     });
@@ -213,7 +213,7 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({});
 
       const result = await toolHandler({ action: "activate", name: "Upper/Lower" });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.activated).toBe("Upper/Lower");
     });
 
@@ -234,7 +234,7 @@ describe("manage_program tool", () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ name: "PPL" }] });
 
       const result = await toolHandler({ action: "delete", name: "PPL" });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.deactivated).toBe("PPL");
     });
 
@@ -248,7 +248,7 @@ describe("manage_program tool", () => {
     it("rejects without names array", async () => {
       const result = await toolHandler({ action: "delete_bulk" });
       expect(result.isError).toBe(true);
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("names array required");
     });
 
@@ -262,7 +262,7 @@ describe("manage_program tool", () => {
         names: ["PPL", "Upper/Lower"],
       });
 
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.deactivated).toEqual(["PPL", "Upper/Lower"]);
     });
 
@@ -277,7 +277,7 @@ describe("manage_program tool", () => {
         hard_delete: true,
       });
 
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.deleted).toEqual(["PPL"]);
       expect(parsed.not_found).toEqual(["NonExistent"]);
     });
@@ -291,7 +291,7 @@ describe("manage_program tool", () => {
         hard_delete: true,
       });
 
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.deleted).toEqual(["PPL"]);
     });
   });
@@ -309,9 +309,105 @@ describe("manage_program tool", () => {
         });
 
       const result = await toolHandler({ action: "history", name: "PPL" });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
       expect(parsed.program).toBe("PPL");
       expect(parsed.versions).toHaveLength(3);
+    });
+  });
+
+  describe("list_templates action", () => {
+    it("returns all available templates", async () => {
+      const result = await toolHandler({ action: "list_templates" });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.templates).toHaveLength(3);
+      expect(parsed.templates.map((t: any) => t.id)).toEqual(
+        expect.arrayContaining(["full_body_3x", "upper_lower_4x", "ppl_6x"])
+      );
+      expect(parsed.templates[0]).toHaveProperty("name");
+      expect(parsed.templates[0]).toHaveProperty("days_per_week");
+      expect(parsed.templates[0]).toHaveProperty("description");
+      expect(parsed.templates[0]).toHaveProperty("target_experience");
+    });
+  });
+
+  describe("create_from_template action", () => {
+    it("rejects when template_id is missing", async () => {
+      const result = await toolHandler({ action: "create_from_template" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("template_id is required");
+    });
+
+    it("rejects invalid template_id", async () => {
+      const result = await toolHandler({ action: "create_from_template", template_id: "nonexistent" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("not found");
+    });
+
+    it("rejects duplicate program name", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1 }] }); // program exists
+
+      const result = await toolHandler({ action: "create_from_template", template_id: "full_body_3x" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("already exists");
+    });
+
+    it("creates program from template with default name", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] }); // no existing program
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // deactivate others
+        .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // INSERT program
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
+        // 3 days × exercises (day1: 5ex, day2: 5ex, day3: 5ex = 15 exercises)
+        // For each day: INSERT day + INSERT exercises
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 1
+        .mockResolvedValueOnce({}) // ex 1
+        .mockResolvedValueOnce({}) // ex 2
+        .mockResolvedValueOnce({}) // ex 3
+        .mockResolvedValueOnce({}) // ex 4
+        .mockResolvedValueOnce({}) // ex 5
+        .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 2
+        .mockResolvedValueOnce({}) // ex 1
+        .mockResolvedValueOnce({}) // ex 2
+        .mockResolvedValueOnce({}) // ex 3
+        .mockResolvedValueOnce({}) // ex 4
+        .mockResolvedValueOnce({}) // ex 5
+        .mockResolvedValueOnce({ rows: [{ id: 22 }] }) // INSERT day 3
+        .mockResolvedValueOnce({}) // ex 1
+        .mockResolvedValueOnce({}) // ex 2
+        .mockResolvedValueOnce({}) // ex 3
+        .mockResolvedValueOnce({}) // ex 4
+        .mockResolvedValueOnce({}) // ex 5
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({ action: "create_from_template", template_id: "full_body_3x" });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.program.name).toBe("Full Body 3x");
+      expect(parsed.program.template).toBe("full_body_3x");
+      expect(parsed.days_created).toBe(3);
+    });
+
+    it("allows custom name override", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] }); // no existing program
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // deactivate others
+        .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // INSERT program
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 1
+        .mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}) // 5 ex
+        .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 2
+        .mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}) // 5 ex
+        .mockResolvedValueOnce({ rows: [{ id: 22 }] }) // INSERT day 3
+        .mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}) // 5 ex
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({ action: "create_from_template", template_id: "full_body_3x", name: "My Routine" });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.program.name).toBe("My Routine");
     });
   });
 

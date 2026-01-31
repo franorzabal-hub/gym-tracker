@@ -4,14 +4,12 @@ import pool from "../db/connection.js";
 import { resolveExercise, searchExercises } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerExercisesTool(server: McpServer) {
-  registerAppToolWithMeta(server,
+  server.tool(
     "manage_exercises",
-    {
-      title: "Manage Exercises",
-      description: `Use this when you need to manage the exercise library. Actions:
+    `Use this when you need to manage the exercise library. Actions:
 - "list": List all exercises, optionally filtered by muscle_group. Supports pagination with limit/offset. Returns { exercises, total }.
 - "search": Search exercises by name/alias (fuzzy)
 - "add": Add a new exercise with optional muscle_group, equipment, aliases, rep_type, exercise_type
@@ -26,46 +24,39 @@ export function registerExercisesTool(server: McpServer) {
 - "merge": Merge two exercises: move all session data from source to target, then delete source. Pass source + target names.
 
 rep_type: "reps" (default), "seconds", "meters", "calories" - how the exercise is measured
-exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category of exercise (PRs only tracked for strength)
-
-IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.`,
-      inputSchema: {
-        action: z.enum(["list", "add", "search", "update", "delete", "add_bulk", "delete_bulk", "update_bulk", "list_aliases", "add_alias", "remove_alias", "merge"]),
-        name: z.string().optional(),
-        muscle_group: z.string().optional(),
-        equipment: z.string().optional(),
-        aliases: z.array(z.string()).optional(),
-        rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
-        exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
-        names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of exercise names for delete_bulk"),
-        exercises: z.union([
-          z.array(z.object({
-            name: z.string(),
-            muscle_group: z.string().optional(),
-            equipment: z.string().optional(),
-            aliases: z.array(z.string()).optional(),
-            rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
-            exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
-          })),
-          z.string(),
-        ]).optional(),
-        limit: z.number().int().optional().describe("Max exercises to return. Defaults to 100"),
-        offset: z.number().int().optional().describe("Skip first N exercises for pagination. Defaults to 0"),
-        alias: z.string().optional().describe("Alias name for add_alias/remove_alias actions"),
-        source: z.string().optional().describe("Source exercise name for merge action"),
-        target: z.string().optional().describe("Target exercise name for merge action"),
-      },
-      annotations: {},
-      _meta: {
-        ui: { resourceUri: "ui://gym-tracker/exercises.html" },
-      },
+exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category of exercise (PRs only tracked for strength)`,
+    {
+      action: z.enum(["list", "add", "search", "update", "delete", "add_bulk", "delete_bulk", "update_bulk", "list_aliases", "add_alias", "remove_alias", "merge"]),
+      name: z.string().optional(),
+      muscle_group: z.string().optional(),
+      equipment: z.string().optional(),
+      aliases: z.array(z.string()).optional(),
+      rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
+      exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
+      names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of exercise names for delete_bulk"),
+      exercises: z.union([
+        z.array(z.object({
+          name: z.string(),
+          muscle_group: z.string().optional(),
+          equipment: z.string().optional(),
+          aliases: z.array(z.string()).optional(),
+          rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
+          exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
+        })),
+        z.string(),
+      ]).optional(),
+      limit: z.number().int().optional().describe("Max exercises to return. Defaults to 100"),
+      offset: z.number().int().optional().describe("Skip first N exercises for pagination. Defaults to 0"),
+      alias: z.string().optional().describe("Alias name for add_alias/remove_alias actions"),
+      source: z.string().optional().describe("Source exercise name for merge action"),
+      target: z.string().optional().describe("Target exercise name for merge action"),
     },
     async ({ action, name, muscle_group, equipment, aliases, rep_type, exercise_type, names: rawNames, exercises, limit, offset, alias, source, target }) => {
       const userId = getUserId();
 
       if (action === "search") {
         const results = await searchExercises(name, muscle_group);
-        return widgetResponse(`Found ${results.length} exercise(s).`, { exercises: results });
+        return toolResponse({ exercises: results });
       }
 
       if (action === "list") {
@@ -107,7 +98,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           params
         );
 
-        return widgetResponse(`${total} exercise(s)${muscle_group ? ` in ${muscle_group}` : ""}.`, { exercises: results, total });
+        return toolResponse({ exercises: results, total });
       }
 
       if (action === "update") {
@@ -158,7 +149,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         if (rows.length === 0) {
           return toolResponse({ error: `Exercise "${name}" not found` }, true);
         }
-        return widgetResponse(`Exercise "${rows[0].name}" updated.`, { updated: rows[0] });
+        return toolResponse({ updated: rows[0] });
       }
 
       if (action === "delete") {
@@ -194,10 +185,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         if (rows.length === 0) {
           return toolResponse({ error: `Exercise "${name}" not found` }, true);
         }
-        return widgetResponse(
-          `Exercise "${rows[0].name}" deleted.${refCount > 0 ? ` Was referenced in ${refCount} session log(s).` : ""}`,
-          { deleted: rows[0], warning: refCount > 0 ? `Referenced in ${refCount} session log(s). Aliases cascade-deleted.` : undefined }
-        );
+        return toolResponse({ deleted: rows[0], warning: refCount > 0 ? `Referenced in ${refCount} session log(s). Aliases cascade-deleted.` : undefined });
       }
 
       if (action === "delete_bulk") {
@@ -240,10 +228,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           }
         }
 
-        return widgetResponse(
-          `Deleted ${deleted.length} exercise(s).${not_found.length > 0 ? ` ${not_found.length} not found.` : ""}`,
-          { deleted, not_found: not_found.length > 0 ? not_found : undefined, failed: failed.length > 0 ? failed : undefined }
-        );
+        return toolResponse({ deleted, not_found: not_found.length > 0 ? not_found : undefined, failed: failed.length > 0 ? failed : undefined });
       }
 
       if (action === "update_bulk") {
@@ -300,10 +285,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           }
         }
 
-        return widgetResponse(
-          `Updated ${updated.length} exercise(s).${not_found.length > 0 ? ` ${not_found.length} not found.` : ""}`,
-          { updated, not_found: not_found.length > 0 ? not_found : undefined, failed: failed.length > 0 ? failed : undefined }
-        );
+        return toolResponse({ updated, not_found: not_found.length > 0 ? not_found : undefined, failed: failed.length > 0 ? failed : undefined });
       }
 
       if (action === "add_bulk") {
@@ -349,10 +331,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           }
         }
 
-        return widgetResponse(
-          `Added ${created.length} exercise(s), ${existing.length} already existed.`,
-          { created, existing, failed: failed.length > 0 ? failed : undefined, total: exercisesList.length }
-        );
+        return toolResponse({ created, existing, failed: failed.length > 0 ? failed : undefined, total: exercisesList.length });
       }
 
       if (action === "list_aliases") {
@@ -365,7 +344,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
            WHERE LOWER(e.name) = LOWER($1) AND (e.user_id IS NULL OR e.user_id = $2)`,
           [name, userId]
         );
-        return widgetResponse(`Aliases for "${name}".`, { exercise: name, aliases: rows.map((r: any) => r.alias) });
+        return toolResponse({ exercise: name, aliases: rows.map((r: any) => r.alias) });
       }
 
       if (action === "add_alias") {
@@ -382,7 +361,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           if (!rowCount || rowCount === 0) {
             return toolResponse({ error: `Exercise "${name}" not found` }, true);
           }
-          return widgetResponse(`Alias "${alias}" added to "${name}".`, { added_alias: alias.toLowerCase().trim(), exercise: name });
+          return toolResponse({ added_alias: alias.toLowerCase().trim(), exercise: name });
         } catch (err: any) {
           if (err.code === "23505") {
             return toolResponse({ error: `Alias "${alias}" already exists` }, true);
@@ -405,7 +384,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         if (!rowCount || rowCount === 0) {
           return toolResponse({ error: `Alias "${alias}" not found for exercise "${name}"` }, true);
         }
-        return widgetResponse(`Alias "${alias}" removed from "${name}".`, { removed_alias: alias, exercise: name });
+        return toolResponse({ removed_alias: alias, exercise: name });
       }
 
       if (action === "merge") {
@@ -518,10 +497,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
           await client.query("COMMIT");
 
-          return widgetResponse(
-            `Merged "${sourceEx.name}" into "${targetEx.name}". ${sessionExercisesMoved} session entries moved.`,
-            { merged: { source: sourceEx.name, target: targetEx.name, session_exercises_moved: sessionExercisesMoved, personal_records_moved: prMoved, pr_history_moved: prHistoryMoved } }
-          );
+          return toolResponse({ merged: { source: sourceEx.name, target: targetEx.name, session_exercises_moved: sessionExercisesMoved, personal_records_moved: prMoved, pr_history_moved: prHistoryMoved } });
         } catch (err) {
           await client.query("ROLLBACK");
           throw err;
@@ -548,10 +524,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         }
       }
 
-      return widgetResponse(
-        resolved.isNew ? `Exercise "${resolved.name}" created.` : `Exercise "${resolved.name}" already exists.`,
-        { exercise: { id: resolved.id, name: resolved.name }, is_new: resolved.isNew }
-      );
+      return toolResponse({ exercise: { id: resolved.id, name: resolved.name }, is_new: resolved.isNew });
     }
   );
 }

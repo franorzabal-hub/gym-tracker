@@ -6,7 +6,7 @@ import { resolveExercise } from "../helpers/exercise-resolver.js";
 import { checkPRs } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam } from "../helpers/parse-helpers.js";
-import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 const exerciseEntrySchema = z.object({
   exercise: z.string(),
@@ -167,9 +167,7 @@ async function logSingleExercise(sessionId: number, entry: ExerciseEntry, client
 }
 
 export function registerLogExerciseTool(server: McpServer) {
-  registerAppToolWithMeta(server, "log_exercise", {
-    title: "Log Exercise",
-    description: `Log sets of an exercise to the current workout session.
+  server.tool("log_exercise", `Log sets of an exercise to the current workout session.
 The user might say things like "hice peso muerto 100kg 5x5" or "did 3 sets of pull-ups: 10, 8, 6".
 If no session is active, one will be created automatically.
 If the exercise doesn't exist, it will be created automatically.
@@ -192,10 +190,7 @@ Single exercise mode:
 Bulk mode:
 - exercises: array of exercise entries (each with the same fields as above). Logs multiple exercises in one call.
 
-Returns the logged sets and any new personal records achieved.
-
-IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or highlight new PRs.`,
-    inputSchema: {
+Returns the logged sets and any new personal records achieved.`, {
       exercise: z.string().optional(),
       sets: z.number().int().min(1).default(1),
       reps: z.union([z.number().int().min(1), z.array(z.number().int().min(1))]).optional(),
@@ -215,12 +210,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
       exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
       exercises: z.union([z.array(exerciseEntrySchema), z.string()]).optional(),
       minimal_response: z.boolean().optional().describe("If true, return only success status and new PRs, without echoing back all logged data"),
-    },
-    annotations: { readOnlyHint: false },
-    _meta: {
-      ui: { resourceUri: "ui://gym-tracker/session.html" },
-    },
-  }, async (params) => {
+    }, async (params) => {
       const userId = getUserId();
 
       // Get or create active session
@@ -250,16 +240,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
           if (params.minimal_response) {
             const allPRs = results.flatMap(r => r.new_prs || []);
-            return widgetResponse(
-                    `${results.length} exercise(s) logged.${allPRs.length > 0 ? ` New PRs: ${allPRs.map((p: any) => p.type).join(", ")}` : ""}`,
-                    { success: true, exercises_logged: results.length, new_prs: allPRs.length > 0 ? allPRs : undefined },
-                  );
+            return toolResponse({ success: true, exercises_logged: results.length, new_prs: allPRs.length > 0 ? allPRs : undefined });
           }
 
-          return widgetResponse(
-                  `${results.length} exercise(s) logged.`,
-                  { session_id: sessionId, exercises_logged: results },
-                );
+          return toolResponse({ session_id: sessionId, exercises_logged: results });
         } catch (err) {
           await client.query("ROLLBACK");
           throw err;
@@ -299,16 +283,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         await client.query("COMMIT");
 
         if (params.minimal_response) {
-          return widgetResponse(
-                  `Exercise logged.${result.new_prs ? ` New PRs: ${result.new_prs.map((p: any) => p.type).join(", ")}` : ""}`,
-                  { success: true, exercises_logged: 1, new_prs: result.new_prs || undefined },
-                );
+          return toolResponse({ success: true, exercises_logged: 1, new_prs: result.new_prs || undefined });
         }
 
-        return widgetResponse(
-                `${result.exercise_name} logged: ${result.logged_sets.length} set(s).`,
-                { ...result, session_id: sessionId },
-              );
+        return toolResponse({ ...result, session_id: sessionId });
       } catch (err) {
         await client.query("ROLLBACK");
         throw err;

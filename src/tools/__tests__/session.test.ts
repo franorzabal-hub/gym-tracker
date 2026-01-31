@@ -36,7 +36,7 @@ describe("session tools", () => {
     mockInferTodayDay.mockReset();
 
     const server = {
-      registerTool: vi.fn((_name: string, _config: any, handler: Function) => {
+      tool: vi.fn((_name: string, _desc: any, _schema: any, handler: Function) => {
         if (_name === "start_session") startHandler = handler;
         if (_name === "end_session") endHandler = handler;
         if (_name === "get_active_session") getActiveHandler = handler;
@@ -52,7 +52,7 @@ describe("session tools", () => {
       });
 
       const result = await startHandler({});
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
 
       expect(result.isError).toBe(true);
       expect(parsed.error).toContain("already an active session");
@@ -67,7 +67,7 @@ describe("session tools", () => {
       mockGetActiveProgram.mockResolvedValueOnce(null);
 
       const result = await startHandler({});
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
 
       expect(parsed.session_id).toBe(10);
     });
@@ -91,7 +91,7 @@ describe("session tools", () => {
       });
 
       const result = await startHandler({ program_day: "Push" });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
 
       expect(parsed.session_id).toBe(20);
       expect(parsed.program_day.label).toBe("Push");
@@ -106,7 +106,7 @@ describe("session tools", () => {
       mockGetActiveProgram.mockResolvedValueOnce(null);
 
       const result = await startHandler({ tags: JSON.stringify(["deload"]) });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
 
       expect(parsed.session_id).toBe(10);
       // Verify the INSERT was called with a parsed array, not a JSON string
@@ -149,7 +149,7 @@ describe("session tools", () => {
         .mockResolvedValueOnce({ rows: [{ program_day_id: null }] }); // comparison query
 
       const result = await endHandler({ notes: "Great workout" });
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
 
       expect(parsed.session_id).toBe(10);
       expect(parsed.duration_minutes).toBe(60);
@@ -164,7 +164,7 @@ describe("session tools", () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const result = await getActiveHandler({});
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
 
       expect(parsed.active).toBe(false);
     });
@@ -182,7 +182,7 @@ describe("session tools", () => {
         });
 
       const result = await getActiveHandler({});
-      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0].text);
 
       expect(parsed.active).toBe(true);
       expect(parsed.session_id).toBe(10);

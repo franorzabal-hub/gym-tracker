@@ -5,14 +5,10 @@ import { findExercise } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse } from "../helpers/tool-response.js";
 
 export function registerEditLogTool(server: McpServer) {
-  registerAppToolWithMeta(server,
-    "edit_log",
-    {
-      title: "Edit Log",
-      description: `Edit or delete previously logged sets, or delete entire sessions.
+  server.tool("edit_log", `Edit or delete previously logged sets, or delete entire sessions.
 
 Examples:
 - "No, eran 80kg" → update weight on the last logged exercise
@@ -22,8 +18,6 @@ Examples:
 - "Corregí press banca y sentadilla de hoy" → bulk edit multiple exercises
 - "Borrá la sesión 42" → soft-delete an entire session
 - "Restaurá la sesión 42" → restore a soft-deleted session
-
-IMPORTANT: Results are displayed in an interactive widget. Do not repeat the data in your response — just confirm the action or add brief context.
 
 Parameters:
 - exercise: name or alias (required for single mode, ignored if bulk or delete_session is used)
@@ -36,8 +30,7 @@ Parameters:
 - bulk: array of { exercise, action?, set_numbers?, set_ids?, set_type_filter?, updates? } for multi-exercise edits
 - delete_session: session ID to soft-delete (sets deleted_at timestamp, can be restored)
 - restore_session: session ID to restore (clears deleted_at timestamp)
-- delete_sessions: array of session IDs for bulk soft-delete. Returns { deleted, not_found }.`,
-      inputSchema: {
+- delete_sessions: array of session IDs for bulk soft-delete. Returns { deleted, not_found }.`, {
       exercise: z.string().optional(),
       session: z
         .union([z.enum(["today", "last"]), z.string()])
@@ -74,11 +67,6 @@ Parameters:
       restore_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to restore from soft-delete. Clears the deleted_at timestamp."),
       delete_sessions: z.union([z.array(z.number().int()), z.string()]).optional().describe("Array of session IDs for bulk soft-delete."),
     },
-      annotations: { destructiveHint: true },
-      _meta: {
-        ui: { resourceUri: "ui://gym-tracker/session.html" },
-      },
-    },
     async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session, restore_session, delete_sessions: rawDeleteSessions }) => {
       const userId = getUserId();
 
@@ -96,7 +84,7 @@ Parameters:
           return toolResponse({ error: `Session ${restore_session} is not deleted` }, true);
         }
         await pool.query("UPDATE sessions SET deleted_at = NULL WHERE id = $1 AND user_id = $2", [sessionId, userId]);
-        return widgetResponse(`Session ${sessionId} restored.`, {
+        return toolResponse({
           restored_session: sessionId,
           started_at: sessionRows[0].started_at,
         });
@@ -125,7 +113,7 @@ Parameters:
           }
         }
 
-        return widgetResponse(`${deleted.length} session(s) deleted.`, {
+        return toolResponse({
           deleted,
           not_found: not_found.length > 0 ? not_found : undefined,
         });
@@ -145,7 +133,7 @@ Parameters:
 
         await pool.query("UPDATE sessions SET deleted_at = NOW() WHERE id = $1 AND user_id = $2", [sessionId, userId]);
 
-        return widgetResponse(`Session ${sessionId} soft-deleted.`, {
+        return toolResponse({
           deleted_session: sessionId,
           started_at: sessionRows[0].started_at,
         });
@@ -171,7 +159,7 @@ Parameters:
           });
           results.push(result);
         }
-        return widgetResponse(`${results.length} edit(s) applied.`, { bulk_results: results });
+        return toolResponse({ bulk_results: results });
       }
 
       // --- Single mode ---
@@ -199,7 +187,7 @@ Parameters:
         return toolResponse(result, true);
       }
 
-      return widgetResponse(`Edit applied to ${result.exercise}.`, result);
+      return toolResponse(result);
     }
   );
 }

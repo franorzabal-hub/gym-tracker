@@ -33,7 +33,7 @@ describe("get_today_plan tool", () => {
     mockInferTodayDay.mockReset();
 
     const server = {
-      registerTool: vi.fn((_name: string, _config: any, handler: Function) => {
+      tool: vi.fn((_name: string, _desc: string, _schema: any, handler: Function) => {
         toolHandler = handler;
       }),
     } as unknown as McpServer;
@@ -45,7 +45,7 @@ describe("get_today_plan tool", () => {
 
     const result = await toolHandler({});
     expect(result.isError).toBe(true);
-    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+    const parsed = JSON.parse(result.content[0].text);
     expect(parsed.error).toContain("No active program");
   });
 
@@ -55,7 +55,7 @@ describe("get_today_plan tool", () => {
     mockInferTodayDay.mockResolvedValueOnce(null);
 
     const result = await toolHandler({});
-    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+    const parsed = JSON.parse(result.content[0].text);
     expect(parsed.rest_day).toBe(true);
     expect(parsed.program).toBe("PPL");
   });
@@ -86,7 +86,7 @@ describe("get_today_plan tool", () => {
     });
 
     const result = await toolHandler({});
-    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+    const parsed = JSON.parse(result.content[0].text);
 
     expect(parsed.program).toBe("PPL");
     expect(parsed.day).toBe("Push");
@@ -111,7 +111,7 @@ describe("get_today_plan tool", () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const result = await toolHandler({});
-    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
+    const parsed = JSON.parse(result.content[0].text);
 
     expect(parsed.day).toBe("Legs");
     expect(parsed.exercises).toHaveLength(1);
