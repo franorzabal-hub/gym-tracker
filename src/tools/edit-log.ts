@@ -7,23 +7,26 @@ import { getUserId } from "../context/user-context.js";
 export function registerEditLogTool(server: McpServer) {
   server.tool(
     "edit_log",
-    `Edit or delete previously logged sets. Supports single exercise or bulk multi-exercise edits.
+    `Edit or delete previously logged sets, or delete entire sessions.
+
 Examples:
 - "No, eran 80kg" → update weight on the last logged exercise
 - "Borrá el último set" → delete specific sets
 - "Corregí el press banca de hoy: 4x10 con 70kg" → update all sets of an exercise in today's session
 - "Borrá todos los warmup de press banca" → delete sets filtered by type
 - "Corregí press banca y sentadilla de hoy" → bulk edit multiple exercises
+- "Borrá la sesión 42" → delete an entire session with all its data
 
 Parameters:
-- exercise: name or alias (required for single mode, ignored if bulk is used)
+- exercise: name or alias (required for single mode, ignored if bulk or delete_session is used)
 - session: "today" (default), "last", or a date string
 - action: "update" or "delete"
 - updates: { reps?, weight?, rpe?, set_type?, notes? } — fields to change
 - set_numbers: specific set numbers to edit (if omitted, edits all sets)
 - set_ids: specific set IDs to edit directly (alternative to set_numbers)
 - set_type_filter: filter sets by type ("warmup", "working", "drop", "failure")
-- bulk: array of { exercise, action?, set_numbers?, set_ids?, set_type_filter?, updates? } for multi-exercise edits`,
+- bulk: array of { exercise, action?, set_numbers?, set_ids?, set_type_filter?, updates? } for multi-exercise edits
+- delete_session: session ID to delete entirely (removes all exercises, sets, and the session itself)`,
     {
       exercise: z.string().optional(),
       session: z
@@ -57,9 +60,46 @@ Parameters:
           notes: z.string().optional(),
         }).optional(),
       })).optional(),
+      delete_session: z.number().int().optional().describe("Session ID to delete entirely. Removes all exercises, sets, and the session record."),
     },
-    async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk }) => {
+    async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session }) => {
       const userId = getUserId();
+
+      // --- Delete session mode ---
+      if (delete_session) {
+        // Verify ownership
+        const { rows: sessionRows } = await pool.query(
+          "SELECT id, started_at, ended_at FROM sessions WHERE id = $1 AND user_id = $2",
+          [delete_session, userId]
+        );
+        if (sessionRows.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: `Session ${delete_session} not found` }) }],
+            isError: true,
+          };
+        }
+
+        // Delete sets → session_exercises → session (cascading manually for clarity)
+        await pool.query(
+          `DELETE FROM sets WHERE session_exercise_id IN (
+             SELECT id FROM session_exercises WHERE session_id = $1
+           )`,
+          [delete_session]
+        );
+        await pool.query("DELETE FROM session_exercises WHERE session_id = $1", [delete_session]);
+        await pool.query("DELETE FROM sessions WHERE id = $1", [delete_session]);
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              deleted_session: delete_session,
+              started_at: sessionRows[0].started_at,
+              message: "Session and all associated data permanently deleted.",
+            }),
+          }],
+        };
+      }
 
       // --- Bulk mode ---
       if (bulk && bulk.length > 0) {
