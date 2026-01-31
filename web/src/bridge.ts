@@ -1,4 +1,4 @@
-import { App } from "@modelcontextprotocol/ext-apps";
+import { App, PostMessageTransport } from "@modelcontextprotocol/ext-apps";
 
 export interface HostBridge {
   /** Get the tool output data from the host */
@@ -54,30 +54,47 @@ function createOpenAiBridge(): HostBridge {
   };
 }
 
+function parseToolContent(result: any): any {
+  // Try extracting from content text array first
+  const textContent = result?.content?.find((c: any) => c.type === "text");
+  if (textContent?.text) {
+    try { return JSON.parse(textContent.text); } catch { return textContent.text; }
+  }
+  // Fall back to structuredContent or the raw result
+  return result?.structuredContent ?? result;
+}
+
 function createMcpAppsBridge(): HostBridge {
   const app = new App({ name: "Gym Tracker", version: "1.0.0" });
   let latestResult: any = null;
+  let hostTheme: "light" | "dark" = "light";
   const listeners: Array<(data: any) => void> = [];
 
-  app.ontoolresult = (result: any) => {
-    // Extract text content and parse JSON
-    const textContent = result.content?.find((c: any) => c.type === "text");
-    const data = textContent?.text ? JSON.parse(textContent.text) : result.structuredContent ?? result;
+  function setResult(data: any) {
     latestResult = data;
     listeners.forEach((cb) => cb(data));
+  }
+
+  app.ontoolresult = (params: any) => setResult(parseToolContent(params));
+
+  app.onhostcontextchanged = (params: any) => {
+    if (params.theme) hostTheme = params.theme;
   };
 
-  app.connect();
+  const transport = new PostMessageTransport(window.parent);
+  app.connect(transport).then(() => {
+    const ctx = app.getHostContext();
+    if (ctx?.theme) hostTheme = ctx.theme as "light" | "dark";
+  }).catch((err) => console.error("MCP Apps connect error:", err));
 
   return {
     host: "mcp-apps",
     getToolOutput: () => latestResult,
     callTool: async (name, args) => {
       const result = await app.callServerTool({ name, arguments: args });
-      const textContent = (result as any).content?.find((c: any) => c.type === "text");
-      return textContent?.text ? JSON.parse(textContent.text) : result;
+      return parseToolContent(result);
     },
-    getTheme: () => "light", // MCP Apps theme detection handled differently
+    getTheme: () => hostTheme,
     getLocale: () => navigator.language || "en",
     onToolResult: (cb) => {
       listeners.push(cb);
