@@ -183,19 +183,42 @@ Returns the session info and the exercises planned for that day (if any).`,
 
       const sessionId = active.rows[0].id;
 
-      // Check if session has any exercises
+      // Check if session has any exercises with actual sets logged
       const { rows: [exerciseCheck] } = await pool.query(
-        `SELECT COUNT(*) as count FROM session_exercises WHERE session_id = $1`,
+        `SELECT
+           COUNT(DISTINCT se.id) as exercise_count,
+           COUNT(st.id) as set_count
+         FROM session_exercises se
+         LEFT JOIN sets st ON st.session_exercise_id = se.id
+         WHERE se.session_id = $1`,
         [sessionId]
       );
 
-      if (Number(exerciseCheck.count) === 0 && !force) {
+      const exerciseCount = Number(exerciseCheck.exercise_count);
+      const setCount = Number(exerciseCheck.set_count);
+
+      if (exerciseCount === 0 && !force) {
         return {
           content: [
             {
               type: "text" as const,
               text: JSON.stringify({
                 warning: "Session has no exercises logged. Pass force: true to close anyway, or log exercises first.",
+                session_id: sessionId,
+                started_at: active.rows[0].started_at,
+              }),
+            },
+          ],
+        };
+      }
+
+      if (exerciseCount > 0 && setCount === 0 && !force) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                warning: `Session has ${exerciseCount} planned exercise(s) but no sets logged. Log sets with log_exercise or pass force: true to close anyway.`,
                 session_id: sessionId,
                 started_at: active.rows[0].started_at,
               }),

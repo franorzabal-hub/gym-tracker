@@ -21,7 +21,8 @@ Each exercise from the day template gets logged with its target sets/reps/weight
 Parameters:
 - program_day: day label to log (e.g. "Push"). If omitted, infers from today's weekday.
 - overrides: array of { exercise, sets?, reps?, weight?, rpe? } to override template values
-- skip: array of exercise names to skip`,
+- skip: array of exercise names to skip
+- auto_end: whether to auto-close the session (default true). Set false to keep it open for additional exercises.`,
     {
       program_day: z.string().optional(),
       overrides: z
@@ -36,8 +37,9 @@ Parameters:
         )
         .optional(),
       skip: z.array(z.string()).optional(),
+      auto_end: z.boolean().optional().describe("Whether to auto-close the session after logging. Default true. Set false to keep session open for additional exercises."),
     },
-    async ({ program_day, overrides, skip }) => {
+    async ({ program_day, overrides, skip, auto_end }) => {
       const userId = getUserId();
       const activeProgram = await getActiveProgram();
       if (!activeProgram) {
@@ -175,11 +177,14 @@ Parameters:
         });
       }
 
-      // End session immediately
-      await pool.query(
-        "UPDATE sessions SET ended_at = NOW() WHERE id = $1",
-        [session.id]
-      );
+      // End session unless auto_end is explicitly false
+      const shouldEnd = auto_end !== false;
+      if (shouldEnd) {
+        await pool.query(
+          "UPDATE sessions SET ended_at = NOW() WHERE id = $1",
+          [session.id]
+        );
+      }
 
       return {
         content: [
@@ -192,6 +197,8 @@ Parameters:
               total_sets: totalSets,
               total_volume_kg: Math.round(totalVolume),
               new_prs: allPRs.length > 0 ? allPRs : undefined,
+              session_ended: shouldEnd,
+              ...(shouldEnd ? {} : { hint: "Session is still open. Use log_exercise to add more exercises, then end_session when done." }),
             }),
           },
         ],
