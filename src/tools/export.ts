@@ -123,10 +123,12 @@ Examples:
       // PRs
       if (scope === "all" || scope === "prs") {
         const { rows } = await pool.query(
-          `SELECT e.name as exercise_name, pr.record_type, pr.value, ph.achieved_at
+          `SELECT e.name as exercise_name, pr.record_type, pr.value,
+            (SELECT ph.achieved_at FROM pr_history ph
+             WHERE ph.exercise_id = pr.exercise_id AND ph.record_type = pr.record_type AND ph.user_id = $1
+             ORDER BY ph.achieved_at DESC LIMIT 1) as achieved_at
            FROM personal_records pr
            JOIN exercises e ON e.id = pr.exercise_id
-           LEFT JOIN pr_history ph ON ph.exercise_id = pr.exercise_id AND ph.record_type = pr.record_type AND ph.user_id = $1
            WHERE pr.user_id = $1
            ORDER BY e.name, pr.record_type`,
           [userId]

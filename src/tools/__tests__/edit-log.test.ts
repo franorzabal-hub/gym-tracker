@@ -145,7 +145,7 @@ describe("edit_log tool", () => {
 
   describe("delete_sessions bulk", () => {
     it("rejects without session IDs array", async () => {
-      const result = await toolHandler({ delete_sessions: "invalid" });
+      const result = await toolHandler({ delete_sessions: "[]" });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("array of session IDs");

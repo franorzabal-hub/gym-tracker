@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
-import { parseJsonParam } from "../helpers/parse-helpers.js";
+import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 
 export function registerTemplatesTool(server: McpServer) {
   server.tool(
@@ -219,7 +219,7 @@ Actions:
         try {
           await startClient.query("BEGIN");
 
-          const startedAt = date ? new Date(date) : new Date();
+          const startedAt = date ? new Date(date + 'T00:00:00') : new Date();
           const { rows: [session] } = await startClient.query(
             "INSERT INTO sessions (user_id, started_at) VALUES ($1, $2) RETURNING id, started_at",
             [userId, startedAt]
@@ -286,7 +286,7 @@ Actions:
       }
 
       if (action === "delete_bulk") {
-        const namesList = parseJsonParam<string[]>(rawNames);
+        const namesList = parseJsonArrayParam<string>(rawNames);
         if (!namesList || !Array.isArray(namesList) || namesList.length === 0) {
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ error: "names array required for delete_bulk" }) }],

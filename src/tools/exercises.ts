@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { resolveExercise, searchExercises } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
-import { parseJsonParam } from "../helpers/parse-helpers.js";
+import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
 
 export function registerExercisesTool(server: McpServer) {
   server.tool(
@@ -235,7 +235,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
       }
 
       if (action === "delete_bulk") {
-        const namesList = parseJsonParam<string[]>(rawNames);
+        const namesList = parseJsonArrayParam<string>(rawNames);
         if (!namesList || !Array.isArray(namesList) || namesList.length === 0) {
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ error: "names array required for delete_bulk" }) }],

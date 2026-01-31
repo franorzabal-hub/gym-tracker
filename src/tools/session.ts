@@ -7,7 +7,7 @@ import {
   getProgramDaysWithExercises,
 } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
-import { parseJsonParam } from "../helpers/parse-helpers.js";
+import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 
 export function registerSessionTools(server: McpServer) {
   server.tool(
@@ -25,7 +25,7 @@ Returns the session info and the exercises planned for that day (if any).
       include_last_workout: z.boolean().optional().describe("If true, include last workout comparison. Defaults to true"),
     },
     async ({ program_day, notes, date, tags: rawTags, include_last_workout }) => {
-      const tags = parseJsonParam<string[]>(rawTags);
+      const tags = parseJsonArrayParam<string>(rawTags);
       const userId = getUserId();
 
       // Check for already active session
@@ -84,7 +84,7 @@ Returns the session info and the exercises planned for that day (if any).
         }
       }
 
-      const startedAt = date ? new Date(date) : new Date();
+      const startedAt = date ? new Date(date + 'T00:00:00') : new Date();
       const { rows } = await pool.query(
         `INSERT INTO sessions (user_id, program_version_id, program_day_id, notes, started_at, tags)
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, started_at, tags`,
@@ -181,7 +181,7 @@ Optionally add or update tags on the session.`,
       include_comparison: z.boolean().optional().describe("If true, include comparison with previous session. Defaults to true"),
     },
     async ({ notes, force, tags: rawTags, summary_only, include_comparison }) => {
-      const tags = parseJsonParam<string[]>(rawTags);
+      const tags = parseJsonArrayParam<string>(rawTags);
       const userId = getUserId();
 
       const active = await pool.query(

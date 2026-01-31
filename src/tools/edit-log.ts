@@ -4,7 +4,7 @@ import pool from "../db/connection.js";
 import { findExercise } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
-import { parseJsonParam } from "../helpers/parse-helpers.js";
+import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 
 export function registerEditLogTool(server: McpServer) {
   server.tool(
@@ -106,7 +106,7 @@ Parameters:
 
       // --- Bulk delete sessions mode ---
       if (rawDeleteSessions !== undefined && rawDeleteSessions !== null) {
-        const sessionIds = parseJsonParam<number[]>(rawDeleteSessions);
+        const sessionIds = parseJsonArrayParam<number>(rawDeleteSessions);
         if (!sessionIds || !Array.isArray(sessionIds) || sessionIds.length === 0) {
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ error: "delete_sessions requires an array of session IDs" }) }],

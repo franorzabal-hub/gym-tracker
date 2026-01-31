@@ -39,7 +39,10 @@ src/tools/__tests__/         # Vitest tests (1 per tool file)
 
 - WorkOS OAuth 2.1: `/auth/authorize` → `/auth/callback` → Bearer token
 - PKCE S256 mandatory on `/authorize` (requires `code_challenge`) and `/token` (requires `code_verifier`)
-- In-memory rate limiting per IP: 20/min on `/authorize` and `/token`, 5/min on `/register` (429 on excess)
+- In-memory rate limiting per IP: 20/min on `/authorize` and `/token`, 5/min on `/register` (429 on excess). Timers use `.unref()`.
+- OAuth state signed with HMAC-SHA256 (`STATE_SECRET` env var) + 10-min TTL. Falls back to ephemeral random secret.
+- `/register` protected by `REGISTRATION_SECRET` env var (Bearer token). Unrestricted in dev when unset.
+- `trust proxy` enabled (`app.set("trust proxy", 1)`) for correct `req.ip` behind Cloud Run.
 - `authenticateToken()` middleware resolves Bearer → WorkOS user → `users` table (upsert)
 - `runWithUser(userId, fn)` wraps each request in AsyncLocalStorage
 - All tools call `getUserId()` to scope queries. All tables have `user_id` FK with per-user unique constraints.
@@ -88,12 +91,9 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 ## Code Patterns
 
 ### JSON String Workaround
-MCP clients may serialize arrays as JSON strings. All array params use `parseJsonParam<T>()` from `src/helpers/parse-helpers.ts`:
-```typescript
-import { parseJsonParam } from '../helpers/parse-helpers.js';
-const list = parseJsonParam<SomeType[]>(rawParam);
-```
-Applies to: exercises, names, days, overrides, skip, tags, bulk, delete_sessions.
+MCP clients may serialize arrays as JSON strings. Two helpers in `src/helpers/parse-helpers.ts`:
+- `parseJsonParam<T>(value)`: parse JSON string or pass through. Returns `null` on failure. Used for complex object arrays (exercises bulk, days, overrides, skip).
+- `parseJsonArrayParam<T>(value)`: same but wraps plain strings into `[value]` instead of returning null. Used for simple string arrays (tags, names, delete_sessions, exercise names in stats).
 
 ### Tool Response Format
 All tools return `{ content: [{ type: "text", text: JSON.stringify({...}) }] }`. Errors add `isError: true`.
@@ -133,3 +133,4 @@ Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture
 - Better error messages in Spanish
 - Tests for `body-measurements.ts` and `export.ts`
 - Rate limiting persistence (currently in-memory, resets on deploy)
+- Persist `STATE_SECRET` as a Cloud Run secret (currently falls back to ephemeral random)

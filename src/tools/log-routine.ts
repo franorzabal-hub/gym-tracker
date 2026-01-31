@@ -8,7 +8,7 @@ import {
 } from "../helpers/program-helpers.js";
 import { checkPRs } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
-import { parseJsonParam } from "../helpers/parse-helpers.js";
+import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
 
 export function registerLogRoutineTool(server: McpServer) {
   server.tool(
@@ -50,7 +50,7 @@ Parameters:
       // Some MCP clients serialize nested arrays as JSON strings
       const overrides = parseJsonParam<any[]>(rawOverrides);
       const skip = parseJsonParam<string[]>(rawSkip);
-      const tags = parseJsonParam<string[]>(rawTags);
+      const tags = parseJsonArrayParam<string>(rawTags);
 
       // Resolve program and day info before starting the transaction
       const activeProgram = await getActiveProgram();
@@ -148,7 +148,7 @@ Parameters:
         }
 
         // Create session
-        const startedAt = date ? new Date(date) : new Date();
+        const startedAt = date ? new Date(date + 'T00:00:00') : new Date();
         const { rows: [session] } = await client.query(
           `INSERT INTO sessions (user_id, program_version_id, program_day_id, started_at, tags)
            VALUES ($1, $2, $3, $4, $5) RETURNING id, started_at`,
@@ -222,7 +222,7 @@ Parameters:
         // End session unless auto_end is explicitly false
         const shouldEnd = auto_end !== false;
         if (shouldEnd) {
-          const endedAt = date ? new Date(new Date(date).getTime() + 60 * 60 * 1000) : new Date();
+          const endedAt = date ? new Date(new Date(date + 'T00:00:00').getTime() + 60 * 60 * 1000) : new Date();
           await client.query(
             "UPDATE sessions SET ended_at = $2 WHERE id = $1 AND user_id = $3",
             [session.id, endedAt, userId]

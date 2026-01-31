@@ -9,7 +9,7 @@ import {
   cloneVersion,
 } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
-import { parseJsonParam } from "../helpers/parse-helpers.js";
+import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
 
 const dayExerciseSchema = z.object({
   exercise: z.string(),
@@ -504,7 +504,7 @@ For "activate", pass the program name.`,
       }
 
       if (action === "delete_bulk") {
-        const namesList = parseJsonParam<string[]>(rawNames);
+        const namesList = parseJsonArrayParam<string>(rawNames);
         if (!namesList || !Array.isArray(namesList) || namesList.length === 0) {
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ error: "names array required for delete_bulk" }) }],

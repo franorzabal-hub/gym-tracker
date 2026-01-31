@@ -1,9 +1,37 @@
 import { Router } from "express";
-import crypto from "node:crypto";
+import crypto, { createHmac } from "node:crypto";
 import { workos, WORKOS_CLIENT_ID, BASE_URL } from "./workos.js";
 import pool from "../db/connection.js";
 
 const router = Router();
+
+// --- State signing ---
+const STATE_SECRET = process.env.STATE_SECRET || (() => {
+  const secret = crypto.randomBytes(32).toString("hex");
+  console.warn("WARNING: STATE_SECRET not set, using ephemeral random secret. State tokens will not survive restarts.");
+  return secret;
+})();
+
+function signState(payload: object): string {
+  const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const sig = createHmac("sha256", STATE_SECRET).update(data).digest("base64url");
+  return `${data}.${sig}`;
+}
+
+function verifyState(state: string): Record<string, any> | null {
+  const dotIdx = state.lastIndexOf(".");
+  if (dotIdx === -1) return null;
+  const data = state.substring(0, dotIdx);
+  const sig = state.substring(dotIdx + 1);
+  const expected = createHmac("sha256", STATE_SECRET).update(data).digest("base64url");
+  if (sig !== expected) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(data, "base64url").toString());
+    // Check TTL: 10 minutes
+    if (payload.created_at && Date.now() - payload.created_at > 10 * 60 * 1000) return null;
+    return payload;
+  } catch { return null; }
+}
 
 // --- Rate limiting (in-memory) ---
 const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
@@ -34,7 +62,7 @@ setInterval(() => {
       rateLimitMap.delete(key);
     }
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref();
 
 // Cleanup expired tokens/codes every 15 minutes
 setInterval(async () => {
@@ -44,7 +72,7 @@ setInterval(async () => {
   } catch {
     // Ignore cleanup errors
   }
-}, 15 * 60 * 1000);
+}, 15 * 60 * 1000).unref();
 
 // Resource metadata
 router.get("/.well-known/oauth-protected-resource", (_req, res) => {
@@ -75,6 +103,17 @@ router.post("/register", async (req, res) => {
   if (!checkRateLimit(`register:${ip}`, 5)) {
     res.status(429).json({ error: "too_many_requests", error_description: "Rate limit exceeded. Try again later." });
     return;
+  }
+
+  // Registration secret check
+  const registrationSecret = process.env.REGISTRATION_SECRET;
+  if (registrationSecret) {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (token !== registrationSecret) {
+      res.status(401).json({ error: "unauthorized", error_description: "Registration requires authorization" });
+      return;
+    }
   }
 
   const { client_name, redirect_uris, grant_types, response_types, token_endpoint_auth_method } = req.body;
@@ -165,15 +204,14 @@ router.get("/authorize", async (req, res) => {
     }
   }
 
-  // Store PKCE + redirect info in state
-  const internalState = Buffer.from(
-    JSON.stringify({
-      redirect_uri,
-      state,
-      code_challenge,
-      code_challenge_method,
-    })
-  ).toString("base64url");
+  // Store PKCE + redirect info in signed state
+  const internalState = signState({
+    redirect_uri,
+    state,
+    code_challenge,
+    code_challenge_method,
+    created_at: Date.now(),
+  });
 
   const authUrl = workos.userManagement.getAuthorizationUrl({
     provider: "authkit",
@@ -195,8 +233,12 @@ router.get("/callback", async (req, res) => {
       return;
     }
 
-    const { redirect_uri, state, code_challenge, code_challenge_method } =
-      JSON.parse(Buffer.from(internalState as string, "base64url").toString());
+    const statePayload = verifyState(internalState as string);
+    if (!statePayload) {
+      res.status(400).json({ error: "invalid_state", error_description: "State verification failed or expired" });
+      return;
+    }
+    const { redirect_uri, state, code_challenge, code_challenge_method } = statePayload;
 
     // Exchange WorkOS code for user info
     const authResponse = await workos.userManagement.authenticateWithCode({

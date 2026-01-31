@@ -5,7 +5,7 @@ import { findExercise } from "../helpers/exercise-resolver.js";
 import { estimateE1RM } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
-import { parseJsonParam } from "../helpers/parse-helpers.js";
+import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 
 export function registerStatsTool(server: McpServer) {
   server.tool(
@@ -36,7 +36,7 @@ Examples:
       const effectiveMaxDataPoints = max_data_points ?? 50;
 
       // Parse exercises array (JSON string workaround)
-      const exercisesList = parseJsonParam<string[]>(rawExercises);
+      const exercisesList = parseJsonArrayParam<string>(rawExercises);
 
       // Determine which exercises to query
       const exerciseNames: string[] = [];

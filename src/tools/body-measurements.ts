@@ -41,7 +41,7 @@ Examples:
           };
         }
 
-        const measuredAtDate = measured_at ? new Date(measured_at) : new Date();
+        const measuredAtDate = measured_at ? new Date(measured_at + 'T00:00:00') : new Date();
         const { rows } = await pool.query(
           `INSERT INTO body_measurements (user_id, measurement_type, value, measured_at, notes)
            VALUES ($1, $2, $3, $4, $5)
