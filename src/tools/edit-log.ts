@@ -15,7 +15,8 @@ Examples:
 - "Corregí el press banca de hoy: 4x10 con 70kg" → update all sets of an exercise in today's session
 - "Borrá todos los warmup de press banca" → delete sets filtered by type
 - "Corregí press banca y sentadilla de hoy" → bulk edit multiple exercises
-- "Borrá la sesión 42" → delete an entire session with all its data
+- "Borrá la sesión 42" → soft-delete an entire session
+- "Restaurá la sesión 42" → restore a soft-deleted session
 
 Parameters:
 - exercise: name or alias (required for single mode, ignored if bulk or delete_session is used)
@@ -26,7 +27,8 @@ Parameters:
 - set_ids: specific set IDs to edit directly (alternative to set_numbers)
 - set_type_filter: filter sets by type ("warmup", "working", "drop", "failure")
 - bulk: array of { exercise, action?, set_numbers?, set_ids?, set_type_filter?, updates? } for multi-exercise edits
-- delete_session: session ID to delete entirely (removes all exercises, sets, and the session itself)`,
+- delete_session: session ID to soft-delete (sets deleted_at timestamp, can be restored)
+- restore_session: session ID to restore (clears deleted_at timestamp)`,
     {
       exercise: z.string().optional(),
       session: z
@@ -60,17 +62,50 @@ Parameters:
           notes: z.string().optional(),
         }).optional(),
       })).optional(),
-      delete_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to delete entirely. Removes all exercises, sets, and the session record."),
+      delete_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to soft-delete. Sets deleted_at timestamp; can be restored later."),
+      restore_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to restore from soft-delete. Clears the deleted_at timestamp."),
     },
-    async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session }) => {
+    async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session, restore_session }) => {
       const userId = getUserId();
 
-      // --- Delete session mode ---
+      // --- Restore session mode ---
+      if (restore_session !== undefined && restore_session !== null) {
+        const sessionId = Number(restore_session);
+        const { rows: sessionRows } = await pool.query(
+          "SELECT id, started_at, deleted_at FROM sessions WHERE id = $1 AND user_id = $2",
+          [sessionId, userId]
+        );
+        if (sessionRows.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: `Session ${restore_session} not found` }) }],
+            isError: true,
+          };
+        }
+        if (!sessionRows[0].deleted_at) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: `Session ${restore_session} is not deleted` }) }],
+            isError: true,
+          };
+        }
+        await pool.query("UPDATE sessions SET deleted_at = NULL WHERE id = $1", [sessionId]);
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              restored_session: sessionId,
+              started_at: sessionRows[0].started_at,
+              message: "Session restored successfully.",
+            }),
+          }],
+        };
+      }
+
+      // --- Delete session mode (soft delete) ---
       if (delete_session !== undefined && delete_session !== null) {
         const sessionId = Number(delete_session);
         // Verify ownership
         const { rows: sessionRows } = await pool.query(
-          "SELECT id, started_at, ended_at FROM sessions WHERE id = $1 AND user_id = $2",
+          "SELECT id, started_at, ended_at FROM sessions WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",
           [sessionId, userId]
         );
         if (sessionRows.length === 0) {
@@ -80,15 +115,7 @@ Parameters:
           };
         }
 
-        // Delete sets → session_exercises → session (cascading manually for clarity)
-        await pool.query(
-          `DELETE FROM sets WHERE session_exercise_id IN (
-             SELECT id FROM session_exercises WHERE session_id = $1
-           )`,
-          [sessionId]
-        );
-        await pool.query("DELETE FROM session_exercises WHERE session_id = $1", [sessionId]);
-        await pool.query("DELETE FROM sessions WHERE id = $1", [sessionId]);
+        await pool.query("UPDATE sessions SET deleted_at = NOW() WHERE id = $1", [sessionId]);
 
         return {
           content: [{
@@ -96,7 +123,7 @@ Parameters:
             text: JSON.stringify({
               deleted_session: sessionId,
               started_at: sessionRows[0].started_at,
-              message: "Session and all associated data permanently deleted.",
+              message: "Session soft-deleted. Use restore_session to undo.",
             }),
           }],
         };
@@ -211,7 +238,7 @@ async function processSingleEdit(params: {
     `SELECT se.id, s.id as session_id, s.started_at
      FROM session_exercises se
      JOIN sessions s ON s.id = se.session_id
-     WHERE se.exercise_id = $1 AND s.user_id = $2 ${sessionFilter}
+     WHERE se.exercise_id = $1 AND s.user_id = $2 AND s.deleted_at IS NULL ${sessionFilter}
      ORDER BY s.started_at DESC`,
     queryParams
   );

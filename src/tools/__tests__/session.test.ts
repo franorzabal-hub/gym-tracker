@@ -27,6 +27,7 @@ const mockInferTodayDay = inferTodayDay as ReturnType<typeof vi.fn>;
 
 let startHandler: Function;
 let endHandler: Function;
+let getActiveHandler: Function;
 
 describe("session tools", () => {
   beforeEach(() => {
@@ -38,6 +39,7 @@ describe("session tools", () => {
       tool: vi.fn((_name: string, _desc: string, _schema: any, handler: Function) => {
         if (_name === "start_session") startHandler = handler;
         if (_name === "end_session") endHandler = handler;
+        if (_name === "get_active_session") getActiveHandler = handler;
       }),
     } as unknown as McpServer;
     registerSessionTools(server);
@@ -107,7 +109,7 @@ describe("session tools", () => {
     it("ends session and returns summary", async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z" }] })
-        .mockResolvedValueOnce({ rows: [{ count: "3" }] }) // exerciseCheck
+        .mockResolvedValueOnce({ rows: [{ exercise_count: "3", set_count: "10" }] }) // exerciseCheck
         .mockResolvedValueOnce({}) // UPDATE ended_at
         .mockResolvedValueOnce({
           rows: [{
@@ -134,6 +136,39 @@ describe("session tools", () => {
       expect(parsed.exercises_count).toBe(5);
       expect(parsed.total_sets).toBe(20);
       expect(parsed.total_volume_kg).toBe(5000);
+    });
+  });
+
+  describe("get_active_session", () => {
+    it("returns inactive when no open session", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+
+      const result = await getActiveHandler({});
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(parsed.active).toBe(false);
+    });
+
+    it("returns active session with exercises", async () => {
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z", program_day_id: 5, tags: ["morning"] }],
+        })
+        .mockResolvedValueOnce({ rows: [{ day_label: "Push" }] }) // program day lookup
+        .mockResolvedValueOnce({
+          rows: [
+            { name: "Bench Press", superset_group: null, sets: [{ set_id: 1, set_number: 1, reps: 8, weight: 80, rpe: null, set_type: "working" }] },
+          ],
+        });
+
+      const result = await getActiveHandler({});
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(parsed.active).toBe(true);
+      expect(parsed.session_id).toBe(10);
+      expect(parsed.program_day).toBe("Push");
+      expect(parsed.tags).toEqual(["morning"]);
+      expect(parsed.exercises).toHaveLength(1);
     });
   });
 });

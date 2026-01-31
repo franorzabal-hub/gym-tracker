@@ -24,8 +24,9 @@ Examples:
         .default("week"),
       exercise: z.string().optional(),
       program_day: z.string().optional(),
+      tags: z.array(z.string()).optional().describe("Filter sessions that have ALL of these tags"),
     },
-    async ({ period, exercise, program_day }) => {
+    async ({ period, exercise, program_day, tags }) => {
       const userId = getUserId();
 
       // Build date filter
@@ -46,7 +47,7 @@ Examples:
 
       let sql = `
         SELECT s.id as session_id, s.started_at, s.ended_at,
-          pd.day_label as program_day,
+          pd.day_label as program_day, s.tags,
           COALESCE(json_agg(
             json_build_object(
               'exercise', e.name,
@@ -70,7 +71,7 @@ Examples:
         LEFT JOIN program_days pd ON pd.id = s.program_day_id
         LEFT JOIN session_exercises se ON se.session_id = s.id
         LEFT JOIN exercises e ON e.id = se.exercise_id
-        WHERE s.user_id = $1 AND ${dateFilter}
+        WHERE s.user_id = $1 AND s.deleted_at IS NULL AND ${dateFilter}
       `;
 
       if (exercise) {
@@ -89,7 +90,12 @@ Examples:
         sql += ` AND LOWER(pd.day_label) = $${params.length}`;
       }
 
-      sql += ` GROUP BY s.id, pd.day_label ORDER BY s.started_at DESC`;
+      if (tags && tags.length > 0) {
+        params.push(tags);
+        sql += ` AND s.tags @> $${params.length}::text[]`;
+      }
+
+      sql += ` GROUP BY s.id, pd.day_label, s.tags ORDER BY s.started_at DESC`;
 
       const { rows: sessions } = await pool.query(sql, params);
 

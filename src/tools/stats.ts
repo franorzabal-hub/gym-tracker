@@ -83,7 +83,7 @@ Examples:
          FROM sets st
          JOIN session_exercises se ON se.id = st.session_exercise_id
          JOIN sessions s ON s.id = se.session_id
-         WHERE s.user_id = $1 AND se.exercise_id = $2 AND st.set_type = 'working' AND st.weight IS NOT NULL
+         WHERE s.user_id = $1 AND se.exercise_id = $2 AND st.set_type = 'working' AND st.weight IS NOT NULL AND s.deleted_at IS NULL
            ${setsDateFilter}
          GROUP BY DATE(s.started_at), se.id
          ORDER BY date`,
@@ -107,7 +107,7 @@ Examples:
          FROM sets st
          JOIN session_exercises se ON se.id = st.session_exercise_id
          JOIN sessions s ON s.id = se.session_id
-         WHERE s.user_id = $1 AND se.exercise_id = $2 AND st.set_type = 'working' AND st.weight IS NOT NULL
+         WHERE s.user_id = $1 AND se.exercise_id = $2 AND st.set_type = 'working' AND st.weight IS NOT NULL AND s.deleted_at IS NULL
            ${setsDateFilter}
          GROUP BY week
          ORDER BY week`,
@@ -121,7 +121,7 @@ Examples:
            EXTRACT(DAYS FROM (NOW() - MIN(s.started_at))) as span_days
          FROM sessions s
          JOIN session_exercises se ON se.session_id = s.id
-         WHERE s.user_id = $1 AND se.exercise_id = $2
+         WHERE s.user_id = $1 AND se.exercise_id = $2 AND s.deleted_at IS NULL
            ${sessionsDateFilter}`,
         [userId, resolved.id]
       );
@@ -129,6 +129,15 @@ Examples:
       const spanWeeks = Math.max(1, (freq.span_days || 7) / 7);
       const sessionsPerWeek =
         Math.round((Number(freq.total_sessions) / spanWeeks) * 10) / 10;
+
+      // PR timeline
+      const { rows: prTimeline } = await pool.query(
+        `SELECT record_type, value, achieved_at
+         FROM pr_history
+         WHERE user_id = $1 AND exercise_id = $2
+         ORDER BY achieved_at`,
+        [userId, resolved.id]
+      );
 
       return {
         content: [
@@ -146,6 +155,7 @@ Examples:
                 total_sessions: Number(freq.total_sessions),
                 sessions_per_week: sessionsPerWeek,
               },
+              pr_timeline: prTimeline,
             }),
           },
         ],

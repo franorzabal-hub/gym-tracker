@@ -206,7 +206,7 @@ Returns the logged sets and any new personal records achieved.`,
 
       // Get or create active session
       let sessionRes = await pool.query(
-        "SELECT id FROM sessions WHERE user_id = $1 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1",
+        "SELECT id FROM sessions WHERE user_id = $1 AND ended_at IS NULL AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
         [userId]
       );
       if (sessionRes.rows.length === 0) {

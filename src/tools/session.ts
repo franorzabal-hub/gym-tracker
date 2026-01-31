@@ -20,13 +20,14 @@ Returns the session info and the exercises planned for that day (if any).
       program_day: z.string().optional(),
       notes: z.string().optional(),
       date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session start time. Defaults to now."),
+      tags: z.array(z.string()).optional().describe("Tags to label this session (e.g. ['deload', 'morning', 'outdoor'])"),
     },
-    async ({ program_day, notes, date }) => {
+    async ({ program_day, notes, date, tags }) => {
       const userId = getUserId();
 
       // Check for already active session
       const active = await pool.query(
-        "SELECT id, started_at FROM sessions WHERE user_id = $1 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1",
+        "SELECT id, started_at FROM sessions WHERE user_id = $1 AND ended_at IS NULL AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
         [userId]
       );
       if (active.rows.length > 0) {
@@ -82,14 +83,15 @@ Returns the session info and the exercises planned for that day (if any).
 
       const startedAt = date ? new Date(date) : new Date();
       const { rows } = await pool.query(
-        `INSERT INTO sessions (user_id, program_version_id, program_day_id, notes, started_at)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id, started_at`,
-        [userId, programVersionId, programDayId, notes || null, startedAt]
+        `INSERT INTO sessions (user_id, program_version_id, program_day_id, notes, started_at, tags)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, started_at, tags`,
+        [userId, programVersionId, programDayId, notes || null, startedAt, tags || []]
       );
 
       const result: any = {
         session_id: rows[0].id,
         started_at: rows[0].started_at,
+        tags: rows[0].tags || [],
       };
 
       if (dayInfo && programVersionId) {
@@ -109,7 +111,7 @@ Returns the session info and the exercises planned for that day (if any).
         // Get last workout for the same program day (weight reference)
         const { rows: lastSession } = await pool.query(
           `SELECT s.id, s.started_at FROM sessions s
-           WHERE s.user_id = $1 AND s.program_day_id = $2 AND s.ended_at IS NOT NULL
+           WHERE s.user_id = $1 AND s.program_day_id = $2 AND s.ended_at IS NOT NULL AND s.deleted_at IS NULL
            ORDER BY s.started_at DESC LIMIT 1`,
           [userId, programDayId]
         );
@@ -164,16 +166,18 @@ Returns the session info and the exercises planned for that day (if any).
 
   server.tool(
     "end_session",
-    `End the current active workout session. Returns a summary with duration, exercises count, total sets, and total volume.`,
+    `End the current active workout session. Returns a summary with duration, exercises count, total sets, and total volume.
+Optionally add or update tags on the session.`,
     {
       notes: z.string().optional(),
       force: z.boolean().optional().default(false),
+      tags: z.array(z.string()).optional().describe("Tags to set on this session (replaces existing tags)"),
     },
-    async ({ notes, force }) => {
+    async ({ notes, force, tags }) => {
       const userId = getUserId();
 
       const active = await pool.query(
-        "SELECT id, started_at FROM sessions WHERE user_id = $1 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1",
+        "SELECT id, started_at FROM sessions WHERE user_id = $1 AND ended_at IS NULL AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
         [userId]
       );
       if (active.rows.length === 0) {
@@ -239,9 +243,9 @@ Returns the session info and the exercises planned for that day (if any).
         : new Date();
 
       await pool.query(
-        `UPDATE sessions SET ended_at = $2, notes = COALESCE($3, notes)
+        `UPDATE sessions SET ended_at = $2, notes = COALESCE($3, notes)${tags ? ', tags = $4' : ''}
          WHERE id = $1`,
-        [sessionId, endedAt, notes || null]
+        tags ? [sessionId, endedAt, notes || null, tags] : [sessionId, endedAt, notes || null]
       );
 
       const { rows: [summary] } = await pool.query(
@@ -292,7 +296,7 @@ Returns the session info and the exercises planned for that day (if any).
       if (currentSession?.program_day_id) {
         const { rows: prevSessions } = await pool.query(
           `SELECT s.id, s.started_at FROM sessions s
-           WHERE s.user_id = $1 AND s.program_day_id = $2 AND s.id != $3 AND s.ended_at IS NOT NULL
+           WHERE s.user_id = $1 AND s.program_day_id = $2 AND s.id != $3 AND s.ended_at IS NOT NULL AND s.deleted_at IS NULL
            ORDER BY s.started_at DESC LIMIT 1`,
           [userId, currentSession.program_day_id, sessionId]
         );
@@ -372,6 +376,73 @@ Returns the session info and the exercises planned for that day (if any).
             }),
           },
         ],
+      };
+    }
+  );
+
+  server.tool(
+    "get_active_session",
+    `Check if there is an active (open) workout session. Returns session details with exercises logged so far, or indicates no active session.`,
+    {},
+    async () => {
+      const userId = getUserId();
+
+      const { rows } = await pool.query(
+        "SELECT id, started_at, program_day_id, tags FROM sessions WHERE user_id = $1 AND ended_at IS NULL AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
+        [userId]
+      );
+
+      if (rows.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ active: false }) }],
+        };
+      }
+
+      const session = rows[0];
+      const durationMinutes = Math.round((Date.now() - new Date(session.started_at).getTime()) / 60000);
+
+      // Get program day label
+      let programDay: string | undefined;
+      if (session.program_day_id) {
+        const { rows: dayRows } = await pool.query(
+          "SELECT day_label FROM program_days WHERE id = $1",
+          [session.program_day_id]
+        );
+        if (dayRows.length > 0) programDay = dayRows[0].day_label;
+      }
+
+      // Get exercises + sets
+      const { rows: exerciseDetails } = await pool.query(
+        `SELECT e.name, se.superset_group,
+           json_agg(json_build_object(
+             'set_id', st.id, 'set_number', st.set_number, 'reps', st.reps, 'weight', st.weight, 'rpe', st.rpe, 'set_type', st.set_type
+           ) ORDER BY st.set_number) as sets
+         FROM session_exercises se
+         JOIN exercises e ON e.id = se.exercise_id
+         LEFT JOIN sets st ON st.session_exercise_id = se.id
+         WHERE se.session_id = $1
+         GROUP BY se.id, e.name, se.superset_group, se.sort_order
+         ORDER BY se.sort_order`,
+        [session.id]
+      );
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            active: true,
+            session_id: session.id,
+            started_at: session.started_at,
+            duration_minutes: durationMinutes,
+            program_day: programDay,
+            tags: session.tags || [],
+            exercises: exerciseDetails.map((e: any) => ({
+              name: e.name,
+              superset_group: e.superset_group,
+              sets: e.sets,
+            })),
+          }),
+        }],
       };
     }
   );

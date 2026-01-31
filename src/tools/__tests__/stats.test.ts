@@ -63,7 +63,8 @@ describe("get_stats tool", () => {
       })
       .mockResolvedValueOnce({
         rows: [{ total_sessions: "6", span_days: "30" }],
-      });
+      })
+      .mockResolvedValueOnce({ rows: [] }); // pr_timeline
 
     const result = await toolHandler({ exercise: "Bench Press", period: "3months" });
     const parsed = JSON.parse(result.content[0].text);
@@ -82,7 +83,8 @@ describe("get_stats tool", () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ total_sessions: "0", span_days: null }] });
+      .mockResolvedValueOnce({ rows: [{ total_sessions: "0", span_days: null }] })
+      .mockResolvedValueOnce({ rows: [] }); // pr_timeline
 
     await toolHandler({ exercise: "Bench Press", period: "month" });
 
@@ -95,7 +97,8 @@ describe("get_stats tool", () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ total_sessions: "0", span_days: null }] });
+      .mockResolvedValueOnce({ rows: [{ total_sessions: "0", span_days: null }] })
+      .mockResolvedValueOnce({ rows: [] }); // pr_timeline
 
     await toolHandler({ exercise: "Bench Press", period: "all" });
 
@@ -108,7 +111,8 @@ describe("get_stats tool", () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ total_sessions: "2", span_days: 0 }] });
+      .mockResolvedValueOnce({ rows: [{ total_sessions: "2", span_days: 0 }] })
+      .mockResolvedValueOnce({ rows: [] }); // pr_timeline
 
     const result = await toolHandler({ exercise: "Bench Press", period: "3months" });
     const parsed = JSON.parse(result.content[0].text);
@@ -122,7 +126,8 @@ describe("get_stats tool", () => {
         rows: [{ date: "2024-01-01", max_weight: 100, reps_at_max: 5 }],
       })
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ total_sessions: "1", span_days: 7 }] });
+      .mockResolvedValueOnce({ rows: [{ total_sessions: "1", span_days: 7 }] })
+      .mockResolvedValueOnce({ rows: [] }); // pr_timeline
 
     const result = await toolHandler({ exercise: "Bench Press", period: "3months" });
     const parsed = JSON.parse(result.content[0].text);

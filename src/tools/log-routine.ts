@@ -39,8 +39,9 @@ Parameters:
       skip: z.array(z.string()).optional(),
       auto_end: z.boolean().optional().describe("Whether to auto-close the session after logging. Default true. Set false to keep session open for additional exercises."),
       date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session. Defaults to now."),
+      tags: z.array(z.string()).optional().describe("Tags to label this session (e.g. ['deload', 'morning'])"),
     },
-    async ({ program_day, overrides, skip, auto_end, date }) => {
+    async ({ program_day, overrides, skip, auto_end, date, tags }) => {
       const userId = getUserId();
       const activeProgram = await getActiveProgram();
       if (!activeProgram) {
@@ -112,9 +113,9 @@ Parameters:
       // Create session
       const startedAt = date ? new Date(date) : new Date();
       const { rows: [session] } = await pool.query(
-        `INSERT INTO sessions (user_id, program_version_id, program_day_id, started_at)
-         VALUES ($1, $2, $3, $4) RETURNING id, started_at`,
-        [userId, activeProgram.version_id, dayRow.id, startedAt]
+        `INSERT INTO sessions (user_id, program_version_id, program_day_id, started_at, tags)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id, started_at`,
+        [userId, activeProgram.version_id, dayRow.id, startedAt, tags || []]
       );
 
       const exercisesLogged: any[] = [];

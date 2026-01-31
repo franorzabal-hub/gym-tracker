@@ -105,4 +105,11 @@ async function upsertPR(
      WHERE personal_records.value < $4`,
     [userId, exerciseId, recordType, value, setId]
   );
+
+  // Log to PR history for timeline tracking
+  await pool.query(
+    `INSERT INTO pr_history (user_id, exercise_id, record_type, value, achieved_at, set_id)
+     VALUES ($1, $2, $3, $4, NOW(), $5)`,
+    [userId, exerciseId, recordType, value, setId]
+  );
 }

@@ -162,7 +162,7 @@ Actions:
 
         // Check no active session
         const active = await pool.query(
-          "SELECT id FROM sessions WHERE user_id = $1 AND ended_at IS NULL LIMIT 1",
+          "SELECT id FROM sessions WHERE user_id = $1 AND ended_at IS NULL AND deleted_at IS NULL LIMIT 1",
           [userId]
         );
         if (active.rows.length > 0) {
