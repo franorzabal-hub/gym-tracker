@@ -2,19 +2,34 @@
 
 MCP Server that turns Claude into a gym training partner. Users talk naturally in Spanish/English, Claude calls tools.
 
+## Development Workflow
+
+**IMPORTANT:** Follow this workflow in every session.
+
+1. **Commit directly to main** — no branches, no PRs (solo developer)
+2. **Run `npm test` before every commit** — TypeScript must compile (`tsc --noEmit`) and all tests must pass
+3. **Push to main triggers CI only** — never deploys automatically
+4. **Deploy only when explicitly asked** — never deploy on your own initiative
+
+To deploy (only when the user asks):
+```bash
+gh workflow run "CI/CD" --field deploy=true
+```
+
+### Database isolation
+
+| Environment | Neon branch | Where DATABASE_URL lives |
+|---|---|---|
+| Local dev | `dev` | `.env` (never committed) |
+| Production | `main` | GitHub Secrets → Cloud Run |
+
+Dev and prod databases are completely isolated. Local development cannot affect production data.
+
 ## CI/CD
 
 `.github/workflows/deploy.yml` runs on push to main, PRs, and manual dispatch:
 1. **check** (automatic): `npm ci` → `npx tsc --noEmit` → `npx vitest run` — runs on every push/PR
-2. **deploy** (manual only): `gcloud run deploy` to Cloud Run — only via `workflow_dispatch` (GitHub Actions UI or `gh workflow run`)
-
-Deploy never happens automatically. To deploy:
-```bash
-gh workflow run "CI/CD" --field deploy=true
-```
-Or: GitHub repo → Actions → CI/CD → Run workflow → check "Deploy to production"
-
-Always run `npm test` before committing. TypeScript must compile cleanly (`tsc --noEmit`).
+2. **deploy** (manual only): `gcloud run deploy` to Cloud Run — only via `workflow_dispatch`
 
 ## Deployment
 
@@ -277,13 +292,15 @@ createRoot(document.getElementById("root")!).render(
 
 ### Local development
 
-1. Start server: `DEV_USER_ID=1 npm run dev` (port 3001)
-2. For Claude Desktop testing, expose with tunnel: `cloudflared tunnel --url http://localhost:3001 --protocol http2`
-3. Configure Claude Desktop with the tunnel URL as MCP endpoint
-4. After widget code changes: `cd web && npm run build`, then re-trigger the tool in Claude
-5. Use Chrome DevTools MCP to inspect widgets: take snapshots, check console for errors, verify postMessage handshake
+See "Local Development Setup" section above for server startup and database management.
 
-**Local test host** (no Claude Desktop needed): `cd web && npx vite --port 5173`, then open `http://localhost:5173/test-host.html`. This uses the official `AppBridge` from `@modelcontextprotocol/ext-apps/app-bridge` to simulate the host-side protocol. Widgets load from `dist/`, so rebuild first. Supports theme toggle and all 9 widgets with sample data.
+For Claude Desktop widget testing:
+1. Server must be running: `DEV_USER_ID=1 npm run dev`
+2. Expose via tunnel: `cloudflared tunnel --url http://localhost:3001 --protocol http2`
+3. In Claude Desktop, add custom connector with URL: `https://<tunnel-url>/mcp`
+4. After widget code changes: `cd web && npm run build`, then start a new conversation in Claude Desktop
+
+**Local test host** (no Claude Desktop needed): `cd web && npx vite --port 5173`, then open `http://localhost:5173/test-host.html`. Uses `AppBridge` to simulate the host-side protocol. Rebuild widgets first. Supports theme toggle and all 9 widgets with sample data.
 
 ### How the postMessage protocol works (for debugging)
 
