@@ -222,10 +222,14 @@ Returns the logged sets and any new personal records achieved.`,
       }
       const sessionId = sessionRes.rows[0].id;
 
-      // Bulk mode
-      if (params.exercises && params.exercises.length > 0) {
+      // Bulk mode — some MCP clients serialize nested arrays as JSON strings
+      let exercisesList = params.exercises as any;
+      if (typeof exercisesList === 'string') {
+        try { exercisesList = JSON.parse(exercisesList); } catch { exercisesList = null; }
+      }
+      if (exercisesList && Array.isArray(exercisesList) && exercisesList.length > 0) {
         const results = [];
-        for (const entry of params.exercises) {
+        for (const entry of exercisesList) {
           results.push(await logSingleExercise(sessionId, entry));
         }
         return {

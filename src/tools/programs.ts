@@ -55,8 +55,14 @@ For "activate", pass the program name.`,
       change_description: z.string().optional(),
       hard_delete: z.boolean().optional(),
     },
-    async ({ action, name, new_name, description, days, change_description, hard_delete }) => {
+    async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete }) => {
       const userId = getUserId();
+
+      // Some MCP clients serialize nested arrays as JSON strings
+      let days = rawDays as any;
+      if (typeof days === 'string') {
+        try { days = JSON.parse(days); } catch { days = undefined; }
+      }
 
       if (action === "list") {
         const { rows } = await pool.query(

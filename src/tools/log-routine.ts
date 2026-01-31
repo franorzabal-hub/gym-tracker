@@ -41,8 +41,17 @@ Parameters:
       date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session. Defaults to now."),
       tags: z.array(z.string()).optional().describe("Tags to label this session (e.g. ['deload', 'morning'])"),
     },
-    async ({ program_day, overrides, skip, auto_end, date, tags }) => {
+    async ({ program_day, overrides: rawOverrides, skip: rawSkip, auto_end, date, tags: rawTags }) => {
       const userId = getUserId();
+
+      // Some MCP clients serialize nested arrays as JSON strings
+      const parseIfString = (v: any) => {
+        if (typeof v === 'string') { try { return JSON.parse(v); } catch { return undefined; } }
+        return v;
+      };
+      const overrides = parseIfString(rawOverrides);
+      const skip = parseIfString(rawSkip);
+      const tags = parseIfString(rawTags);
       const activeProgram = await getActiveProgram();
       if (!activeProgram) {
         return {
@@ -100,7 +109,7 @@ Parameters:
 
       // Build skip set (normalized)
       const skipSet = new Set(
-        (skip || []).map((s) => s.toLowerCase().trim())
+        (skip || []).map((s: string) => s.toLowerCase().trim())
       );
 
       // Build override map

@@ -140,7 +140,12 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
       }
 
       if (action === "add_bulk") {
-        if (!exercises || exercises.length === 0) {
+        // Some MCP clients serialize nested arrays as JSON strings
+        let exercisesList = exercises as any;
+        if (typeof exercisesList === 'string') {
+          try { exercisesList = JSON.parse(exercisesList); } catch { exercisesList = null; }
+        }
+        if (!exercisesList || !Array.isArray(exercisesList) || exercisesList.length === 0) {
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ error: "exercises array required for add_bulk" }) }],
             isError: true,
@@ -151,7 +156,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
         const existing: string[] = [];
         const failed: Array<{ name: string; error: string }> = [];
 
-        for (const ex of exercises) {
+        for (const ex of exercisesList) {
           try {
             const resolved = await resolveExercise(
               ex.name,
@@ -190,7 +195,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
               created,
               existing,
               failed: failed.length > 0 ? failed : undefined,
-              total: exercises.length,
+              total: exercisesList.length,
             }),
           }],
         };
