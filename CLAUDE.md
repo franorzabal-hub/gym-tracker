@@ -33,6 +33,34 @@ Always run `npm test` before committing. TypeScript must compile cleanly (`tsc -
 
 Manage via: `gcloud run services update gym-tracker --region us-central1 --project kairos-loyalty-api --update-env-vars "KEY=value"`
 
+## Local Development Setup
+
+### Prerequisites
+- Node.js 22
+- Neon CLI: `brew install neonctl`
+
+### First-time setup
+1. `neon auth` (login to Neon)
+2. `neon branches create --name dev --project-id autumn-rice-23097289`
+3. `neon connection-string dev --project-id autumn-rice-23097289` → copy the URL
+4. `cp .env.example .env` → paste the dev branch `DATABASE_URL`
+5. `npm install && cd web && npm install`
+
+### Daily workflow
+1. `npm run dev` (server on port 3001, migrations auto-apply)
+2. For widgets: `cd web && npm run build`
+3. Test host: `cd web && npx vite --port 5173` → http://localhost:5173/test-host.html
+
+### Database management
+- Dev branch is isolated from prod (copy-on-write)
+- Reset dev DB: delete and recreate the branch
+  ```
+  neon branches delete dev --project-id autumn-rice-23097289
+  neon branches create --name dev --project-id autumn-rice-23097289
+  ```
+  Then update `DATABASE_URL` in `.env` (new endpoint)
+- Prod DB (Neon main branch) credentials only in GitHub Secrets + Cloud Run
+
 ## Stack
 
 Node.js + TypeScript, Express, CORS, `@modelcontextprotocol/sdk` (StreamableHTTP), `@modelcontextprotocol/ext-apps` (MCP Apps widgets), PostgreSQL via `pg`, Zod, Vitest, WorkOS OAuth 2.1, JOSE, AsyncLocalStorage.
