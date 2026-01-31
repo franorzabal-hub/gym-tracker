@@ -10,7 +10,7 @@ import {
 } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 const dayExerciseSchema = z.object({
   exercise: z.string(),
@@ -84,10 +84,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           [userId]
         );
         const active = rows.find((r) => r.is_active);
-        return toolResponse({
-                active_program: active ? active.name : null,
-                programs: rows,
-              });
+        return widgetResponse(
+          `${rows.length} program(s).${active ? ` Active: ${active.name}.` : ""}`,
+          { active_program: active ? active.name : null, programs: rows }
+        );
       }
 
       if (action === "get") {
@@ -111,14 +111,17 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
         if (shouldIncludeExercises) {
           const days = await getProgramDaysWithExercises(program.version_id);
-          return toolResponse({
-                  program: {
-                    name: program.name,
-                    description: program.description,
-                    version: program.version_number,
-                    days,
-                  },
-                });
+          return widgetResponse(
+            `Program: ${program.name} (v${program.version_number}).`,
+            {
+              program: {
+                name: program.name,
+                description: program.description,
+                version: program.version_number,
+                days,
+              },
+            }
+          );
         } else {
           // Return days without exercises
           const { rows: days } = await pool.query(
@@ -128,14 +131,17 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
              ORDER BY pd.sort_order`,
             [program.version_id]
           );
-          return toolResponse({
-                  program: {
-                    name: program.name,
-                    description: program.description,
-                    version: program.version_number,
-                  },
-                  days,
-                });
+          return widgetResponse(
+            `Program: ${program.name} (v${program.version_number}).`,
+            {
+              program: {
+                name: program.name,
+                description: program.description,
+                version: program.version_number,
+              },
+              days,
+            }
+          );
         }
       }
 
@@ -223,15 +229,18 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
           await client.query("COMMIT");
 
-          return toolResponse({
-                  program: { id: prog.id, name, version: 1 },
-                  days_created: days.length,
-                  exercises_summary: {
-                    created: Array.from(createdExercises),
-                    existing: Array.from(existingExercises),
-                    total: createdExercises.size + existingExercises.size,
-                  },
-                });
+          return widgetResponse(
+            `Program '${name}' created with ${days.length} days.`,
+            {
+              program: { id: prog.id, name, version: 1 },
+              days_created: days.length,
+              exercises_summary: {
+                created: Array.from(createdExercises),
+                existing: Array.from(existingExercises),
+                total: createdExercises.size + existingExercises.size,
+              },
+            }
+          );
         } catch (err) {
           await client.query("ROLLBACK");
           throw err;
@@ -275,7 +284,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
             `UPDATE programs SET ${updates.join(", ")} WHERE id = $${params.length - 1} AND user_id = $${params.length} RETURNING id, name, description`,
             params
           );
-          return toolResponse({ updated: rows[0] });
+          return widgetResponse("Program metadata updated.", { updated: rows[0] });
         }
 
         const latestVersion = await getLatestVersion(program.id);
@@ -342,15 +351,18 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
           await client.query("COMMIT");
 
-          return toolResponse({
-                  program: { name: name || program.name, version: newVersionNumber },
-                  change_description,
-                  exercises_summary: {
-                    created: Array.from(createdExercises),
-                    existing: Array.from(existingExercises),
-                    total: createdExercises.size + existingExercises.size,
-                  },
-                });
+          return widgetResponse(
+            `Program '${name || program.name}' updated to v${newVersionNumber}.`,
+            {
+              program: { name: name || program.name, version: newVersionNumber },
+              change_description,
+              exercises_summary: {
+                created: Array.from(createdExercises),
+                existing: Array.from(existingExercises),
+                total: createdExercises.size + existingExercises.size,
+              },
+            }
+          );
         } catch (err) {
           await client.query("ROLLBACK");
           throw err;
@@ -371,10 +383,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           return toolResponse({ error: `Program "${name}" not found` }, true);
         }
         await pool.query("UPDATE programs SET is_active = (id = $2) WHERE user_id = $1", [userId, prog.rows[0].id]);
-        return toolResponse({
-                activated: prog.rows[0].name,
-                message: `"${prog.rows[0].name}" is now the active program. All other programs deactivated.`,
-              });
+        return widgetResponse(
+          `'${prog.rows[0].name}' is now the active program.`,
+          { activated: prog.rows[0].name }
+        );
       }
 
       if (action === "delete") {
@@ -390,10 +402,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           if (del.rows.length === 0) {
             return toolResponse({ error: `Program "${name}" not found` }, true);
           }
-          return toolResponse({
-                  deleted: del.rows[0].name,
-                  message: `"${del.rows[0].name}" has been permanently deleted with all versions, days, and exercise assignments. This is irreversible.`,
-                });
+          return widgetResponse(
+            `Program '${del.rows[0].name}' permanently deleted.`,
+            { deleted: del.rows[0].name }
+          );
         }
 
         const del = await pool.query(
@@ -403,10 +415,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         if (del.rows.length === 0) {
           return toolResponse({ error: `Program "${name}" not found` }, true);
         }
-        return toolResponse({
-                deactivated: del.rows[0].name,
-                message: `"${del.rows[0].name}" has been deactivated. Use "activate" to reactivate it, or use hard_delete=true to permanently remove.`,
-              });
+        return widgetResponse(
+          `Program '${del.rows[0].name}' deactivated.`,
+          { deactivated: del.rows[0].name }
+        );
       }
 
       if (action === "delete_bulk") {
@@ -442,10 +454,11 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           }
         }
 
-        return toolResponse({
-              [hard_delete ? "deleted" : "deactivated"]: deleted,
-              not_found: not_found.length > 0 ? not_found : undefined,
-            });
+        const key = hard_delete ? "deleted" : "deactivated";
+        return widgetResponse(
+          `${deleted.length} program(s) ${hard_delete ? "deleted" : "deactivated"}.`,
+          { [key]: deleted, not_found: not_found.length > 0 ? not_found : undefined }
+        );
       }
 
       if (action === "history") {
@@ -468,10 +481,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           [program.id]
         );
 
-        return toolResponse({
-                program: program.name,
-                versions,
-              });
+        return widgetResponse(
+          `${versions.length} version(s) of '${program.name}'.`,
+          { program: program.name, versions }
+        );
       }
 
       return toolResponse({ error: "Unknown action" }, true);

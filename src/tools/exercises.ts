@@ -4,7 +4,7 @@ import pool from "../db/connection.js";
 import { resolveExercise, searchExercises } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerExercisesTool(server: McpServer) {
   registerAppToolWithMeta(server,
@@ -65,7 +65,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
       if (action === "search") {
         const results = await searchExercises(name, muscle_group);
-        return toolResponse({ exercises: results });
+        return widgetResponse(`Found ${results.length} exercise(s).`, { exercises: results });
       }
 
       if (action === "list") {
@@ -107,7 +107,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           params
         );
 
-        return toolResponse({ exercises: results, total });
+        return widgetResponse(`${total} exercise(s)${muscle_group ? ` in ${muscle_group}` : ""}.`, { exercises: results, total });
       }
 
       if (action === "update") {
@@ -158,7 +158,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         if (rows.length === 0) {
           return toolResponse({ error: `Exercise "${name}" not found` }, true);
         }
-        return toolResponse({ updated: rows[0] });
+        return widgetResponse(`Exercise "${rows[0].name}" updated.`, { updated: rows[0] });
       }
 
       if (action === "delete") {
@@ -194,12 +194,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         if (rows.length === 0) {
           return toolResponse({ error: `Exercise "${name}" not found` }, true);
         }
-        return toolResponse({
-          deleted: rows[0],
-          warning: refCount > 0
-            ? `This exercise was referenced in ${refCount} session log(s). Aliases were cascade-deleted and personal_records set to NULL.`
-            : "Exercise and aliases permanently deleted.",
-        });
+        return widgetResponse(
+          `Exercise "${rows[0].name}" deleted.${refCount > 0 ? ` Was referenced in ${refCount} session log(s).` : ""}`,
+          { deleted: rows[0], warning: refCount > 0 ? `Referenced in ${refCount} session log(s). Aliases cascade-deleted.` : undefined }
+        );
       }
 
       if (action === "delete_bulk") {
@@ -242,11 +240,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           }
         }
 
-        return toolResponse({
-          deleted,
-          not_found: not_found.length > 0 ? not_found : undefined,
-          failed: failed.length > 0 ? failed : undefined,
-        });
+        return widgetResponse(
+          `Deleted ${deleted.length} exercise(s).${not_found.length > 0 ? ` ${not_found.length} not found.` : ""}`,
+          { deleted, not_found: not_found.length > 0 ? not_found : undefined, failed: failed.length > 0 ? failed : undefined }
+        );
       }
 
       if (action === "update_bulk") {
@@ -303,11 +300,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           }
         }
 
-        return toolResponse({
-          updated,
-          not_found: not_found.length > 0 ? not_found : undefined,
-          failed: failed.length > 0 ? failed : undefined,
-        });
+        return widgetResponse(
+          `Updated ${updated.length} exercise(s).${not_found.length > 0 ? ` ${not_found.length} not found.` : ""}`,
+          { updated, not_found: not_found.length > 0 ? not_found : undefined, failed: failed.length > 0 ? failed : undefined }
+        );
       }
 
       if (action === "add_bulk") {
@@ -353,12 +349,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           }
         }
 
-        return toolResponse({
-          created,
-          existing,
-          failed: failed.length > 0 ? failed : undefined,
-          total: exercisesList.length,
-        });
+        return widgetResponse(
+          `Added ${created.length} exercise(s), ${existing.length} already existed.`,
+          { created, existing, failed: failed.length > 0 ? failed : undefined, total: exercisesList.length }
+        );
       }
 
       if (action === "list_aliases") {
@@ -371,7 +365,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
            WHERE LOWER(e.name) = LOWER($1) AND (e.user_id IS NULL OR e.user_id = $2)`,
           [name, userId]
         );
-        return toolResponse({ exercise: name, aliases: rows.map((r: any) => r.alias) });
+        return widgetResponse(`Aliases for "${name}".`, { exercise: name, aliases: rows.map((r: any) => r.alias) });
       }
 
       if (action === "add_alias") {
@@ -388,7 +382,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           if (!rowCount || rowCount === 0) {
             return toolResponse({ error: `Exercise "${name}" not found` }, true);
           }
-          return toolResponse({ added_alias: alias.toLowerCase().trim(), exercise: name });
+          return widgetResponse(`Alias "${alias}" added to "${name}".`, { added_alias: alias.toLowerCase().trim(), exercise: name });
         } catch (err: any) {
           if (err.code === "23505") {
             return toolResponse({ error: `Alias "${alias}" already exists` }, true);
@@ -411,7 +405,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         if (!rowCount || rowCount === 0) {
           return toolResponse({ error: `Alias "${alias}" not found for exercise "${name}"` }, true);
         }
-        return toolResponse({ removed_alias: alias, exercise: name });
+        return widgetResponse(`Alias "${alias}" removed from "${name}".`, { removed_alias: alias, exercise: name });
       }
 
       if (action === "merge") {
@@ -524,15 +518,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
           await client.query("COMMIT");
 
-          return toolResponse({
-            merged: {
-              source: sourceEx.name,
-              target: targetEx.name,
-              session_exercises_moved: sessionExercisesMoved,
-              personal_records_moved: prMoved,
-              pr_history_moved: prHistoryMoved,
-            },
-          });
+          return widgetResponse(
+            `Merged "${sourceEx.name}" into "${targetEx.name}". ${sessionExercisesMoved} session entries moved.`,
+            { merged: { source: sourceEx.name, target: targetEx.name, session_exercises_moved: sessionExercisesMoved, personal_records_moved: prMoved, pr_history_moved: prHistoryMoved } }
+          );
         } catch (err) {
           await client.query("ROLLBACK");
           throw err;
@@ -559,10 +548,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         }
       }
 
-      return toolResponse({
-        exercise: { id: resolved.id, name: resolved.name },
-        is_new: resolved.isNew,
-      });
+      return widgetResponse(
+        resolved.isNew ? `Exercise "${resolved.name}" created.` : `Exercise "${resolved.name}" already exists.`,
+        { exercise: { id: resolved.id, name: resolved.name }, is_new: resolved.isNew }
+      );
     }
   );
 }

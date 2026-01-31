@@ -76,7 +76,7 @@ describe("get_stats tool", () => {
       .mockResolvedValueOnce({ rows: [] }); // pr_timeline
 
     const result = await toolHandler({ exercise: "Bench Press", period: "3months" });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
 
     expect(parsed.exercise).toBe("Bench Press");
     expect(parsed.personal_records.max_weight.value).toBe(100);
@@ -124,7 +124,7 @@ describe("get_stats tool", () => {
       .mockResolvedValueOnce({ rows: [] }); // pr_timeline
 
     const result = await toolHandler({ exercise: "Bench Press", period: "3months" });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
     expect(parsed.frequency.sessions_per_week).toBe(2);
   });
 
@@ -139,14 +139,14 @@ describe("get_stats tool", () => {
       .mockResolvedValueOnce({ rows: [] }); // pr_timeline
 
     const result = await toolHandler({ exercise: "Bench Press", period: "3months" });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
     expect(parsed.progression[0].estimated_1rm).toBe(116.7);
   });
 
   it("returns error when no exercise or exercises provided", async () => {
     const result = await toolHandler({ period: "3months" });
     expect(result.isError).toBe(true);
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
     expect(parsed.error).toContain("Provide");
   });
 
@@ -177,7 +177,7 @@ describe("get_stats tool", () => {
         period: "3months",
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.stats).toHaveLength(2);
       expect(parsed.stats[0].exercise).toBe("Bench Press");
       expect(parsed.stats[1].exercise).toBe("Squat");
@@ -201,7 +201,7 @@ describe("get_stats tool", () => {
         period: "3months",
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.stats).toHaveLength(2);
       expect(parsed.stats[0].exercise).toBe("Bench Press");
       expect(parsed.stats[1].error).toContain("not found");
@@ -232,7 +232,7 @@ describe("get_stats tool", () => {
         period: "3months",
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.stats).toHaveLength(2);
     });
   });

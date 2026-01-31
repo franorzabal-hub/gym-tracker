@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
-import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 function escapeCsvValue(val: any): string {
   if (val === null || val === undefined) return "";
@@ -147,7 +147,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
       }
 
       if (action === "json") {
-        return toolResponse({ export: data });
+        return widgetResponse("Data exported as JSON.", { export: data });
       }
 
       // CSV

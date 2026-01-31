@@ -5,7 +5,7 @@ import { findExercise } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerEditLogTool(server: McpServer) {
   registerAppToolWithMeta(server,
@@ -96,10 +96,9 @@ Parameters:
           return toolResponse({ error: `Session ${restore_session} is not deleted` }, true);
         }
         await pool.query("UPDATE sessions SET deleted_at = NULL WHERE id = $1 AND user_id = $2", [sessionId, userId]);
-        return toolResponse({
+        return widgetResponse(`Session ${sessionId} restored.`, {
           restored_session: sessionId,
           started_at: sessionRows[0].started_at,
-          message: "Session restored successfully.",
         });
       }
 
@@ -126,7 +125,7 @@ Parameters:
           }
         }
 
-        return toolResponse({
+        return widgetResponse(`${deleted.length} session(s) deleted.`, {
           deleted,
           not_found: not_found.length > 0 ? not_found : undefined,
         });
@@ -146,10 +145,9 @@ Parameters:
 
         await pool.query("UPDATE sessions SET deleted_at = NOW() WHERE id = $1 AND user_id = $2", [sessionId, userId]);
 
-        return toolResponse({
+        return widgetResponse(`Session ${sessionId} soft-deleted.`, {
           deleted_session: sessionId,
           started_at: sessionRows[0].started_at,
-          message: "Session soft-deleted. Use restore_session to undo.",
         });
       }
 
@@ -173,7 +171,7 @@ Parameters:
           });
           results.push(result);
         }
-        return toolResponse({ bulk_results: results });
+        return widgetResponse(`${results.length} edit(s) applied.`, { bulk_results: results });
       }
 
       // --- Single mode ---
@@ -201,7 +199,7 @@ Parameters:
         return toolResponse(result, true);
       }
 
-      return toolResponse(result);
+      return widgetResponse(`Edit applied to ${result.exercise}.`, result);
     }
   );
 }

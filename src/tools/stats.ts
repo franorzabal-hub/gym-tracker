@@ -6,7 +6,7 @@ import { estimateE1RM } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerStatsTool(server: McpServer) {
   registerAppToolWithMeta(server,
@@ -81,14 +81,14 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         if (muscleGroupVolume) {
           response.muscle_group_volume = muscleGroupVolume;
         }
-        return toolResponse(response);
+        return widgetResponse(`Stats for ${single.exercise}.`, response);
       }
 
       const response: any = { stats: results };
       if (muscleGroupVolume) {
         response.muscle_group_volume = muscleGroupVolume;
       }
-      return toolResponse(response);
+      return widgetResponse(`Stats for ${results.length} exercise(s).`, response);
     }
   );
 }

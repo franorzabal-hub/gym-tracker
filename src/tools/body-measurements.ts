@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
-import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerBodyMeasurementsTool(server: McpServer) {
   registerAppToolWithMeta(server,
@@ -73,7 +73,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           };
         }
 
-        return toolResponse(result);
+        return widgetResponse(`${measurement_type}: ${value} logged.`, result);
       }
 
       if (action === "history") {
@@ -131,7 +131,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           stats = { min, max, average: avg, change, data_points: rows.length };
         }
 
-        return toolResponse({ measurement_type, period: effectivePeriod, stats, history: rows });
+        return widgetResponse(`${rows.length} ${measurement_type} measurements.`, { measurement_type, period: effectivePeriod, stats, history: rows });
       }
 
       // latest
@@ -144,7 +144,8 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           [userId, measurement_type]
         );
 
-        return toolResponse({ latest: rows[0] || null });
+        const latest = rows[0] || null;
+        return widgetResponse(latest ? `Latest ${measurement_type}: ${latest.value}.` : `No ${measurement_type} data.`, { latest });
       }
 
       const { rows } = await pool.query(
@@ -154,7 +155,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         [userId]
       );
 
-      return toolResponse({ latest: rows });
+      return widgetResponse(`${rows.length} measurement type(s).`, { latest: rows });
     }
   );
 }

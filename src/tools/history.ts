@@ -4,7 +4,7 @@ import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerHistoryTool(server: McpServer) {
   registerAppToolWithMeta(server,
@@ -83,14 +83,12 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
             total_volume_kg: Math.round(Number(s.total_volume_kg)),
           }));
 
-          return toolResponse({
-            sessions: mapped,
-            summary: {
+          const summary = {
               total_sessions: mapped.length,
               total_volume_kg: mapped.reduce((acc, s) => acc + s.total_volume_kg, 0),
               exercises_count: mapped.reduce((acc, s) => acc + s.exercises_count, 0),
-            },
-          });
+            };
+          return widgetResponse(`${summary.total_sessions} session(s) found.`, { sessions: mapped, summary });
         }
 
         // Full session with exercises (and optionally sets)
@@ -166,14 +164,12 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           }
         }
 
-        return toolResponse({
-          sessions,
-          summary: {
+        const summary = {
             total_sessions: sessions.length,
             total_volume_kg: Math.round(totalVolume),
             exercises_count: exerciseSet.size,
-          },
-        });
+          };
+        return widgetResponse(`${summary.total_sessions} session(s), ${summary.total_volume_kg}kg total volume.`, { sessions, summary });
       }
 
       // --- Normal mode: period-based filtering ---
@@ -256,14 +252,12 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           total_volume_kg: Math.round(Number(s.total_volume_kg)),
         }));
 
-        return toolResponse({
-          sessions: mapped,
-          summary: {
+        const summary = {
             total_sessions: mapped.length,
             total_volume_kg: mapped.reduce((acc, s) => acc + s.total_volume_kg, 0),
             exercises_count: mapped.reduce((max, s) => max + s.exercises_count, 0),
-          },
-        });
+          };
+        return widgetResponse(`${summary.total_sessions} session(s) in period.`, { sessions: mapped, summary });
       }
 
       // Full mode (with or without sets)
@@ -344,14 +338,12 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         }
       }
 
-      return toolResponse({
-        sessions,
-        summary: {
+      const summary = {
           total_sessions: totalSessions,
           total_volume_kg: Math.round(totalVolume),
           exercises_count: exerciseSet.size,
-        },
-      });
+        };
+      return widgetResponse(`${summary.total_sessions} session(s), ${summary.total_volume_kg}kg total volume.`, { sessions, summary });
     }
   );
 }

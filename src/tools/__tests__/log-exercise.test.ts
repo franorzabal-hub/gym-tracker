@@ -72,7 +72,7 @@ describe("log_exercise tool", () => {
     const result = await toolHandler({
       exercise: "Bench Press", sets: 3, reps: 8, weight: 80, set_type: "working",
     });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
 
     expect(parsed.exercise_name).toBe("Bench Press");
     expect(parsed.is_new_exercise).toBe(false);
@@ -96,7 +96,7 @@ describe("log_exercise tool", () => {
     const result = await toolHandler({
       exercise: "Squat", sets: 1, reps: 5, weight: 100, set_type: "working",
     });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
     expect(parsed.session_id).toBe(20);
   });
 
@@ -114,7 +114,7 @@ describe("log_exercise tool", () => {
     const result = await toolHandler({
       exercise: "Pull-ups", sets: 1, reps: [10, 8, 6], set_type: "working",
     });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
 
     expect(parsed.logged_sets).toHaveLength(3);
     expect(parsed.logged_sets[0].reps).toBe(10);
@@ -138,7 +138,7 @@ describe("log_exercise tool", () => {
     const result = await toolHandler({
       exercise: "Deadlift", sets: 1, reps: 3, weight: 140, set_type: "working",
     });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
 
     expect(parsed.new_prs).toHaveLength(2);
     expect(parsed.new_prs[0].record_type).toBe("max_weight");
@@ -156,7 +156,7 @@ describe("log_exercise tool", () => {
     const result = await toolHandler({
       exercise: "Dragon Flag", sets: 1, reps: 5, set_type: "working",
     });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
     expect(parsed.is_new_exercise).toBe(true);
   });
 
@@ -181,7 +181,7 @@ describe("log_exercise tool", () => {
         { exercise: "Squat", sets: 1, reps: 5, weight: 100, set_type: "working" },
       ],
     });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
     expect(parsed.exercises_logged).toHaveLength(2);
 
     // Verify single transaction: exactly one BEGIN and one COMMIT

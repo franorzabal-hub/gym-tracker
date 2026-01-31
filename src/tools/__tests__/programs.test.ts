@@ -69,7 +69,7 @@ describe("manage_program tool", () => {
       });
 
       const result = await toolHandler({ action: "list" });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.active_program).toBe("PPL");
       expect(parsed.programs).toHaveLength(2);
     });
@@ -80,7 +80,7 @@ describe("manage_program tool", () => {
       });
 
       const result = await toolHandler({ action: "list" });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.active_program).toBeNull();
     });
   });
@@ -93,7 +93,7 @@ describe("manage_program tool", () => {
       mockGetDays.mockResolvedValueOnce([{ id: 1, day_label: "Push", exercises: [] }]);
 
       const result = await toolHandler({ action: "get", name: "PPL" });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.program.name).toBe("PPL");
       expect(parsed.program.version).toBe(2);
     });
@@ -119,7 +119,7 @@ describe("manage_program tool", () => {
         action: "create", name: "PPL",
         days: [{ day_label: "Push", exercises: [{ exercise: "Bench Press", sets: 3, reps: 10 }] }],
       });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("already exists");
     });
 
@@ -138,7 +138,7 @@ describe("manage_program tool", () => {
         action: "create", name: "PPL", description: "Push Pull Legs",
         days: [{ day_label: "Push", weekdays: [1, 4], exercises: [{ exercise: "Bench Press", sets: 4, reps: 8, weight: 80 }] }],
       });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.program.name).toBe("PPL");
       expect(parsed.days_created).toBe(1);
     });
@@ -168,7 +168,7 @@ describe("manage_program tool", () => {
       const result = await toolHandler({
         action: "update", name: "PPL", new_name: "New PPL", description: "Updated desc",
       });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.updated.name).toBe("New PPL");
       expect(parsed.updated.description).toBe("Updated desc");
 
@@ -182,7 +182,7 @@ describe("manage_program tool", () => {
 
       const result = await toolHandler({ action: "update", name: "PPL" });
       expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("Provide days array");
     });
 
@@ -200,7 +200,7 @@ describe("manage_program tool", () => {
         action: "update", name: "PPL", change_description: "Added leg day",
         days: [{ day_label: "Legs", exercises: [{ exercise: "Squat", sets: 5, reps: 5 }] }],
       });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.program.version).toBe(3);
       expect(parsed.exercises_summary).toBeDefined();
     });
@@ -213,7 +213,7 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({});
 
       const result = await toolHandler({ action: "activate", name: "Upper/Lower" });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.activated).toBe("Upper/Lower");
     });
 
@@ -234,7 +234,7 @@ describe("manage_program tool", () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ name: "PPL" }] });
 
       const result = await toolHandler({ action: "delete", name: "PPL" });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.deactivated).toBe("PPL");
     });
 
@@ -248,7 +248,7 @@ describe("manage_program tool", () => {
     it("rejects without names array", async () => {
       const result = await toolHandler({ action: "delete_bulk" });
       expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("names array required");
     });
 
@@ -262,7 +262,7 @@ describe("manage_program tool", () => {
         names: ["PPL", "Upper/Lower"],
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.deactivated).toEqual(["PPL", "Upper/Lower"]);
     });
 
@@ -277,7 +277,7 @@ describe("manage_program tool", () => {
         hard_delete: true,
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.deleted).toEqual(["PPL"]);
       expect(parsed.not_found).toEqual(["NonExistent"]);
     });
@@ -291,7 +291,7 @@ describe("manage_program tool", () => {
         hard_delete: true,
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.deleted).toEqual(["PPL"]);
     });
   });
@@ -309,7 +309,7 @@ describe("manage_program tool", () => {
         });
 
       const result = await toolHandler({ action: "history", name: "PPL" });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.program).toBe("PPL");
       expect(parsed.versions).toHaveLength(3);
     });

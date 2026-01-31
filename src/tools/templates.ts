@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerTemplatesTool(server: McpServer) {
   registerAppToolWithMeta(server,
@@ -70,7 +70,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
            LIMIT $2 OFFSET $3`,
           [userId, effectiveLimit, effectiveOffset]
         );
-        return toolResponse({ templates, total });
+        return widgetResponse(`${total} template(s).`, { templates, total });
       }
 
       if (action === "save") {
@@ -144,7 +144,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
           await client.query("COMMIT");
 
-          return toolResponse({
+          return widgetResponse(`Template '${name}' saved with ${sessionExercises.length} exercises.`, {
             template: { id: tmpl.id, name },
             exercises_count: sessionExercises.length,
             source_session_id: sid,
@@ -215,7 +215,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
           await startClient.query("COMMIT");
 
-          return toolResponse({
+          return widgetResponse(`Session started from template '${name}'.`, {
             session_id: session.id,
             started_at: session.started_at,
             template: name,
@@ -248,7 +248,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         if (rows.length === 0) {
           return toolResponse({ error: `Template "${name}" not found` }, true);
         }
-        return toolResponse({ deleted: rows[0].name });
+        return widgetResponse(`Template '${rows[0].name}' deleted.`, { deleted: rows[0].name });
       }
 
       if (action === "delete_bulk") {
@@ -272,7 +272,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           }
         }
 
-        return toolResponse({
+        return widgetResponse(`${deleted.length} template(s) deleted.`, {
           deleted,
           not_found: not_found.length > 0 ? not_found : undefined,
         });

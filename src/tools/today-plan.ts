@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getActiveProgram, inferTodayDay } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
-import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerTodayPlanTool(server: McpServer) {
   registerAppToolWithMeta(server,
@@ -39,11 +39,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
       const todayDay = await inferTodayDay(activeProgram.id, timezone);
       if (!todayDay) {
-        return toolResponse({
-          program: activeProgram.name,
-          rest_day: true,
-          message: "No workout scheduled for today",
-        });
+        return widgetResponse("Rest day — no workout scheduled.", { program: activeProgram.name, rest_day: true });
       }
 
       // Get exercises for today's day
@@ -98,7 +94,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         }
       }
 
-      return toolResponse(result);
+      return widgetResponse(`Today: ${result.day} — ${exercises.length} exercise(s).`, result);
     }
   );
 }

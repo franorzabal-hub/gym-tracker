@@ -2,12 +2,24 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 /**
- * Build tool responses: content text (for model narration) + optional isError.
+ * Build error tool responses: full JSON in content (model needs to see errors).
  */
 export function toolResponse(data: Record<string, unknown>, isError?: boolean) {
   return {
     content: [{ type: "text" as const, text: JSON.stringify(data) }],
     ...(isError ? { isError: true } : {}),
+  };
+}
+
+/**
+ * Build widget tool responses: brief summary for model, full data for widget.
+ * - content: short text the LLM sees (not repeated to user)
+ * - structuredContent: full data the widget renders (not added to model context)
+ */
+export function widgetResponse(summary: string, data: Record<string, unknown>) {
+  return {
+    content: [{ type: "text" as const, text: summary }],
+    structuredContent: data,
   };
 }
 

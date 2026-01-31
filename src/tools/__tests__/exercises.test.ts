@@ -63,7 +63,7 @@ describe("manage_exercises tool", () => {
       });
 
       const result = await toolHandler({ action: "list" });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.exercises).toHaveLength(1);
       expect(parsed.total).toBe(1);
     });
@@ -73,7 +73,7 @@ describe("manage_exercises tool", () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const result = await toolHandler({ action: "list", muscle_group: "chest" });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.exercises).toHaveLength(0);
       // Verify the query includes muscle_group filter
       expect(mockQuery.mock.calls[0][0]).toContain("LOWER(e.muscle_group)");
@@ -87,7 +87,7 @@ describe("manage_exercises tool", () => {
       ]);
 
       const result = await toolHandler({ action: "search", name: "bench" });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.exercises).toHaveLength(1);
       expect(mockSearch).toHaveBeenCalledWith("bench", undefined);
     });
@@ -97,7 +97,7 @@ describe("manage_exercises tool", () => {
     it("rejects when exercises array missing", async () => {
       const result = await toolHandler({ action: "add_bulk" });
       expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("exercises array required");
     });
 
@@ -114,7 +114,7 @@ describe("manage_exercises tool", () => {
         ],
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.created).toEqual(["Plancha"]);
       expect(parsed.existing).toEqual(["Bench Press"]);
       expect(parsed.total).toBe(2);
@@ -151,7 +151,7 @@ describe("manage_exercises tool", () => {
 
       const result = await toolHandler({ action: "delete", name: "Bench Press" });
       expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("global and cannot be deleted");
     });
 
@@ -164,7 +164,7 @@ describe("manage_exercises tool", () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "My Exercise" }] });
 
       const result = await toolHandler({ action: "delete", name: "My Exercise" });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.deleted.name).toBe("My Exercise");
     });
   });
@@ -173,7 +173,7 @@ describe("manage_exercises tool", () => {
     it("rejects without names array", async () => {
       const result = await toolHandler({ action: "delete_bulk" });
       expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("names array required");
     });
 
@@ -191,7 +191,7 @@ describe("manage_exercises tool", () => {
         names: ["My Exercise", "Bench Press", "NonExistent"],
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.deleted).toEqual(["My Exercise"]);
       expect(parsed.failed).toEqual([{ name: "Bench Press", error: "Exercise is global and cannot be deleted" }]);
       expect(parsed.not_found).toEqual(["NonExistent"]);
@@ -206,7 +206,7 @@ describe("manage_exercises tool", () => {
         names: JSON.stringify(["My Exercise"]),
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.deleted).toEqual(["My Exercise"]);
     });
   });
@@ -218,7 +218,7 @@ describe("manage_exercises tool", () => {
 
       const result = await toolHandler({ action: "update", name: "Bench Press", muscle_group: "chest" });
       expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("global and cannot be modified");
     });
 
@@ -231,7 +231,7 @@ describe("manage_exercises tool", () => {
       });
 
       const result = await toolHandler({ action: "update", name: "My Exercise", muscle_group: "chest" });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.updated.name).toBe("My Exercise");
     });
   });
@@ -240,7 +240,7 @@ describe("manage_exercises tool", () => {
     it("rejects without exercises array", async () => {
       const result = await toolHandler({ action: "update_bulk" });
       expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("exercises array required");
     });
 
@@ -259,7 +259,7 @@ describe("manage_exercises tool", () => {
         ],
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.updated).toEqual(["My Exercise"]);
       expect(parsed.failed).toEqual([{ name: "Bench Press", error: "Exercise is global and cannot be modified" }]);
     });
@@ -270,7 +270,7 @@ describe("manage_exercises tool", () => {
         exercises: [{ name: "Bench Press" }],
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.failed).toEqual([{ name: "Bench Press", error: "No fields to update" }]);
     });
 
@@ -283,7 +283,7 @@ describe("manage_exercises tool", () => {
         exercises: JSON.stringify([{ name: "My Exercise", muscle_group: "chest" }]),
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.updated).toEqual(["My Exercise"]);
     });
   });
@@ -300,7 +300,7 @@ describe("manage_exercises tool", () => {
       const result = await toolHandler({
         action: "add", name: "Cable Fly", muscle_group: "chest", equipment: "cable",
       });
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
       expect(parsed.exercise.name).toBe("Cable Fly");
       expect(parsed.is_new).toBe(true);
     });

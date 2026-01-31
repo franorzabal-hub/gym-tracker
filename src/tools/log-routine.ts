@@ -9,7 +9,7 @@ import {
 import { checkPRs } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerLogRoutineTool(server: McpServer) {
   registerAppToolWithMeta(server, "log_routine", {
@@ -215,24 +215,25 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         await client.query("COMMIT");
 
         if (minimal_response) {
-          return toolResponse({
-                  success: true,
-                  session_id: session.id,
-                  exercises_logged: exercisesLogged.length,
-                  new_prs: allPRs.length > 0 ? allPRs : undefined,
-                });
+          return widgetResponse(
+                  `${exercisesLogged.length} exercises logged.${allPRs.length > 0 ? ` New PRs: ${allPRs.map((p: any) => p.exercise).join(", ")}` : ""}`,
+                  { success: true, session_id: session.id, exercises_logged: exercisesLogged.length, new_prs: allPRs.length > 0 ? allPRs : undefined },
+                );
         }
 
-        return toolResponse({
-                session_id: session.id,
-                day_label: dayRow.day_label,
-                exercises_logged: exercisesLogged,
-                total_sets: totalSets,
-                total_volume_kg: Math.round(totalVolume),
-                new_prs: allPRs.length > 0 ? allPRs : undefined,
-                session_ended: shouldEnd,
-                ...(shouldEnd ? {} : { hint: "Session is still open. Use log_exercise to add more exercises, then end_session when done." }),
-              });
+        return widgetResponse(
+                `Routine '${dayRow.day_label}' logged: ${exercisesLogged.length} exercises, ${totalSets} sets, ${Math.round(totalVolume)}kg.`,
+                {
+                  session_id: session.id,
+                  day_label: dayRow.day_label,
+                  exercises_logged: exercisesLogged,
+                  total_sets: totalSets,
+                  total_volume_kg: Math.round(totalVolume),
+                  new_prs: allPRs.length > 0 ? allPRs : undefined,
+                  session_ended: shouldEnd,
+                  ...(shouldEnd ? {} : { hint: "Session is still open. Use log_exercise to add more exercises, then end_session when done." }),
+                },
+              );
       } catch (err) {
         await client.query("ROLLBACK");
         throw err;

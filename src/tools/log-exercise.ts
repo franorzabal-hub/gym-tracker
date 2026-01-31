@@ -6,7 +6,7 @@ import { resolveExercise } from "../helpers/exercise-resolver.js";
 import { checkPRs } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam } from "../helpers/parse-helpers.js";
-import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 const exerciseEntrySchema = z.object({
   exercise: z.string(),
@@ -250,17 +250,16 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
 
           if (params.minimal_response) {
             const allPRs = results.flatMap(r => r.new_prs || []);
-            return toolResponse({
-                    success: true,
-                    exercises_logged: results.length,
-                    new_prs: allPRs.length > 0 ? allPRs : undefined,
-                  });
+            return widgetResponse(
+                    `${results.length} exercise(s) logged.${allPRs.length > 0 ? ` New PRs: ${allPRs.map((p: any) => p.type).join(", ")}` : ""}`,
+                    { success: true, exercises_logged: results.length, new_prs: allPRs.length > 0 ? allPRs : undefined },
+                  );
           }
 
-          return toolResponse({
-                  session_id: sessionId,
-                  exercises_logged: results,
-                });
+          return widgetResponse(
+                  `${results.length} exercise(s) logged.`,
+                  { session_id: sessionId, exercises_logged: results },
+                );
         } catch (err) {
           await client.query("ROLLBACK");
           throw err;
@@ -300,17 +299,16 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         await client.query("COMMIT");
 
         if (params.minimal_response) {
-          return toolResponse({
-                  success: true,
-                  exercises_logged: 1,
-                  new_prs: result.new_prs || undefined,
-                });
+          return widgetResponse(
+                  `Exercise logged.${result.new_prs ? ` New PRs: ${result.new_prs.map((p: any) => p.type).join(", ")}` : ""}`,
+                  { success: true, exercises_logged: 1, new_prs: result.new_prs || undefined },
+                );
         }
 
-        return toolResponse({
-                ...result,
-                session_id: sessionId,
-              });
+        return widgetResponse(
+                `${result.exercise_name} logged: ${result.logged_sets.length} set(s).`,
+                { ...result, session_id: sessionId },
+              );
       } catch (err) {
         await client.query("ROLLBACK");
         throw err;

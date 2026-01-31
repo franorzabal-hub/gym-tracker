@@ -8,7 +8,7 @@ import {
 } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerSessionTools(server: McpServer) {
   registerAppToolWithMeta(server,
@@ -165,7 +165,11 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         }
       }
 
-      return toolResponse(result);
+      const dayLabel = result.program_day?.label;
+      return widgetResponse(
+        `Session started${dayLabel ? ` (${dayLabel})` : ""}.`,
+        result
+      );
     }
   );
 
@@ -274,18 +278,18 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           [sessionId, userId]
         );
 
-        return toolResponse({
+        const summaryData = {
           session_id: sessionId,
           duration_minutes: Math.round(summary.duration_minutes),
           exercises_count: Number(summary.exercises_count),
           total_sets: Number(summary.total_sets),
           total_volume_kg: Math.round(Number(summary.total_volume_kg)),
-          new_prs: newPrs.map((pr: any) => ({
-            exercise: pr.exercise,
-            record_type: pr.record_type,
-            value: pr.value,
-          })),
-        });
+          new_prs: newPrs.map((pr: any) => ({ exercise: pr.exercise, record_type: pr.record_type, value: pr.value })),
+        };
+        return widgetResponse(
+          `Session ended. ${summaryData.exercises_count} exercises, ${summaryData.total_sets} sets, ${summaryData.total_volume_kg}kg volume.${newPrs.length > 0 ? ` ${newPrs.length} new PR(s)!` : ""}`,
+          summaryData
+        );
       }
 
       // Get exercises grouped by superset
@@ -383,20 +387,20 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         }
       }
 
-      return toolResponse({
+      const endData = {
         session_id: sessionId,
         duration_minutes: Math.round(summary.duration_minutes),
         exercises_count: Number(summary.exercises_count),
         total_sets: Number(summary.total_sets),
         total_volume_kg: Math.round(Number(summary.total_volume_kg)),
-        exercises: exerciseDetails.map((e: any) => ({
-          name: e.name,
-          superset_group: e.superset_group,
-          sets: e.sets,
-        })),
+        exercises: exerciseDetails.map((e: any) => ({ name: e.name, superset_group: e.superset_group, sets: e.sets })),
         supersets: Object.keys(supersets).length > 0 ? supersets : undefined,
         comparison: comparison || undefined,
-      });
+      };
+      return widgetResponse(
+        `Session ended. ${endData.duration_minutes}min, ${endData.exercises_count} exercises, ${endData.total_sets} sets, ${endData.total_volume_kg}kg volume.`,
+        endData
+      );
     }
   );
 
@@ -422,7 +426,7 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
       );
 
       if (rows.length === 0) {
-        return toolResponse({ active: false });
+        return widgetResponse("No active session.", { active: false });
       }
 
       const session = rows[0];
@@ -453,19 +457,19 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
         [session.id]
       );
 
-      return toolResponse({
+      const activeData = {
         active: true,
         session_id: session.id,
         started_at: session.started_at,
         duration_minutes: durationMinutes,
         program_day: programDay,
         tags: session.tags || [],
-        exercises: exerciseDetails.map((e: any) => ({
-          name: e.name,
-          superset_group: e.superset_group,
-          sets: e.sets,
-        })),
-      });
+        exercises: exerciseDetails.map((e: any) => ({ name: e.name, superset_group: e.superset_group, sets: e.sets })),
+      };
+      return widgetResponse(
+        `Active session${programDay ? ` (${programDay})` : ""}: ${exerciseDetails.length} exercise(s), ${durationMinutes}min.`,
+        activeData
+      );
     }
   );
 }

@@ -49,7 +49,7 @@ describe("get_history tool", () => {
     });
 
     const result = await toolHandler({ period: "week" });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
 
     expect(parsed.sessions).toHaveLength(1);
     expect(parsed.summary.total_sessions).toBe(1);
@@ -61,7 +61,7 @@ describe("get_history tool", () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const result = await toolHandler({ period: "month", exercise: "press banca" });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
 
     expect(parsed.sessions).toEqual([]);
     // Verify the query included exercise filter
@@ -75,7 +75,7 @@ describe("get_history tool", () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const result = await toolHandler({ period: "week", program_day: "Push" });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
 
     expect(parsed.sessions).toEqual([]);
     expect(mockQuery).toHaveBeenCalledWith(
@@ -88,7 +88,7 @@ describe("get_history tool", () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const result = await toolHandler({ period: "today" });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
 
     expect(parsed.sessions).toEqual([]);
     expect(parsed.summary.total_sessions).toBe(0);
@@ -100,7 +100,7 @@ describe("get_history tool", () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const result = await toolHandler({ period: "week", tags: JSON.stringify(["morning"]) });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
 
     expect(parsed.sessions).toEqual([]);
     // Verify the query included the tags filter with a real array
@@ -133,7 +133,7 @@ describe("get_history tool", () => {
     });
 
     const result = await toolHandler({ period: "week" });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
 
     // Only working sets: (100*5) + (100*5) = 1000. Warmup excluded.
     expect(parsed.summary.total_volume_kg).toBe(1000);

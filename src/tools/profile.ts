@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
-import { toolResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
+import { toolResponse, widgetResponse, registerAppToolWithMeta } from "../helpers/tool-response.js";
 
 export function registerProfileTool(server: McpServer) {
   registerAppToolWithMeta(server,
@@ -33,10 +33,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
           [userId]
         );
         const profile = rows[0]?.data || {};
-        return {
-          content: [{ type: "text" as const, text: profile.name ? `Profile loaded for ${profile.name}.` : "Profile is empty." }],
-          structuredContent: { profile },
-        };
+        return widgetResponse(
+          profile.name ? `Profile loaded for ${profile.name}.` : "Profile is empty.",
+          { profile }
+        );
       }
 
       // update
@@ -54,10 +54,10 @@ IMPORTANT: Results are displayed in an interactive widget. Do not repeat the dat
       );
 
       const updated = rows[0].data;
-      return {
-        content: [{ type: "text" as const, text: `Profile updated: ${Object.keys(data).join(", ")}.` }],
-        structuredContent: { profile: updated },
-      };
+      return widgetResponse(
+        `Profile updated: ${Object.keys(data).join(", ")}.`,
+        { profile: updated }
+      );
     }
   );
 }

@@ -84,7 +84,7 @@ describe("log_routine tool", () => {
 
     const result = await toolHandler({});
     expect(result.isError).toBe(true);
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
     expect(parsed.error).toContain("already an active session");
     expect(parsed.session_id).toBe(99);
   });
@@ -124,7 +124,7 @@ describe("log_routine tool", () => {
       .mockResolvedValueOnce({}); // COMMIT
 
     const result = await toolHandler({});
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
 
     expect(parsed.session_id).toBe(10);
     expect(parsed.day_label).toBe("Push");
@@ -153,7 +153,7 @@ describe("log_routine tool", () => {
       .mockResolvedValueOnce({}); // COMMIT
 
     const result = await toolHandler({ program_day: "Pull" });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
 
     expect(parsed.day_label).toBe("Pull");
     expect(parsed.total_sets).toBe(0);
@@ -197,7 +197,7 @@ describe("log_routine tool", () => {
       program_day: "Push",
       overrides: [{ exercise: "Bench Press", weight: 90 }],
     });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
 
     expect(parsed.exercises_logged[0].weight).toBe(90);
     expect(parsed.total_volume_kg).toBe(2880); // 90 * 8 * 4
@@ -236,7 +236,7 @@ describe("log_routine tool", () => {
       program_day: "Push",
       skip: ["Bench Press"],
     });
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
 
     expect(parsed.exercises_logged).toHaveLength(1);
     expect(parsed.exercises_logged[0].exercise).toBe("Overhead Press");
@@ -247,7 +247,7 @@ describe("log_routine tool", () => {
 
     const result = await toolHandler({});
     expect(result.isError).toBe(true);
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
     expect(parsed.error).toContain("No active program");
   });
 
@@ -260,7 +260,7 @@ describe("log_routine tool", () => {
 
     const result = await toolHandler({ program_day: "Arms" });
     expect(result.isError).toBe(true);
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = result.structuredContent ?? JSON.parse(result.content[0].text);
     expect(parsed.error).toContain("No program day found");
   });
 });
