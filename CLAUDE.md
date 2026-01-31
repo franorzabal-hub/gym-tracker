@@ -4,9 +4,15 @@ MCP Server that turns Claude into a gym training partner. Users talk naturally i
 
 ## CI/CD
 
-Push to `main` triggers `.github/workflows/deploy.yml`:
-1. **check**: `npm ci` → `npx tsc --noEmit` → `npx vitest run`
-2. **deploy** (only on push, not PR): `gcloud run deploy` to Cloud Run
+`.github/workflows/deploy.yml` runs on push to main, PRs, and manual dispatch:
+1. **check** (automatic): `npm ci` → `npx tsc --noEmit` → `npx vitest run` — runs on every push/PR
+2. **deploy** (manual only): `gcloud run deploy` to Cloud Run — only via `workflow_dispatch` (GitHub Actions UI or `gh workflow run`)
+
+Deploy never happens automatically. To deploy:
+```bash
+gh workflow run "CI/CD" --field deploy=true
+```
+Or: GitHub repo → Actions → CI/CD → Run workflow → check "Deploy to production"
 
 Always run `npm test` before committing. TypeScript must compile cleanly (`tsc --noEmit`).
 
