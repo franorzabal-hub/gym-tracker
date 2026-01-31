@@ -27,7 +27,7 @@ Actions:
       if (action === "list") {
         const { rows: templates } = await pool.query(
           `SELECT st.id, st.name, st.created_at,
-             json_agg(
+             COALESCE(json_agg(
                json_build_object(
                  'exercise', e.name,
                  'target_sets', ste.target_sets,
@@ -37,7 +37,7 @@ Actions:
                  'superset_group', ste.superset_group,
                  'rest_seconds', ste.rest_seconds
                ) ORDER BY ste.sort_order
-             ) as exercises
+             ) FILTER (WHERE ste.id IS NOT NULL), '[]') as exercises
            FROM session_templates st
            LEFT JOIN session_template_exercises ste ON ste.template_id = st.id
            LEFT JOIN exercises e ON e.id = ste.exercise_id

@@ -206,7 +206,6 @@ describe("manage_program tool", () => {
     it("activates a program by name", async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 2, name: "Upper/Lower" }] })
-        .mockResolvedValueOnce({})
         .mockResolvedValueOnce({});
 
       const result = await toolHandler({ action: "activate", name: "Upper/Lower" });

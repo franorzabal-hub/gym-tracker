@@ -124,7 +124,7 @@ async function getExerciseStats(userId: number, exercise: string, period: string
     `SELECT
        DATE(s.started_at) as date,
        MAX(st.weight) as max_weight,
-       MAX(st.reps) FILTER (WHERE st.weight = (SELECT MAX(st2.weight) FROM sets st2 WHERE st2.session_exercise_id = se.id)) as reps_at_max
+       MAX(st.reps) FILTER (WHERE st.weight = (SELECT MAX(st2.weight) FROM sets st2 WHERE st2.session_exercise_id = se.id AND st2.set_type = 'working' AND st2.weight IS NOT NULL)) as reps_at_max
      FROM sets st
      JOIN session_exercises se ON se.id = st.session_exercise_id
      JOIN sessions s ON s.id = se.session_id

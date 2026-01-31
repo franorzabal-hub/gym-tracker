@@ -199,7 +199,7 @@ For "activate", pass the program name.`,
 
             for (let j = 0; j < day.exercises.length; j++) {
               const ex = day.exercises[j];
-              const resolved = await resolveExercise(ex.exercise);
+              const resolved = await resolveExercise(ex.exercise, undefined, undefined, undefined, undefined, client);
 
               if (resolved.isNew) {
                 createdExercises.add(resolved.name);
@@ -335,7 +335,7 @@ For "activate", pass the program name.`,
 
             for (let j = 0; j < day.exercises.length; j++) {
               const ex = day.exercises[j];
-              const resolved = await resolveExercise(ex.exercise);
+              const resolved = await resolveExercise(ex.exercise, undefined, undefined, undefined, undefined, client);
 
               if (resolved.isNew) {
                 createdExercises.add(resolved.name);
@@ -406,8 +406,7 @@ For "activate", pass the program name.`,
             isError: true,
           };
         }
-        await pool.query("UPDATE programs SET is_active = FALSE WHERE user_id = $1", [userId]);
-        await pool.query("UPDATE programs SET is_active = TRUE WHERE id = $1", [prog.rows[0].id]);
+        await pool.query("UPDATE programs SET is_active = (id = $2) WHERE user_id = $1", [userId, prog.rows[0].id]);
         return {
           content: [
             {

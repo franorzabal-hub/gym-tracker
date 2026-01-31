@@ -1,5 +1,8 @@
+import { PoolClient } from "pg";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
+
+const q = (client?: PoolClient) => client || pool;
 
 export interface ResolvedExercise {
   id: number;
@@ -8,12 +11,12 @@ export interface ResolvedExercise {
   exerciseType?: string;
 }
 
-export async function findExercise(input: string): Promise<ResolvedExercise | null> {
+export async function findExercise(input: string, client?: PoolClient): Promise<ResolvedExercise | null> {
   const normalized = input.trim().toLowerCase();
   const userId = getUserId();
 
   // 1. Exact name match (user-owned first, then global)
-  const exact = await pool.query(
+  const exact = await q(client).query(
     `SELECT id, name, exercise_type FROM exercises
      WHERE LOWER(name) = $1 AND (user_id IS NULL OR user_id = $2)
      ORDER BY user_id NULLS LAST LIMIT 1`,
@@ -24,7 +27,7 @@ export async function findExercise(input: string): Promise<ResolvedExercise | nu
   }
 
   // 2. Alias match
-  const alias = await pool.query(
+  const alias = await q(client).query(
     `SELECT e.id, e.name, e.exercise_type FROM exercise_aliases a
      JOIN exercises e ON e.id = a.exercise_id
      WHERE LOWER(a.alias) = $1 AND (e.user_id IS NULL OR e.user_id = $2)
@@ -36,7 +39,7 @@ export async function findExercise(input: string): Promise<ResolvedExercise | nu
   }
 
   // 3. Partial match (ILIKE)
-  const partial = await pool.query(
+  const partial = await q(client).query(
     `SELECT id, name, exercise_type FROM (
        SELECT e.id, e.name, e.exercise_type, e.user_id FROM exercises e
        WHERE e.name ILIKE $1 AND (e.user_id IS NULL OR e.user_id = $2)
@@ -60,25 +63,26 @@ export async function resolveExercise(
   muscleGroup?: string,
   equipment?: string,
   repType?: string,
-  exerciseType?: string
+  exerciseType?: string,
+  client?: PoolClient
 ): Promise<ResolvedExercise> {
   const normalized = input.trim().toLowerCase();
   const userId = getUserId();
 
   // 1. Exact name match (user-owned first, then global)
-  const exact = await pool.query(
+  const exact = await q(client).query(
     `SELECT id, name, muscle_group, equipment, rep_type, exercise_type, user_id FROM exercises
      WHERE LOWER(name) = $1 AND (user_id IS NULL OR user_id = $2)
      ORDER BY user_id NULLS LAST LIMIT 1`,
     [normalized, userId]
   );
   if (exact.rows.length > 0) {
-    await fillMetadataIfMissing(exact.rows[0], muscleGroup, equipment, repType, exerciseType);
+    await fillMetadataIfMissing(exact.rows[0], muscleGroup, equipment, repType, exerciseType, client);
     return { id: exact.rows[0].id, name: exact.rows[0].name, isNew: false, exerciseType: exact.rows[0].exercise_type };
   }
 
   // 2. Alias match
-  const alias = await pool.query(
+  const alias = await q(client).query(
     `SELECT e.id, e.name, e.muscle_group, e.equipment, e.rep_type, e.exercise_type, e.user_id FROM exercise_aliases a
      JOIN exercises e ON e.id = a.exercise_id
      WHERE LOWER(a.alias) = $1 AND (e.user_id IS NULL OR e.user_id = $2)
@@ -86,12 +90,12 @@ export async function resolveExercise(
     [normalized, userId]
   );
   if (alias.rows.length > 0) {
-    await fillMetadataIfMissing(alias.rows[0], muscleGroup, equipment, repType, exerciseType);
+    await fillMetadataIfMissing(alias.rows[0], muscleGroup, equipment, repType, exerciseType, client);
     return { id: alias.rows[0].id, name: alias.rows[0].name, isNew: false, exerciseType: alias.rows[0].exercise_type };
   }
 
   // 3. Partial match (ILIKE)
-  const partial = await pool.query(
+  const partial = await q(client).query(
     `SELECT id, name, muscle_group, equipment, rep_type, exercise_type, user_id FROM (
        SELECT e.id, e.name, e.muscle_group, e.equipment, e.rep_type, e.exercise_type, e.user_id FROM exercises e
        WHERE e.name ILIKE $1 AND (e.user_id IS NULL OR e.user_id = $2)
@@ -104,7 +108,7 @@ export async function resolveExercise(
     [`%${normalized}%`, userId]
   );
   if (partial.rows.length > 0) {
-    await fillMetadataIfMissing(partial.rows[0], muscleGroup, equipment, repType, exerciseType);
+    await fillMetadataIfMissing(partial.rows[0], muscleGroup, equipment, repType, exerciseType, client);
     return {
       id: partial.rows[0].id,
       name: partial.rows[0].name,
@@ -114,7 +118,7 @@ export async function resolveExercise(
   }
 
   // 4. Auto-create (user-owned)
-  const created = await pool.query(
+  const created = await q(client).query(
     `INSERT INTO exercises (name, muscle_group, equipment, rep_type, exercise_type, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, exercise_type`,
     [input.trim(), muscleGroup || null, equipment || null, repType || 'reps', exerciseType || 'strength', userId]
   );
@@ -126,7 +130,8 @@ async function fillMetadataIfMissing(
   muscleGroup?: string,
   equipment?: string,
   repType?: string,
-  exerciseType?: string
+  exerciseType?: string,
+  client?: PoolClient
 ): Promise<void> {
   const userId = getUserId();
 
@@ -155,7 +160,7 @@ async function fillMetadataIfMissing(
 
   if (updates.length > 0) {
     params.push(row.id);
-    await pool.query(
+    await q(client).query(
       `UPDATE exercises SET ${updates.join(", ")} WHERE id = $${params.length} AND user_id = $${params.length + 1}`,
       [...params, userId]
     );

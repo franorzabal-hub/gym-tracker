@@ -34,7 +34,7 @@ function getAllowedOrigins(): string[] {
 
 const app = express();
 app.use(cors({ origin: getAllowedOrigins() }));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false }));
 
 // Health check

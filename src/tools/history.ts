@@ -63,7 +63,7 @@ Examples:
             json_build_object(
               'exercise', e.name,
               'sets', (
-                SELECT json_agg(
+                SELECT COALESCE(json_agg(
                   json_build_object(
                     'set_id', st.id,
                     'set_number', st.set_number,
@@ -73,7 +73,7 @@ Examples:
                     'set_type', st.set_type,
                     'notes', st.notes
                   ) ORDER BY st.set_number
-                )
+                ), '[]')
                 FROM sets st WHERE st.session_exercise_id = se.id
               )
             ) ORDER BY se.sort_order

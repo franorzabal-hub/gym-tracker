@@ -274,9 +274,9 @@ Optionally add or update tags on the session.`,
       // Get exercises grouped by superset
       const { rows: exerciseDetails } = await pool.query(
         `SELECT e.name, se.superset_group,
-           json_agg(json_build_object(
+           COALESCE(json_agg(json_build_object(
              'set_id', st.id, 'set_number', st.set_number, 'reps', st.reps, 'weight', st.weight, 'rpe', st.rpe, 'set_type', st.set_type
-           ) ORDER BY st.set_number) as sets
+           ) ORDER BY st.set_number) FILTER (WHERE st.id IS NOT NULL), '[]') as sets
          FROM session_exercises se
          JOIN exercises e ON e.id = se.exercise_id
          LEFT JOIN sets st ON st.session_exercise_id = se.id
@@ -422,9 +422,9 @@ Optionally add or update tags on the session.`,
       // Get exercises + sets
       const { rows: exerciseDetails } = await pool.query(
         `SELECT e.name, se.superset_group,
-           json_agg(json_build_object(
+           COALESCE(json_agg(json_build_object(
              'set_id', st.id, 'set_number', st.set_number, 'reps', st.reps, 'weight', st.weight, 'rpe', st.rpe, 'set_type', st.set_type
-           ) ORDER BY st.set_number) as sets
+           ) ORDER BY st.set_number) FILTER (WHERE st.id IS NOT NULL), '[]') as sets
          FROM session_exercises se
          JOIN exercises e ON e.id = se.exercise_id
          LEFT JOIN sets st ON st.session_exercise_id = se.id
