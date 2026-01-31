@@ -30,7 +30,7 @@ server.ts                    # Express + MCP server + auth middleware
 src/auth/                    # middleware.ts, oauth-routes.ts, workos.ts
 src/context/user-context.ts  # AsyncLocalStorage: getUserId() / runWithUser()
 src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-009
-src/tools/                   # 10 files → 12 MCP tools
+src/tools/                   # 11 files → 13 MCP tools
 src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts
 src/tools/__tests__/         # Vitest tests (1 per tool file)
 ```
@@ -58,7 +58,7 @@ session_templates (user_id FK, name UNIQUE per user) → session_template_exerci
 
 Key: per-set rows, program versioning, soft delete on sessions, GIN index on tags, `rep_type` (reps/seconds/meters/calories), `exercise_type` (strength/mobility/cardio/warmup — PRs only for strength).
 
-## MCP Tools (12)
+## MCP Tools (13)
 
 | Tool | Actions / Params |
 |---|---|
@@ -68,6 +68,7 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 | `start_session` | program_day?, date?, tags? — infers day from weekday |
 | `end_session` | notes?, force?, tags? — summary + comparison vs last |
 | `get_active_session` | no params — returns active session with exercises or `{active: false}` |
+| `get_today_plan` | no params — today's day + exercises + last workout (read-only, no session created) |
 | `log_exercise` | single or bulk (`exercises[]`), auto-session, auto-create, drop_percent, PR check |
 | `log_routine` | log full program day, overrides[], skip[], auto_end, date?, tags? |
 | `get_history` | period, exercise?, program_day?, tags? filter |

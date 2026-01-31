@@ -15,6 +15,7 @@ import { registerHistoryTool } from "./src/tools/history.js";
 import { registerStatsTool } from "./src/tools/stats.js";
 import { registerEditLogTool } from "./src/tools/edit-log.js";
 import { registerTemplatesTool } from "./src/tools/templates.js";
+import { registerTodayPlanTool } from "./src/tools/today-plan.js";
 
 import oauthRoutes from "./src/auth/oauth-routes.js";
 import { authenticateToken, AuthError } from "./src/auth/middleware.js";
@@ -72,6 +73,7 @@ app.all("/mcp", async (req, res) => {
       registerStatsTool(server);
       registerEditLogTool(server);
       registerTemplatesTool(server);
+      registerTodayPlanTool(server);
 
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,

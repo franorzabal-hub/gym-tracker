@@ -4,7 +4,7 @@ MCP Server that turns Claude into a gym training partner — log workouts, track
 
 ## Features
 
-- **12 MCP tools** for full workout lifecycle (exercises, programs, sessions, stats, templates)
+- **13 MCP tools** for full workout lifecycle (exercises, programs, sessions, stats, templates)
 - **Multi-tenant** with OAuth 2.1 authentication (WorkOS)
 - **Bulk operations** on exercises, programs, templates, sessions, and stats
 - **PR tracking** with Epley 1RM estimation and full PR history timeline
