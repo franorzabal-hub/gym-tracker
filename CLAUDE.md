@@ -10,6 +10,9 @@ MCP Server that turns Claude into a gym training partner. Users talk naturally i
 2. **Run `npm test` before every commit** — TypeScript must compile (`tsc --noEmit`) and all tests must pass
 3. **Push to main triggers CI only** — never deploys automatically
 4. **Deploy only when explicitly asked** — never deploy on your own initiative
+5. **After code changes, always restart the dev server** — kill the running process and start a new one with `DEV_USER_ID=1 npm run dev`. The server loads code at startup; changes aren't reflected until restart.
+6. **After widget changes, rebuild** — `cd web && npm run build`. Then restart the server.
+7. **Claude Desktop requires a new conversation** after server restart to pick up MCP changes (it caches the connection per conversation)
 
 To deploy (only when the user asks):
 ```bash
