@@ -20,9 +20,10 @@ Returns the session info and the exercises planned for that day (if any).
       program_day: z.string().optional(),
       notes: z.string().optional(),
       date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session start time. Defaults to now."),
-      tags: z.array(z.string()).optional().describe("Tags to label this session (e.g. ['deload', 'morning', 'outdoor'])"),
+      tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to label this session (e.g. ['deload', 'morning', 'outdoor'])"),
+      include_last_workout: z.boolean().optional().describe("If true, include last workout comparison. Defaults to true"),
     },
-    async ({ program_day, notes, date, tags: rawTags }) => {
+    async ({ program_day, notes, date, tags: rawTags, include_last_workout }) => {
       let tags = rawTags as any;
       if (typeof tags === 'string') {
         try { tags = JSON.parse(tags); } catch { tags = undefined; }
@@ -113,52 +114,54 @@ Returns the session info and the exercises planned for that day (if any).
         };
 
         // Get last workout for the same program day (weight reference)
-        const { rows: lastSession } = await pool.query(
-          `SELECT s.id, s.started_at FROM sessions s
-           WHERE s.user_id = $1 AND s.program_day_id = $2 AND s.ended_at IS NOT NULL AND s.deleted_at IS NULL
-           ORDER BY s.started_at DESC LIMIT 1`,
-          [userId, programDayId]
-        );
-        if (lastSession.length > 0) {
-          const { rows: lastExercises } = await pool.query(
-            `SELECT e.name,
-               json_agg(json_build_object(
-                 'set_number', st.set_number,
-                 'reps', st.reps,
-                 'weight', st.weight,
-                 'rpe', st.rpe,
-                 'set_type', st.set_type
-               ) ORDER BY st.set_number) as sets
-             FROM session_exercises se
-             JOIN exercises e ON e.id = se.exercise_id
-             JOIN sets st ON st.session_exercise_id = se.id
-             WHERE se.session_id = $1
-             GROUP BY e.name, se.sort_order
-             ORDER BY se.sort_order`,
-            [lastSession[0].id]
+        if (include_last_workout !== false) {
+          const { rows: lastSession } = await pool.query(
+            `SELECT s.id, s.started_at FROM sessions s
+             WHERE s.user_id = $1 AND s.program_day_id = $2 AND s.ended_at IS NOT NULL AND s.deleted_at IS NULL
+             ORDER BY s.started_at DESC LIMIT 1`,
+            [userId, programDayId]
           );
-          const lastExercisesWithSummary = lastExercises.map((ex: any) => {
-            // Group sets by set_type and weight
-            const groups: Record<string, { count: number; reps: number[]; weight: number | null }> = {};
-            for (const s of ex.sets || []) {
-              const key = `${s.set_type || 'working'}_${s.weight || 'bw'}`;
-              if (!groups[key]) groups[key] = { count: 0, reps: [], weight: s.weight };
-              groups[key].count++;
-              groups[key].reps.push(s.reps);
-            }
-            const parts = Object.entries(groups).map(([key, g]) => {
-              const type = key.split('_')[0];
-              const allSame = g.reps.every(r => r === g.reps[0]);
-              const repsStr = allSame ? `${g.count}x${g.reps[0]}` : g.reps.join(',');
-              const weightStr = g.weight ? `@${g.weight}kg` : '';
-              return `${repsStr}${weightStr} (${type})`;
+          if (lastSession.length > 0) {
+            const { rows: lastExercises } = await pool.query(
+              `SELECT e.name,
+                 json_agg(json_build_object(
+                   'set_number', st.set_number,
+                   'reps', st.reps,
+                   'weight', st.weight,
+                   'rpe', st.rpe,
+                   'set_type', st.set_type
+                 ) ORDER BY st.set_number) as sets
+               FROM session_exercises se
+               JOIN exercises e ON e.id = se.exercise_id
+               JOIN sets st ON st.session_exercise_id = se.id
+               WHERE se.session_id = $1
+               GROUP BY e.name, se.sort_order
+               ORDER BY se.sort_order`,
+              [lastSession[0].id]
+            );
+            const lastExercisesWithSummary = lastExercises.map((ex: any) => {
+              // Group sets by set_type and weight
+              const groups: Record<string, { count: number; reps: number[]; weight: number | null }> = {};
+              for (const s of ex.sets || []) {
+                const key = `${s.set_type || 'working'}_${s.weight || 'bw'}`;
+                if (!groups[key]) groups[key] = { count: 0, reps: [], weight: s.weight };
+                groups[key].count++;
+                groups[key].reps.push(s.reps);
+              }
+              const parts = Object.entries(groups).map(([key, g]) => {
+                const type = key.split('_')[0];
+                const allSame = g.reps.every(r => r === g.reps[0]);
+                const repsStr = allSame ? `${g.count}x${g.reps[0]}` : g.reps.join(',');
+                const weightStr = g.weight ? `@${g.weight}kg` : '';
+                return `${repsStr}${weightStr} (${type})`;
+              });
+              return { ...ex, summary: parts.join(', ') };
             });
-            return { ...ex, summary: parts.join(', ') };
-          });
-          result.last_workout = {
-            date: lastSession[0].started_at,
-            exercises: lastExercisesWithSummary,
-          };
+            result.last_workout = {
+              date: lastSession[0].started_at,
+              exercises: lastExercisesWithSummary,
+            };
+          }
         }
       }
 
@@ -175,9 +178,11 @@ Optionally add or update tags on the session.`,
     {
       notes: z.string().optional(),
       force: z.boolean().optional().default(false),
-      tags: z.array(z.string()).optional().describe("Tags to set on this session (replaces existing tags)"),
+      tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to set on this session (replaces existing tags)"),
+      summary_only: z.boolean().optional().describe("If true, return only summary totals without per-exercise set details"),
+      include_comparison: z.boolean().optional().describe("If true, include comparison with previous session. Defaults to true"),
     },
-    async ({ notes, force, tags: rawTags }) => {
+    async ({ notes, force, tags: rawTags, summary_only, include_comparison }) => {
       let tags = rawTags as any;
       if (typeof tags === 'string') {
         try { tags = JSON.parse(tags); } catch { tags = undefined; }
@@ -271,6 +276,40 @@ Optionally add or update tags on the session.`,
         [sessionId]
       );
 
+      // If summary_only, return minimal response without exercise details or comparison
+      if (summary_only) {
+        // Get new PRs achieved during this session
+        const { rows: newPrs } = await pool.query(
+          `SELECT e.name as exercise, ph.record_type, ph.value
+           FROM pr_history ph
+           JOIN exercises e ON e.id = ph.exercise_id
+           JOIN sets st ON st.id = ph.set_id
+           JOIN session_exercises se ON se.id = st.session_exercise_id
+           WHERE se.session_id = $1 AND ph.user_id = $2`,
+          [sessionId, userId]
+        );
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                session_id: sessionId,
+                duration_minutes: Math.round(summary.duration_minutes),
+                exercises_count: Number(summary.exercises_count),
+                total_sets: Number(summary.total_sets),
+                total_volume_kg: Math.round(Number(summary.total_volume_kg)),
+                new_prs: newPrs.map((pr: any) => ({
+                  exercise: pr.exercise,
+                  record_type: pr.record_type,
+                  value: pr.value,
+                })),
+              }),
+            },
+          ],
+        };
+      }
+
       // Get exercises grouped by superset
       const { rows: exerciseDetails } = await pool.query(
         `SELECT e.name, se.superset_group,
@@ -297,70 +336,72 @@ Optionally add or update tags on the session.`,
 
       // Session comparison - find previous session with same program_day
       let comparison: any = undefined;
-      const { rows: [currentSession] } = await pool.query(
-        'SELECT program_day_id FROM sessions WHERE id = $1 AND user_id = $2', [sessionId, userId]
-      );
-
-      if (currentSession?.program_day_id) {
-        const { rows: prevSessions } = await pool.query(
-          `SELECT s.id, s.started_at FROM sessions s
-           WHERE s.user_id = $1 AND s.program_day_id = $2 AND s.id != $3 AND s.ended_at IS NOT NULL AND s.deleted_at IS NULL
-           ORDER BY s.started_at DESC LIMIT 1`,
-          [userId, currentSession.program_day_id, sessionId]
+      if (include_comparison !== false) {
+        const { rows: [currentSession] } = await pool.query(
+          'SELECT program_day_id FROM sessions WHERE id = $1 AND user_id = $2', [sessionId, userId]
         );
 
-        if (prevSessions.length > 0) {
-          const prevId = prevSessions[0].id;
-
-          // Get previous session volume
-          const { rows: [prevSummary] } = await pool.query(
-            `SELECT COALESCE(SUM(CASE WHEN st.set_type != 'warmup' THEN st.weight * st.reps ELSE 0 END), 0) as volume
-             FROM session_exercises se
-             JOIN sets st ON st.session_exercise_id = se.id
-             WHERE se.session_id = $1`,
-            [prevId]
+        if (currentSession?.program_day_id) {
+          const { rows: prevSessions } = await pool.query(
+            `SELECT s.id, s.started_at FROM sessions s
+             WHERE s.user_id = $1 AND s.program_day_id = $2 AND s.id != $3 AND s.ended_at IS NOT NULL AND s.deleted_at IS NULL
+             ORDER BY s.started_at DESC LIMIT 1`,
+            [userId, currentSession.program_day_id, sessionId]
           );
 
-          const currentVolume = Number(summary.total_volume_kg);
-          const prevVolume = Number(prevSummary.volume);
-          const volumeChange = prevVolume > 0 ? Math.round(((currentVolume - prevVolume) / prevVolume) * 100) : null;
+          if (prevSessions.length > 0) {
+            const prevId = prevSessions[0].id;
 
-          // Per-exercise comparison
-          const { rows: prevExercises } = await pool.query(
-            `SELECT e.name,
-               MAX(CASE WHEN st.set_type != 'warmup' THEN st.weight ELSE NULL END) as max_weight,
-               COUNT(st.id) as total_sets
-             FROM session_exercises se
-             JOIN exercises e ON e.id = se.exercise_id
-             JOIN sets st ON st.session_exercise_id = se.id
-             WHERE se.session_id = $1
-             GROUP BY e.name`,
-            [prevId]
-          );
+            // Get previous session volume
+            const { rows: [prevSummary] } = await pool.query(
+              `SELECT COALESCE(SUM(CASE WHEN st.set_type != 'warmup' THEN st.weight * st.reps ELSE 0 END), 0) as volume
+               FROM session_exercises se
+               JOIN sets st ON st.session_exercise_id = se.id
+               WHERE se.session_id = $1`,
+              [prevId]
+            );
 
-          const prevMap = new Map(prevExercises.map((e: any) => [e.name, e]));
-          const exerciseChanges: any[] = [];
+            const currentVolume = Number(summary.total_volume_kg);
+            const prevVolume = Number(prevSummary.volume);
+            const volumeChange = prevVolume > 0 ? Math.round(((currentVolume - prevVolume) / prevVolume) * 100) : null;
 
-          for (const ex of exerciseDetails) {
-            const prev = prevMap.get(ex.name);
-            if (prev && ex.sets) {
-              const currentMax = Math.max(...ex.sets.filter((s: any) => s.set_type !== 'warmup').map((s: any) => s.weight || 0));
-              const prevMax = Number(prev.max_weight) || 0;
-              if (currentMax !== prevMax && prevMax > 0) {
-                const diff = currentMax - prevMax;
-                exerciseChanges.push({
-                  exercise: ex.name,
-                  change: `${diff > 0 ? '+' : ''}${diff}kg on max weight`,
-                });
+            // Per-exercise comparison
+            const { rows: prevExercises } = await pool.query(
+              `SELECT e.name,
+                 MAX(CASE WHEN st.set_type != 'warmup' THEN st.weight ELSE NULL END) as max_weight,
+                 COUNT(st.id) as total_sets
+               FROM session_exercises se
+               JOIN exercises e ON e.id = se.exercise_id
+               JOIN sets st ON st.session_exercise_id = se.id
+               WHERE se.session_id = $1
+               GROUP BY e.name`,
+              [prevId]
+            );
+
+            const prevMap = new Map(prevExercises.map((e: any) => [e.name, e]));
+            const exerciseChanges: any[] = [];
+
+            for (const ex of exerciseDetails) {
+              const prev = prevMap.get(ex.name);
+              if (prev && ex.sets) {
+                const currentMax = Math.max(...ex.sets.filter((s: any) => s.set_type !== 'warmup').map((s: any) => s.weight || 0));
+                const prevMax = Number(prev.max_weight) || 0;
+                if (currentMax !== prevMax && prevMax > 0) {
+                  const diff = currentMax - prevMax;
+                  exerciseChanges.push({
+                    exercise: ex.name,
+                    change: `${diff > 0 ? '+' : ''}${diff}kg on max weight`,
+                  });
+                }
               }
             }
-          }
 
-          comparison = {
-            vs_last: prevSessions[0].started_at,
-            volume_change: volumeChange !== null ? `${volumeChange > 0 ? '+' : ''}${volumeChange}%` : null,
-            exercise_changes: exerciseChanges.length > 0 ? exerciseChanges : undefined,
-          };
+            comparison = {
+              vs_last: prevSessions[0].started_at,
+              volume_change: volumeChange !== null ? `${volumeChange > 0 ? '+' : ''}${volumeChange}%` : null,
+              exercise_changes: exerciseChanges.length > 0 ? exerciseChanges : undefined,
+            };
+          }
         }
       }
 

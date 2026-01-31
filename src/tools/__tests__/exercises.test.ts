@@ -42,20 +42,30 @@ describe("manage_exercises tool", () => {
 
   describe("list action", () => {
     it("returns all exercises", async () => {
-      mockSearch.mockResolvedValueOnce([
-        { id: 1, name: "Bench Press", muscle_group: "chest", equipment: "barbell", aliases: ["press banca"] },
-      ]);
+      // Count query
+      mockQuery.mockResolvedValueOnce({ rows: [{ total: "1" }] });
+      // Paginated data query
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          { id: 1, name: "Bench Press", muscle_group: "chest", equipment: "barbell", rep_type: "reps", exercise_type: "strength", aliases: ["press banca"] },
+        ],
+      });
 
       const result = await toolHandler({ action: "list" });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.exercises).toHaveLength(1);
-      expect(mockSearch).toHaveBeenCalledWith(undefined, undefined);
+      expect(parsed.total).toBe(1);
     });
 
     it("filters by muscle group", async () => {
-      mockSearch.mockResolvedValueOnce([]);
-      await toolHandler({ action: "list", muscle_group: "chest" });
-      expect(mockSearch).toHaveBeenCalledWith(undefined, "chest");
+      mockQuery.mockResolvedValueOnce({ rows: [{ total: "0" }] });
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+
+      const result = await toolHandler({ action: "list", muscle_group: "chest" });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.exercises).toHaveLength(0);
+      // Verify the query includes muscle_group filter
+      expect(mockQuery.mock.calls[0][0]).toContain("LOWER(e.muscle_group)");
     });
   });
 

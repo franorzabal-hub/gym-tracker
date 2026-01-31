@@ -16,6 +16,8 @@ import { registerStatsTool } from "./src/tools/stats.js";
 import { registerEditLogTool } from "./src/tools/edit-log.js";
 import { registerTemplatesTool } from "./src/tools/templates.js";
 import { registerTodayPlanTool } from "./src/tools/today-plan.js";
+import { registerBodyMeasurementsTool } from "./src/tools/body-measurements.js";
+import { registerExportTool } from "./src/tools/export.js";
 
 import oauthRoutes from "./src/auth/oauth-routes.js";
 import { authenticateToken, AuthError } from "./src/auth/middleware.js";
@@ -45,6 +47,30 @@ app.get("/health", (_req, res) => {
 // OAuth routes (before /mcp)
 app.use(oauthRoutes);
 
+// Create a fully configured MCP server instance
+function createConfiguredServer(): McpServer {
+  const server = new McpServer({
+    name: "gym-tracker",
+    version: "1.0.0",
+  });
+
+  registerProfileTool(server);
+  registerExercisesTool(server);
+  registerSessionTools(server);
+  registerLogExerciseTool(server);
+  registerProgramTool(server);
+  registerLogRoutineTool(server);
+  registerHistoryTool(server);
+  registerStatsTool(server);
+  registerEditLogTool(server);
+  registerTemplatesTool(server);
+  registerTodayPlanTool(server);
+  registerBodyMeasurementsTool(server);
+  registerExportTool(server);
+
+  return server;
+}
+
 // MCP endpoint
 app.all("/mcp", async (req, res) => {
   try {
@@ -57,23 +83,7 @@ app.all("/mcp", async (req, res) => {
     }
 
     await runWithUser(userId, async () => {
-      const server = new McpServer({
-        name: "gym-tracker",
-        version: "1.0.0",
-      });
-
-      // Register all tools
-      registerProfileTool(server);
-      registerExercisesTool(server);
-      registerSessionTools(server);
-      registerLogExerciseTool(server);
-      registerProgramTool(server);
-      registerLogRoutineTool(server);
-      registerHistoryTool(server);
-      registerStatsTool(server);
-      registerEditLogTool(server);
-      registerTemplatesTool(server);
-      registerTodayPlanTool(server);
+      const server = createConfiguredServer();
 
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,

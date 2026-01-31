@@ -8,6 +8,15 @@ export class AuthError extends Error {
   }
 }
 
+interface CachedToken {
+  userId: number;
+  expiresAt: number;
+}
+
+const tokenCache = new Map<string, CachedToken>();
+const TOKEN_CACHE_TTL = 60_000; // 1 minute
+const TOKEN_CACHE_MAX = 1000;
+
 export async function authenticateToken(req: Request): Promise<number> {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
@@ -15,6 +24,17 @@ export async function authenticateToken(req: Request): Promise<number> {
   }
 
   const token = authHeader.slice(7);
+
+  // Check cache
+  const cached = tokenCache.get(token);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.userId;
+  }
+
+  // Cache miss or expired — remove stale entry
+  if (cached) {
+    tokenCache.delete(token);
+  }
 
   // Look up token in database
   const { rows } = await pool.query(
@@ -27,15 +47,32 @@ export async function authenticateToken(req: Request): Promise<number> {
 
   const stored = rows[0];
 
-  // Upsert user
+  // Upsert user (only update last_login if stale > 1 hour)
   const { rows: userRows } = await pool.query(
     `INSERT INTO users (external_id, email, last_login)
      VALUES ($1, $2, NOW())
      ON CONFLICT (external_id)
-     DO UPDATE SET email = COALESCE($2, users.email), last_login = NOW()
+     DO UPDATE SET
+       email = COALESCE($2, users.email),
+       last_login = CASE
+         WHEN users.last_login < NOW() - INTERVAL '1 hour' THEN NOW()
+         ELSE users.last_login
+       END
      RETURNING id`,
     [stored.workos_user_id, stored.email]
   );
 
-  return userRows[0].id;
+  const userId = userRows[0].id;
+
+  // Evict all if cache is full
+  if (tokenCache.size >= TOKEN_CACHE_MAX) {
+    tokenCache.clear();
+  }
+
+  tokenCache.set(token, {
+    userId,
+    expiresAt: Date.now() + TOKEN_CACHE_TTL,
+  });
+
+  return userId;
 }

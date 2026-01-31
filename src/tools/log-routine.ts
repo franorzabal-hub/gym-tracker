@@ -41,8 +41,9 @@ Parameters:
       auto_end: z.boolean().optional().describe("Whether to auto-close the session after logging. Default true. Set false to keep session open for additional exercises."),
       date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session. Defaults to now."),
       tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to label this session (e.g. ['deload', 'morning'])"),
+      minimal_response: z.boolean().optional().describe("If true, return only success status and new PRs, without echoing back all logged data"),
     },
-    async ({ program_day, overrides: rawOverrides, skip: rawSkip, auto_end, date, tags: rawTags }) => {
+    async ({ program_day, overrides: rawOverrides, skip: rawSkip, auto_end, date, tags: rawTags, minimal_response }) => {
       const userId = getUserId();
 
       // Some MCP clients serialize nested arrays as JSON strings
@@ -53,27 +54,8 @@ Parameters:
       const overrides = parseIfString(rawOverrides);
       const skip = parseIfString(rawSkip);
       const tags = parseIfString(rawTags);
-      // Check for already active session
-      const active = await pool.query(
-        "SELECT id, started_at FROM sessions WHERE user_id = $1 AND ended_at IS NULL AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
-        [userId]
-      );
-      if (active.rows.length > 0) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error: "There is already an active session. End it first or use log_exercise to add exercises to it.",
-                session_id: active.rows[0].id,
-                started_at: active.rows[0].started_at,
-              }),
-            },
-          ],
-          isError: true,
-        };
-      }
 
+      // Resolve program and day info before starting the transaction
       const activeProgram = await getActiveProgram();
       if (!activeProgram) {
         return {
@@ -141,104 +123,156 @@ Parameters:
         overrideMap.set(resolved.name.toLowerCase(), o);
       }
 
-      // Create session
-      const startedAt = date ? new Date(date) : new Date();
-      const { rows: [session] } = await pool.query(
-        `INSERT INTO sessions (user_id, program_version_id, program_day_id, started_at, tags)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id, started_at`,
-        [userId, activeProgram.version_id, dayRow.id, startedAt, tags || []]
-      );
+      // Start transaction
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
 
-      const exercisesLogged: any[] = [];
-      let totalSets = 0;
-      let totalVolume = 0;
-      const allPRs: any[] = [];
-
-      for (const dex of dayExercises) {
-        // Check skip
-        if (
-          skipSet.has(dex.exercise_name.toLowerCase()) ||
-          skipSet.has(dex.exercise_id.toString())
-        ) {
-          continue;
+        // Check for already active session inside the transaction
+        const active = await client.query(
+          "SELECT id, started_at FROM sessions WHERE user_id = $1 AND ended_at IS NULL AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
+          [userId]
+        );
+        if (active.rows.length > 0) {
+          await client.query("ROLLBACK");
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  error: "There is already an active session. End it first or use log_exercise to add exercises to it.",
+                  session_id: active.rows[0].id,
+                  started_at: active.rows[0].started_at,
+                }),
+              },
+            ],
+            isError: true,
+          };
         }
 
-        // Apply overrides
-        const override = overrideMap.get(dex.exercise_name.toLowerCase());
-        const sets = override?.sets || dex.target_sets;
-        const reps = override?.reps || dex.target_reps;
-        const weight = override?.weight ?? dex.target_weight;
-        const rpe = override?.rpe ?? dex.target_rpe;
-
-        // Create session_exercise
-        const { rows: [se] } = await pool.query(
-          `INSERT INTO session_exercises (session_id, exercise_id, sort_order, superset_group, rest_seconds)
-           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-          [session.id, dex.exercise_id, dex.sort_order, dex.superset_group, dex.rest_seconds || null]
+        // Create session
+        const startedAt = date ? new Date(date) : new Date();
+        const { rows: [session] } = await client.query(
+          `INSERT INTO sessions (user_id, program_version_id, program_day_id, started_at, tags)
+           VALUES ($1, $2, $3, $4, $5) RETURNING id, started_at`,
+          [userId, activeProgram.version_id, dayRow.id, startedAt, tags || []]
         );
 
-        // Insert sets
-        const setIds: number[] = [];
-        for (let i = 0; i < sets; i++) {
-          const { rows: [s] } = await pool.query(
-            `INSERT INTO sets (session_exercise_id, set_number, reps, weight, rpe)
+        const exercisesLogged: any[] = [];
+        let totalSets = 0;
+        let totalVolume = 0;
+        const allPRs: any[] = [];
+
+        for (const dex of dayExercises) {
+          // Check skip
+          if (
+            skipSet.has(dex.exercise_name.toLowerCase()) ||
+            skipSet.has(dex.exercise_id.toString())
+          ) {
+            continue;
+          }
+
+          // Apply overrides
+          const override = overrideMap.get(dex.exercise_name.toLowerCase());
+          const sets = override?.sets || dex.target_sets;
+          const reps = override?.reps || dex.target_reps;
+          const weight = override?.weight ?? dex.target_weight;
+          const rpe = override?.rpe ?? dex.target_rpe;
+
+          // Create session_exercise
+          const { rows: [se] } = await client.query(
+            `INSERT INTO session_exercises (session_id, exercise_id, sort_order, superset_group, rest_seconds)
              VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-            [se.id, i + 1, reps, weight || null, rpe || null]
+            [session.id, dex.exercise_id, dex.sort_order, dex.superset_group, dex.rest_seconds || null]
           );
-          setIds.push(s.id);
+
+          // Insert sets
+          const setIds: number[] = [];
+          for (let i = 0; i < sets; i++) {
+            const { rows: [s] } = await client.query(
+              `INSERT INTO sets (session_exercise_id, set_number, reps, weight, rpe)
+               VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+              [se.id, i + 1, reps, weight || null, rpe || null]
+            );
+            setIds.push(s.id);
+          }
+
+          totalSets += sets;
+          if (weight) totalVolume += weight * reps * sets;
+
+          // Check PRs (pass client for transaction safety)
+          const prs = await checkPRs(
+            dex.exercise_id,
+            setIds.map((id, i) => ({
+              reps,
+              weight: weight ?? null,
+              set_id: id,
+            })),
+            dex.exercise_type,
+            client
+          );
+          if (prs.length > 0) allPRs.push({ exercise: dex.exercise_name, prs });
+
+          exercisesLogged.push({
+            exercise: dex.exercise_name,
+            sets,
+            reps,
+            weight: weight || undefined,
+            rpe: rpe || undefined,
+          });
         }
 
-        totalSets += sets;
-        if (weight) totalVolume += weight * reps * sets;
+        // End session unless auto_end is explicitly false
+        const shouldEnd = auto_end !== false;
+        if (shouldEnd) {
+          const endedAt = date ? new Date(new Date(date).getTime() + 60 * 60 * 1000) : new Date();
+          await client.query(
+            "UPDATE sessions SET ended_at = $2 WHERE id = $1 AND user_id = $3",
+            [session.id, endedAt, userId]
+          );
+        }
 
-        // Check PRs
-        const prs = await checkPRs(
-          dex.exercise_id,
-          setIds.map((id, i) => ({
-            reps,
-            weight: weight ?? null,
-            set_id: id,
-          })),
-          dex.exercise_type
-        );
-        if (prs.length > 0) allPRs.push({ exercise: dex.exercise_name, prs });
+        await client.query("COMMIT");
 
-        exercisesLogged.push({
-          exercise: dex.exercise_name,
-          sets,
-          reps,
-          weight: weight || undefined,
-          rpe: rpe || undefined,
-        });
+        if (minimal_response) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  success: true,
+                  session_id: session.id,
+                  exercises_logged: exercisesLogged.length,
+                  new_prs: allPRs.length > 0 ? allPRs : undefined,
+                }),
+              },
+            ],
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                session_id: session.id,
+                day_label: dayRow.day_label,
+                exercises_logged: exercisesLogged,
+                total_sets: totalSets,
+                total_volume_kg: Math.round(totalVolume),
+                new_prs: allPRs.length > 0 ? allPRs : undefined,
+                session_ended: shouldEnd,
+                ...(shouldEnd ? {} : { hint: "Session is still open. Use log_exercise to add more exercises, then end_session when done." }),
+              }),
+            },
+          ],
+        };
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
       }
-
-      // End session unless auto_end is explicitly false
-      const shouldEnd = auto_end !== false;
-      if (shouldEnd) {
-        const endedAt = date ? new Date(new Date(date).getTime() + 60 * 60 * 1000) : new Date();
-        await pool.query(
-          "UPDATE sessions SET ended_at = $2 WHERE id = $1 AND user_id = $3",
-          [session.id, endedAt, userId]
-        );
-      }
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              session_id: session.id,
-              day_label: dayRow.day_label,
-              exercises_logged: exercisesLogged,
-              total_sets: totalSets,
-              total_volume_kg: Math.round(totalVolume),
-              new_prs: allPRs.length > 0 ? allPRs : undefined,
-              session_ended: shouldEnd,
-              ...(shouldEnd ? {} : { hint: "Session is still open. Use log_exercise to add more exercises, then end_session when done." }),
-            }),
-          },
-        ],
-      };
     }
   );
 }

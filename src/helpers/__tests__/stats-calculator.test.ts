@@ -4,10 +4,14 @@ import { estimateE1RM, calculateVolume, checkPRs } from "../stats-calculator.js"
 // Mock the DB pool
 vi.mock("../../db/connection.js", () => {
   const mockQuery = vi.fn();
+  const mockClient = {
+    query: mockQuery,
+    release: vi.fn(),
+  };
   return {
     default: {
       query: mockQuery,
-      connect: vi.fn(),
+      connect: vi.fn().mockResolvedValue(mockClient),
     },
   };
 });
@@ -100,13 +104,16 @@ describe("checkPRs", () => {
 
   it("detects new max weight PR", async () => {
     mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // BEGIN
+      .mockResolvedValueOnce({ rows: [] }) // advisory lock
       .mockResolvedValueOnce({ rows: [{ record_type: "max_weight", value: 90 }, { record_type: "estimated_1rm", value: 100 }] }) // bulk load PRs
       .mockResolvedValueOnce({ rows: [] }) // upsert max_weight
       .mockResolvedValueOnce({ rows: [] }) // pr_history max_weight
       .mockResolvedValueOnce({ rows: [] }) // upsert max_reps
       .mockResolvedValueOnce({ rows: [] }) // pr_history max_reps
       .mockResolvedValueOnce({ rows: [] }) // upsert e1rm
-      .mockResolvedValueOnce({ rows: [] }); // pr_history e1rm
+      .mockResolvedValueOnce({ rows: [] }) // pr_history e1rm
+      .mockResolvedValueOnce({ rows: [] }); // COMMIT
 
     const prs = await checkPRs(1, [
       { reps: 5, weight: 100, set_id: 42 },
@@ -121,11 +128,14 @@ describe("checkPRs", () => {
 
   it("detects new estimated 1RM PR", async () => {
     mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // BEGIN
+      .mockResolvedValueOnce({ rows: [] }) // advisory lock
       .mockResolvedValueOnce({ rows: [{ record_type: "max_weight", value: 120 }, { record_type: "estimated_1rm", value: 100 }] }) // bulk load PRs
       .mockResolvedValueOnce({ rows: [] }) // upsert max_reps
       .mockResolvedValueOnce({ rows: [] }) // pr_history max_reps
       .mockResolvedValueOnce({ rows: [] }) // upsert e1rm
-      .mockResolvedValueOnce({ rows: [] }); // pr_history e1rm
+      .mockResolvedValueOnce({ rows: [] }) // pr_history e1rm
+      .mockResolvedValueOnce({ rows: [] }); // COMMIT
 
     const prs = await checkPRs(1, [
       { reps: 8, weight: 100, set_id: 42 },
@@ -141,7 +151,11 @@ describe("checkPRs", () => {
   });
 
   it("skips sets with no weight", async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] }); // bulk load PRs (empty)
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // BEGIN
+      .mockResolvedValueOnce({ rows: [] }) // advisory lock
+      .mockResolvedValueOnce({ rows: [] }) // bulk load PRs (empty)
+      .mockResolvedValueOnce({ rows: [] }); // COMMIT
 
     const prs = await checkPRs(1, [
       { reps: 10, weight: null, set_id: 42 },
@@ -151,7 +165,11 @@ describe("checkPRs", () => {
   });
 
   it("skips sets with zero weight", async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] }); // bulk load PRs (empty)
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // BEGIN
+      .mockResolvedValueOnce({ rows: [] }) // advisory lock
+      .mockResolvedValueOnce({ rows: [] }) // bulk load PRs (empty)
+      .mockResolvedValueOnce({ rows: [] }); // COMMIT
 
     const prs = await checkPRs(1, [
       { reps: 10, weight: 0, set_id: 42 },
@@ -163,6 +181,8 @@ describe("checkPRs", () => {
   it("deduplicates PRs by record type (keeps best)", async () => {
     // Two sets, both beat max_weight
     mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // BEGIN
+      .mockResolvedValueOnce({ rows: [] }) // advisory lock
       .mockResolvedValueOnce({ rows: [{ record_type: "max_weight", value: 80 }, { record_type: "estimated_1rm", value: 90 }] }) // bulk load PRs
       .mockResolvedValueOnce({ rows: [] }) // upsert max_weight (100)
       .mockResolvedValueOnce({ rows: [] }) // pr_history
@@ -175,7 +195,8 @@ describe("checkPRs", () => {
       .mockResolvedValueOnce({ rows: [] }) // upsert max_reps_at_110
       .mockResolvedValueOnce({ rows: [] }) // pr_history
       .mockResolvedValueOnce({ rows: [] }) // upsert e1rm
-      .mockResolvedValueOnce({ rows: [] }); // pr_history
+      .mockResolvedValueOnce({ rows: [] }) // pr_history
+      .mockResolvedValueOnce({ rows: [] }); // COMMIT
 
     const prs = await checkPRs(1, [
       { reps: 5, weight: 100, set_id: 1 },

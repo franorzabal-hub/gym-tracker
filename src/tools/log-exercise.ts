@@ -205,6 +205,7 @@ Returns the logged sets and any new personal records achieved.`,
       rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
       exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
       exercises: z.union([z.array(exerciseEntrySchema), z.string()]).optional(),
+      minimal_response: z.boolean().optional().describe("If true, return only success status and new PRs, without echoing back all logged data"),
     },
     async (params) => {
       const userId = getUserId();
@@ -232,6 +233,23 @@ Returns the logged sets and any new personal records achieved.`,
         for (const entry of exercisesList) {
           results.push(await logSingleExercise(sessionId, entry));
         }
+
+        if (params.minimal_response) {
+          const allPRs = results.flatMap(r => r.new_prs || []);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  success: true,
+                  exercises_logged: results.length,
+                  new_prs: allPRs.length > 0 ? allPRs : undefined,
+                }),
+              },
+            ],
+          };
+        }
+
         return {
           content: [
             {
@@ -276,6 +294,21 @@ Returns the logged sets and any new personal records achieved.`,
         rep_type: params.rep_type,
         exercise_type: params.exercise_type,
       });
+
+      if (params.minimal_response) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                success: true,
+                exercises_logged: 1,
+                new_prs: result.new_prs || undefined,
+              }),
+            },
+          ],
+        };
+      }
 
       return {
         content: [

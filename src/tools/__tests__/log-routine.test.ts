@@ -1,11 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockQuery } = vi.hoisted(() => ({
-  mockQuery: vi.fn(),
-}));
+const { mockQuery, mockClientQuery, mockClient } = vi.hoisted(() => {
+  const mockClientQuery = vi.fn();
+  const mockClient = {
+    query: mockClientQuery,
+    release: vi.fn(),
+  };
+  return {
+    mockQuery: vi.fn(),
+    mockClientQuery,
+    mockClient,
+  };
+});
 
 vi.mock("../../db/connection.js", () => ({
-  default: { query: mockQuery, connect: vi.fn() },
+  default: { query: mockQuery, connect: vi.fn().mockResolvedValue(mockClient) },
 }));
 
 vi.mock("../../helpers/program-helpers.js", () => ({
@@ -41,6 +50,7 @@ let toolHandler: Function;
 describe("log_routine tool", () => {
   beforeEach(() => {
     mockQuery.mockReset();
+    mockClientQuery.mockReset();
     mockGetActiveProgram.mockReset();
     mockInferTodayDay.mockReset();
     mockResolveExercise.mockReset();
@@ -55,10 +65,22 @@ describe("log_routine tool", () => {
   });
 
   it("rejects when active session exists", async () => {
-    // Active session found
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ id: 99, started_at: "2024-01-15T09:00:00Z" }],
+    mockGetActiveProgram.mockResolvedValueOnce({
+      id: 1, name: "PPL", version_id: 3, version_number: 1,
     });
+    // timezone query
+    mockQuery.mockResolvedValueOnce({ rows: [{ timezone: null }] });
+    mockInferTodayDay.mockResolvedValueOnce({ id: 5, day_label: "Push" });
+    // day exercises
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    // Transaction: BEGIN, then active session found
+    mockClientQuery
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({
+        rows: [{ id: 99, started_at: "2024-01-15T09:00:00Z" }],
+      }) // active session check
+      .mockResolvedValueOnce({}); // ROLLBACK
 
     const result = await toolHandler({});
     expect(result.isError).toBe(true);
@@ -68,9 +90,6 @@ describe("log_routine tool", () => {
   });
 
   it("logs routine for inferred day", async () => {
-    // No active session
-    mockQuery.mockResolvedValueOnce({ rows: [] });
-
     mockGetActiveProgram.mockResolvedValueOnce({
       id: 1, name: "PPL", version_id: 3, version_number: 1,
     });
@@ -82,24 +101,27 @@ describe("log_routine tool", () => {
     // Get exercises for the day
     mockQuery.mockResolvedValueOnce({
       rows: [
-        { exercise_id: 1, exercise_name: "Bench Press", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: null, sort_order: 0, superset_group: null, rest_seconds: null },
+        { exercise_id: 1, exercise_name: "Bench Press", exercise_type: "strength", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: null, sort_order: 0, superset_group: null, rest_seconds: null },
       ],
     });
 
-    // Create session
-    mockQuery.mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z" }] });
-    // Create session_exercise
-    mockQuery.mockResolvedValueOnce({ rows: [{ id: 20 }] });
-    // Insert 4 sets
-    mockQuery
-      .mockResolvedValueOnce({ rows: [{ id: 100 }] })
-      .mockResolvedValueOnce({ rows: [{ id: 101 }] })
-      .mockResolvedValueOnce({ rows: [{ id: 102 }] })
-      .mockResolvedValueOnce({ rows: [{ id: 103 }] });
+    // Transaction queries via client
+    mockClientQuery
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [] }) // active session check — no active session
+      .mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z" }] }) // Create session
+      .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // Create session_exercise
+      .mockResolvedValueOnce({ rows: [{ id: 100 }] }) // set 1
+      .mockResolvedValueOnce({ rows: [{ id: 101 }] }) // set 2
+      .mockResolvedValueOnce({ rows: [{ id: 102 }] }) // set 3
+      .mockResolvedValueOnce({ rows: [{ id: 103 }] }) // set 4
+    ;
     // checkPRs
     mockCheckPRs.mockResolvedValueOnce([]);
-    // End session
-    mockQuery.mockResolvedValueOnce({});
+    // End session + COMMIT
+    mockClientQuery
+      .mockResolvedValueOnce({}) // end session
+      .mockResolvedValueOnce({}); // COMMIT
 
     const result = await toolHandler({});
     const parsed = JSON.parse(result.content[0].text);
@@ -113,9 +135,6 @@ describe("log_routine tool", () => {
   });
 
   it("logs with explicit program_day label", async () => {
-    // No active session
-    mockQuery.mockResolvedValueOnce({ rows: [] });
-
     mockGetActiveProgram.mockResolvedValueOnce({
       id: 1, name: "PPL", version_id: 3, version_number: 1,
     });
@@ -124,10 +143,14 @@ describe("log_routine tool", () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ id: 5, day_label: "Pull" }] });
     // Get exercises for the day (empty for simplicity)
     mockQuery.mockResolvedValueOnce({ rows: [] });
-    // Create session
-    mockQuery.mockResolvedValueOnce({ rows: [{ id: 11, started_at: "2024-01-15T10:00:00Z" }] });
-    // End session
-    mockQuery.mockResolvedValueOnce({});
+
+    // Transaction queries via client
+    mockClientQuery
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [] }) // active session check — no active session
+      .mockResolvedValueOnce({ rows: [{ id: 11, started_at: "2024-01-15T10:00:00Z" }] }) // Create session
+      .mockResolvedValueOnce({}) // End session
+      .mockResolvedValueOnce({}); // COMMIT
 
     const result = await toolHandler({ program_day: "Pull" });
     const parsed = JSON.parse(result.content[0].text);
@@ -137,9 +160,6 @@ describe("log_routine tool", () => {
   });
 
   it("applies overrides to specific exercises", async () => {
-    // No active session
-    mockQuery.mockResolvedValueOnce({ rows: [] });
-
     mockGetActiveProgram.mockResolvedValueOnce({
       id: 1, name: "PPL", version_id: 3, version_number: 1,
     });
@@ -149,26 +169,29 @@ describe("log_routine tool", () => {
     // Get exercises for the day
     mockQuery.mockResolvedValueOnce({
       rows: [
-        { exercise_id: 1, exercise_name: "Bench Press", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: null, sort_order: 0, superset_group: null, rest_seconds: null },
+        { exercise_id: 1, exercise_name: "Bench Press", exercise_type: "strength", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: null, sort_order: 0, superset_group: null, rest_seconds: null },
       ],
     });
 
     // resolveExercise for override
     mockResolveExercise.mockResolvedValueOnce({ id: 1, name: "Bench Press", isNew: false });
 
-    // Create session
-    mockQuery.mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z" }] });
-    // Create session_exercise
-    mockQuery.mockResolvedValueOnce({ rows: [{ id: 20 }] });
-    // Insert 4 sets (overridden weight = 90)
-    mockQuery
-      .mockResolvedValueOnce({ rows: [{ id: 100 }] })
-      .mockResolvedValueOnce({ rows: [{ id: 101 }] })
-      .mockResolvedValueOnce({ rows: [{ id: 102 }] })
-      .mockResolvedValueOnce({ rows: [{ id: 103 }] });
+    // Transaction queries via client
+    mockClientQuery
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [] }) // active session check — no active session
+      .mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z" }] }) // Create session
+      .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // Create session_exercise
+      .mockResolvedValueOnce({ rows: [{ id: 100 }] }) // set 1
+      .mockResolvedValueOnce({ rows: [{ id: 101 }] }) // set 2
+      .mockResolvedValueOnce({ rows: [{ id: 102 }] }) // set 3
+      .mockResolvedValueOnce({ rows: [{ id: 103 }] }) // set 4
+    ;
     mockCheckPRs.mockResolvedValueOnce([]);
-    // End session
-    mockQuery.mockResolvedValueOnce({});
+    // End session + COMMIT
+    mockClientQuery
+      .mockResolvedValueOnce({}) // end session
+      .mockResolvedValueOnce({}); // COMMIT
 
     const result = await toolHandler({
       program_day: "Push",
@@ -181,9 +204,6 @@ describe("log_routine tool", () => {
   });
 
   it("skips exercises in skip array", async () => {
-    // No active session
-    mockQuery.mockResolvedValueOnce({ rows: [] });
-
     mockGetActiveProgram.mockResolvedValueOnce({
       id: 1, name: "PPL", version_id: 3, version_number: 1,
     });
@@ -191,23 +211,26 @@ describe("log_routine tool", () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ id: 5, day_label: "Push" }] });
     mockQuery.mockResolvedValueOnce({
       rows: [
-        { exercise_id: 1, exercise_name: "Bench Press", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: null, sort_order: 0, superset_group: null, rest_seconds: null },
-        { exercise_id: 2, exercise_name: "Overhead Press", target_sets: 3, target_reps: 10, target_weight: 50, target_rpe: null, sort_order: 1, superset_group: null, rest_seconds: null },
+        { exercise_id: 1, exercise_name: "Bench Press", exercise_type: "strength", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: null, sort_order: 0, superset_group: null, rest_seconds: null },
+        { exercise_id: 2, exercise_name: "Overhead Press", exercise_type: "strength", target_sets: 3, target_reps: 10, target_weight: 50, target_rpe: null, sort_order: 1, superset_group: null, rest_seconds: null },
       ],
     });
 
-    // Create session
-    mockQuery.mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z" }] });
-    // Only OHP logged (bench skipped): session_exercise
-    mockQuery.mockResolvedValueOnce({ rows: [{ id: 21 }] });
-    // 3 sets for OHP
-    mockQuery
-      .mockResolvedValueOnce({ rows: [{ id: 200 }] })
-      .mockResolvedValueOnce({ rows: [{ id: 201 }] })
-      .mockResolvedValueOnce({ rows: [{ id: 202 }] });
+    // Transaction queries via client
+    mockClientQuery
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [] }) // active session check — no active session
+      .mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z" }] }) // Create session
+      .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // session_exercise for OHP (bench skipped)
+      .mockResolvedValueOnce({ rows: [{ id: 200 }] }) // set 1
+      .mockResolvedValueOnce({ rows: [{ id: 201 }] }) // set 2
+      .mockResolvedValueOnce({ rows: [{ id: 202 }] }) // set 3
+    ;
     mockCheckPRs.mockResolvedValueOnce([]);
-    // End session
-    mockQuery.mockResolvedValueOnce({});
+    // End session + COMMIT
+    mockClientQuery
+      .mockResolvedValueOnce({}) // end session
+      .mockResolvedValueOnce({}); // COMMIT
 
     const result = await toolHandler({
       program_day: "Push",
@@ -220,8 +243,6 @@ describe("log_routine tool", () => {
   });
 
   it("returns error when no active program", async () => {
-    // No active session
-    mockQuery.mockResolvedValueOnce({ rows: [] });
     mockGetActiveProgram.mockResolvedValueOnce(null);
 
     const result = await toolHandler({});
@@ -231,9 +252,6 @@ describe("log_routine tool", () => {
   });
 
   it("returns error when day not found", async () => {
-    // No active session
-    mockQuery.mockResolvedValueOnce({ rows: [] });
-
     mockGetActiveProgram.mockResolvedValueOnce({
       id: 1, name: "PPL", version_id: 3, version_number: 1,
     });

@@ -43,6 +43,9 @@ describe("manage_templates tool", () => {
 
   describe("list action", () => {
     it("returns templates", async () => {
+      // Count query
+      mockQuery.mockResolvedValueOnce({ rows: [{ total: "1" }] });
+      // Data query
       mockQuery.mockResolvedValueOnce({
         rows: [
           { id: 1, name: "Push Day", created_at: "2024-01-01", exercises: [{ exercise: "Bench Press" }] },
@@ -53,6 +56,7 @@ describe("manage_templates tool", () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.templates).toHaveLength(1);
       expect(parsed.templates[0].name).toBe("Push Day");
+      expect(parsed.total).toBe(1);
     });
   });
 

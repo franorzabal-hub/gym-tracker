@@ -8,7 +8,7 @@ export function registerExercisesTool(server: McpServer) {
   server.tool(
     "manage_exercises",
     `Manage the exercise library. Actions:
-- "list": List all exercises, optionally filtered by muscle_group
+- "list": List all exercises, optionally filtered by muscle_group. Supports pagination with limit/offset. Returns { exercises, total }.
 - "search": Search exercises by name/alias (fuzzy)
 - "add": Add a new exercise with optional muscle_group, equipment, aliases, rep_type, exercise_type
 - "add_bulk": Add multiple exercises at once. Pass an "exercises" array with {name, muscle_group?, equipment?, aliases?, rep_type?, exercise_type?}. Returns created/existing/failed counts.
@@ -16,11 +16,15 @@ export function registerExercisesTool(server: McpServer) {
 - "delete": Permanently delete an exercise (cascade deletes aliases, sets NULL on personal_records). Only user-owned exercises can be deleted. The LLM should confirm with the user before calling.
 - "delete_bulk": Delete multiple exercises at once. Pass "names" array (string[]). Only user-owned exercises can be deleted. Returns { deleted, not_found, failed }. The LLM should confirm with the user before calling.
 - "update_bulk": Update multiple exercises at once. Pass "exercises" array with [{name, muscle_group?, equipment?, rep_type?, exercise_type?}]. Only user-owned exercises can be updated. Returns { updated, not_found, failed }.
+- "list_aliases": List all aliases for a given exercise (pass name)
+- "add_alias": Add a new alias to an existing exercise (pass name + alias)
+- "remove_alias": Remove an alias from an exercise (pass name + alias)
+- "merge": Merge two exercises: move all session data from source to target, then delete source. Pass source + target names.
 
 rep_type: "reps" (default), "seconds", "meters", "calories" - how the exercise is measured
 exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category of exercise (PRs only tracked for strength)`,
     {
-      action: z.enum(["list", "add", "search", "update", "delete", "add_bulk", "delete_bulk", "update_bulk"]),
+      action: z.enum(["list", "add", "search", "update", "delete", "add_bulk", "delete_bulk", "update_bulk", "list_aliases", "add_alias", "remove_alias", "merge"]),
       name: z.string().optional(),
       muscle_group: z.string().optional(),
       equipment: z.string().optional(),
@@ -39,18 +43,66 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
         })),
         z.string(),
       ]).optional(),
+      limit: z.number().int().optional().describe("Max exercises to return. Defaults to 100"),
+      offset: z.number().int().optional().describe("Skip first N exercises for pagination. Defaults to 0"),
+      alias: z.string().optional().describe("Alias name for add_alias/remove_alias actions"),
+      source: z.string().optional().describe("Source exercise name for merge action"),
+      target: z.string().optional().describe("Target exercise name for merge action"),
     },
-    async ({ action, name, muscle_group, equipment, aliases, rep_type, exercise_type, names: rawNames, exercises }) => {
+    async ({ action, name, muscle_group, equipment, aliases, rep_type, exercise_type, names: rawNames, exercises, limit, offset, alias, source, target }) => {
       const userId = getUserId();
 
-      if (action === "list" || action === "search") {
-        const results = await searchExercises(
-          action === "search" ? name : undefined,
-          muscle_group
-        );
+      if (action === "search") {
+        const results = await searchExercises(name, muscle_group);
         return {
           content: [
             { type: "text" as const, text: JSON.stringify({ exercises: results }) },
+          ],
+        };
+      }
+
+      if (action === "list") {
+        const effectiveLimit = limit ?? 100;
+        const effectiveOffset = offset ?? 0;
+
+        // Build conditions
+        const params: any[] = [userId];
+        const conditions: string[] = ["(e.user_id IS NULL OR e.user_id = $1)"];
+
+        if (muscle_group) {
+          params.push(muscle_group.toLowerCase());
+          conditions.push(`LOWER(e.muscle_group) = $${params.length}`);
+        }
+
+        const whereClause = " WHERE " + conditions.join(" AND ");
+
+        // Get total count
+        const countResult = await pool.query(
+          `SELECT COUNT(DISTINCT e.id) as total FROM exercises e${whereClause}`,
+          params
+        );
+        const total = Number(countResult.rows[0].total);
+
+        // Get paginated results
+        params.push(effectiveLimit);
+        const limitIdx = params.length;
+        params.push(effectiveOffset);
+        const offsetIdx = params.length;
+
+        const { rows: results } = await pool.query(
+          `SELECT e.id, e.name, e.muscle_group, e.equipment, e.rep_type, e.exercise_type,
+            COALESCE(array_agg(a.alias) FILTER (WHERE a.alias IS NOT NULL), '{}') as aliases
+          FROM exercises e
+          LEFT JOIN exercise_aliases a ON a.exercise_id = e.id
+          ${whereClause}
+          GROUP BY e.id ORDER BY e.user_id NULLS LAST, e.name
+          LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+          params
+        );
+
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify({ exercises: results, total }) },
           ],
         };
       }
@@ -371,6 +423,230 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
             }),
           }],
         };
+      }
+
+      if (action === "list_aliases") {
+        if (!name) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: "Name required" }) }],
+            isError: true,
+          };
+        }
+        const { rows } = await pool.query(
+          `SELECT ea.alias FROM exercise_aliases ea
+           JOIN exercises e ON ea.exercise_id = e.id
+           WHERE LOWER(e.name) = LOWER($1) AND (e.user_id IS NULL OR e.user_id = $2)`,
+          [name, userId]
+        );
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ exercise: name, aliases: rows.map((r: any) => r.alias) }) }],
+        };
+      }
+
+      if (action === "add_alias") {
+        if (!name || !alias) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: "Name and alias required" }) }],
+            isError: true,
+          };
+        }
+        try {
+          const { rowCount } = await pool.query(
+            `INSERT INTO exercise_aliases (exercise_id, alias)
+             SELECT id, $2 FROM exercises WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $3)
+             ORDER BY user_id NULLS LAST LIMIT 1`,
+            [name, alias.toLowerCase().trim(), userId]
+          );
+          if (!rowCount || rowCount === 0) {
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: `Exercise "${name}" not found` }) }],
+              isError: true,
+            };
+          }
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ added_alias: alias.toLowerCase().trim(), exercise: name }) }],
+          };
+        } catch (err: any) {
+          if (err.code === "23505") {
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: `Alias "${alias}" already exists` }) }],
+              isError: true,
+            };
+          }
+          throw err;
+        }
+      }
+
+      if (action === "remove_alias") {
+        if (!name || !alias) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: "Name and alias required" }) }],
+            isError: true,
+          };
+        }
+        const { rowCount } = await pool.query(
+          `DELETE FROM exercise_aliases ea
+           USING exercises e
+           WHERE ea.exercise_id = e.id AND LOWER(e.name) = LOWER($1) AND LOWER(ea.alias) = LOWER($2)
+             AND (e.user_id IS NULL OR e.user_id = $3)`,
+          [name, alias, userId]
+        );
+        if (!rowCount || rowCount === 0) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: `Alias "${alias}" not found for exercise "${name}"` }) }],
+            isError: true,
+          };
+        }
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ removed_alias: alias, exercise: name }) }],
+        };
+      }
+
+      if (action === "merge") {
+        if (!source || !target) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: "Source and target exercise names required" }) }],
+            isError: true,
+          };
+        }
+
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+
+          // Find source exercise
+          const sourceResult = await client.query(
+            `SELECT id, name, user_id FROM exercises WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2) ORDER BY user_id NULLS LAST LIMIT 1`,
+            [source, userId]
+          );
+          if (sourceResult.rows.length === 0) {
+            await client.query("ROLLBACK");
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: `Source exercise "${source}" not found` }) }],
+              isError: true,
+            };
+          }
+          const sourceEx = sourceResult.rows[0];
+
+          if (sourceEx.user_id === null) {
+            await client.query("ROLLBACK");
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: "Cannot merge a global exercise as source. Only user-owned exercises can be merged." }) }],
+              isError: true,
+            };
+          }
+
+          // Find target exercise
+          const targetResult = await client.query(
+            `SELECT id, name FROM exercises WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2) ORDER BY user_id NULLS LAST LIMIT 1`,
+            [target, userId]
+          );
+          if (targetResult.rows.length === 0) {
+            await client.query("ROLLBACK");
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: `Target exercise "${target}" not found` }) }],
+              isError: true,
+            };
+          }
+          const targetEx = targetResult.rows[0];
+
+          if (sourceEx.id === targetEx.id) {
+            await client.query("ROLLBACK");
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: "Source and target are the same exercise" }) }],
+              isError: true,
+            };
+          }
+
+          // 1. Move session_exercises
+          const seResult = await client.query(
+            `UPDATE session_exercises SET exercise_id = $1 WHERE exercise_id = $2`,
+            [targetEx.id, sourceEx.id]
+          );
+          const sessionExercisesMoved = seResult.rowCount || 0;
+
+          // 2. Handle personal_records conflicts: keep higher value
+          // First, delete source records where target already has a higher or equal value for the same record_type
+          await client.query(
+            `DELETE FROM personal_records pr_source
+             WHERE pr_source.exercise_id = $1 AND pr_source.user_id = $2
+               AND EXISTS (
+                 SELECT 1 FROM personal_records pr_target
+                 WHERE pr_target.exercise_id = $3 AND pr_target.user_id = $2
+                   AND pr_target.record_type = pr_source.record_type
+                   AND pr_target.value >= pr_source.value
+               )`,
+            [sourceEx.id, userId, targetEx.id]
+          );
+          // Then, for source records with higher value, delete the target record and reassign source
+          await client.query(
+            `DELETE FROM personal_records pr_target
+             WHERE pr_target.exercise_id = $1 AND pr_target.user_id = $2
+               AND EXISTS (
+                 SELECT 1 FROM personal_records pr_source
+                 WHERE pr_source.exercise_id = $3 AND pr_source.user_id = $2
+                   AND pr_source.record_type = pr_target.record_type
+                   AND pr_source.value > pr_target.value
+               )`,
+            [targetEx.id, userId, sourceEx.id]
+          );
+          // Now move remaining source records to target (no conflicts left)
+          const prResult = await client.query(
+            `UPDATE personal_records SET exercise_id = $1 WHERE exercise_id = $2 AND user_id = $3`,
+            [targetEx.id, sourceEx.id, userId]
+          );
+          const prMoved = prResult.rowCount || 0;
+
+          // 3. Move pr_history
+          const phResult = await client.query(
+            `UPDATE pr_history SET exercise_id = $1 WHERE exercise_id = $2 AND user_id = $3`,
+            [targetEx.id, sourceEx.id, userId]
+          );
+          const prHistoryMoved = phResult.rowCount || 0;
+
+          // 4. Move aliases from source to target (skip duplicates)
+          await client.query(
+            `UPDATE exercise_aliases SET exercise_id = $1
+             WHERE exercise_id = $2
+               AND LOWER(alias) NOT IN (
+                 SELECT LOWER(alias) FROM exercise_aliases WHERE exercise_id = $1
+               )`,
+            [targetEx.id, sourceEx.id]
+          );
+          // Delete any remaining aliases on source (duplicates that couldn't be moved)
+          await client.query(
+            `DELETE FROM exercise_aliases WHERE exercise_id = $1`,
+            [sourceEx.id]
+          );
+
+          // 5. Delete source exercise
+          await client.query(
+            `DELETE FROM exercises WHERE id = $1`,
+            [sourceEx.id]
+          );
+
+          await client.query("COMMIT");
+
+          return {
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({
+                merged: {
+                  source: sourceEx.name,
+                  target: targetEx.name,
+                  session_exercises_moved: sessionExercisesMoved,
+                  personal_records_moved: prMoved,
+                  pr_history_moved: prHistoryMoved,
+                },
+              }),
+            }],
+          };
+        } catch (err) {
+          await client.query("ROLLBACK");
+          throw err;
+        } finally {
+          client.release();
+        }
       }
 
       // add

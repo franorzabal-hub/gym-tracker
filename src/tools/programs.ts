@@ -56,8 +56,9 @@ For "activate", pass the program name.`,
       change_description: z.string().optional(),
       hard_delete: z.boolean().optional(),
       names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of program names for delete_bulk"),
+      include_exercises: z.boolean().optional().describe("If true, include exercise details for each day. Defaults to true"),
     },
-    async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames }) => {
+    async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames, include_exercises }) => {
       const userId = getUserId();
 
       // Some MCP clients serialize nested arrays as JSON strings
@@ -111,22 +112,50 @@ For "activate", pass the program name.`,
           };
         }
 
-        const days = await getProgramDaysWithExercises(program.version_id);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                program: {
-                  name: program.name,
-                  description: program.description,
-                  version: program.version_number,
+        const shouldIncludeExercises = include_exercises !== false;
+
+        if (shouldIncludeExercises) {
+          const days = await getProgramDaysWithExercises(program.version_id);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  program: {
+                    name: program.name,
+                    description: program.description,
+                    version: program.version_number,
+                    days,
+                  },
+                }),
+              },
+            ],
+          };
+        } else {
+          // Return days without exercises
+          const { rows: days } = await pool.query(
+            `SELECT pd.id, pd.day_label, pd.weekdays, pd.sort_order
+             FROM program_days pd
+             WHERE pd.version_id = $1
+             ORDER BY pd.sort_order`,
+            [program.version_id]
+          );
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  program: {
+                    name: program.name,
+                    description: program.description,
+                    version: program.version_number,
+                  },
                   days,
-                },
-              }),
-            },
-          ],
-        };
+                }),
+              },
+            ],
+          };
+        }
       }
 
       if (action === "create") {

@@ -1,7 +1,9 @@
+import { PoolClient } from "pg";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 
-export function estimateE1RM(weight: number, reps: number): number {
+export function estimateE1RM(weight: number, reps: number): number | null {
+  if (weight <= 0 || reps <= 0) return null;
   if (reps === 1) return weight;
   // Epley formula
   return Math.round(weight * (1 + reps / 30) * 10) / 10;
@@ -24,7 +26,8 @@ export interface PRCheck {
 export async function checkPRs(
   exerciseId: number,
   newSets: Array<{ reps: number; weight?: number | null; set_id: number }>,
-  exerciseType?: string
+  exerciseType?: string,
+  externalClient?: PoolClient
 ): Promise<PRCheck[]> {
   // Skip PR tracking for non-strength exercises
   if (exerciseType && exerciseType !== 'strength') {
@@ -33,67 +36,91 @@ export async function checkPRs(
 
   const userId = getUserId();
 
-  // Pre-load all current PRs in one query
-  const { rows: currentPRs } = await pool.query(
-    `SELECT record_type, value FROM personal_records WHERE user_id = $1 AND exercise_id = $2`,
-    [userId, exerciseId]
-  );
-  const prMap = new Map(currentPRs.map((r) => [r.record_type, Number(r.value)]));
+  const runInTransaction = async (client: PoolClient): Promise<PRCheck[]> => {
+    // Advisory lock to prevent concurrent PR checks for same user+exercise
+    await client.query('SELECT pg_advisory_xact_lock($1, $2)', [userId, exerciseId]);
 
-  const prs: PRCheck[] = [];
-  const upserts: Array<{ type: string; value: number; setId: number }> = [];
+    // Pre-load all current PRs in one query
+    const { rows: currentPRs } = await client.query(
+      `SELECT record_type, value FROM personal_records WHERE user_id = $1 AND exercise_id = $2`,
+      [userId, exerciseId]
+    );
+    const prMap = new Map(currentPRs.map((r) => [r.record_type, Number(r.value)]));
 
-  for (const set of newSets) {
-    if (!set.weight || set.weight <= 0) continue;
+    const prs: PRCheck[] = [];
+    const upserts: Array<{ type: string; value: number; setId: number }> = [];
 
-    // Check max weight
-    const currentMax = prMap.get("max_weight") || 0;
-    if (set.weight > currentMax) {
-      prMap.set("max_weight", set.weight);
-      upserts.push({ type: "max_weight", value: set.weight, setId: set.set_id });
-      prs.push({
-        record_type: "max_weight",
-        value: set.weight,
-        previous: currentMax || undefined,
-      });
+    for (const set of newSets) {
+      if (!set.weight || set.weight <= 0) continue;
+
+      // Check max weight
+      const currentMax = prMap.get("max_weight") || 0;
+      if (set.weight > currentMax) {
+        prMap.set("max_weight", set.weight);
+        upserts.push({ type: "max_weight", value: set.weight, setId: set.set_id });
+        prs.push({
+          record_type: "max_weight",
+          value: set.weight,
+          previous: currentMax || undefined,
+        });
+      }
+
+      // Check max reps at this weight
+      const repsKey = `max_reps_at_${set.weight}`;
+      const currentMaxReps = prMap.get(repsKey) || 0;
+      if (set.reps > currentMaxReps) {
+        prMap.set(repsKey, set.reps);
+        upserts.push({ type: repsKey, value: set.reps, setId: set.set_id });
+      }
+
+      // Check estimated 1RM
+      const e1rm = estimateE1RM(set.weight, set.reps);
+      if (e1rm !== null) {
+        const currentE1rm = prMap.get("estimated_1rm") || 0;
+        if (e1rm > currentE1rm) {
+          prMap.set("estimated_1rm", e1rm);
+          upserts.push({ type: "estimated_1rm", value: e1rm, setId: set.set_id });
+          prs.push({
+            record_type: "estimated_1rm",
+            value: e1rm,
+            previous: currentE1rm || undefined,
+          });
+        }
+      }
     }
 
-    // Check max reps at this weight
-    const repsKey = `max_reps_at_${set.weight}`;
-    const currentMaxReps = prMap.get(repsKey) || 0;
-    if (set.reps > currentMaxReps) {
-      prMap.set(repsKey, set.reps);
-      upserts.push({ type: repsKey, value: set.reps, setId: set.set_id });
+    // Batch upsert all new PRs
+    for (const { type, value, setId } of upserts) {
+      await upsertPR(userId, exerciseId, type, value, setId, client);
     }
 
-    // Check estimated 1RM
-    const e1rm = estimateE1RM(set.weight, set.reps);
-    const currentE1rm = prMap.get("estimated_1rm") || 0;
-    if (e1rm > currentE1rm) {
-      prMap.set("estimated_1rm", e1rm);
-      upserts.push({ type: "estimated_1rm", value: e1rm, setId: set.set_id });
-      prs.push({
-        record_type: "estimated_1rm",
-        value: e1rm,
-        previous: currentE1rm || undefined,
-      });
+    // Deduplicate by record_type (keep only the best per type)
+    const seen = new Map<string, PRCheck>();
+    for (const pr of prs) {
+      const existing = seen.get(pr.record_type);
+      if (!existing || pr.value > existing.value) {
+        seen.set(pr.record_type, pr);
+      }
     }
+    return Array.from(seen.values());
+  };
+
+  if (externalClient) {
+    return runInTransaction(externalClient);
   }
 
-  // Batch upsert all new PRs
-  for (const { type, value, setId } of upserts) {
-    await upsertPR(userId, exerciseId, type, value, setId);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await runInTransaction(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-
-  // Deduplicate by record_type (keep only the best per type)
-  const seen = new Map<string, PRCheck>();
-  for (const pr of prs) {
-    const existing = seen.get(pr.record_type);
-    if (!existing || pr.value > existing.value) {
-      seen.set(pr.record_type, pr);
-    }
-  }
-  return Array.from(seen.values());
 }
 
 async function upsertPR(
@@ -101,9 +128,10 @@ async function upsertPR(
   exerciseId: number,
   recordType: string,
   value: number,
-  setId: number
+  setId: number,
+  client: PoolClient
 ) {
-  await pool.query(
+  await client.query(
     `INSERT INTO personal_records (user_id, exercise_id, record_type, value, achieved_at, set_id)
      VALUES ($1, $2, $3, $4, NOW(), $5)
      ON CONFLICT (user_id, exercise_id, record_type) DO UPDATE
@@ -112,10 +140,15 @@ async function upsertPR(
     [userId, exerciseId, recordType, value, setId]
   );
 
-  // Log to PR history for timeline tracking
-  await pool.query(
+  // Log to PR history for timeline tracking, prevent duplicates within same minute
+  await client.query(
     `INSERT INTO pr_history (user_id, exercise_id, record_type, value, achieved_at, set_id)
-     VALUES ($1, $2, $3, $4, NOW(), $5)`,
+     SELECT $1, $2, $3, $4, NOW(), $5
+     WHERE NOT EXISTS (
+       SELECT 1 FROM pr_history
+       WHERE user_id = $1 AND exercise_id = $2 AND record_type = $3 AND value = $4
+         AND achieved_at >= date_trunc('minute', NOW())
+     )`,
     [userId, exerciseId, recordType, value, setId]
   );
 }

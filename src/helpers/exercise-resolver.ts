@@ -118,11 +118,26 @@ export async function resolveExercise(
   }
 
   // 4. Auto-create (user-owned)
-  const created = await q(client).query(
-    `INSERT INTO exercises (name, muscle_group, equipment, rep_type, exercise_type, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, exercise_type`,
-    [input.trim(), muscleGroup || null, equipment || null, repType || 'reps', exerciseType || 'strength', userId]
-  );
-  return { id: created.rows[0].id, name: created.rows[0].name, isNew: true, exerciseType: created.rows[0].exercise_type };
+  try {
+    const created = await q(client).query(
+      `INSERT INTO exercises (name, muscle_group, equipment, rep_type, exercise_type, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, exercise_type`,
+      [input.trim(), muscleGroup || null, equipment || null, repType || 'reps', exerciseType || 'strength', userId]
+    );
+    return { id: created.rows[0].id, name: created.rows[0].name, isNew: true, exerciseType: created.rows[0].exercise_type };
+  } catch (err: any) {
+    if (err.code === '23505') {
+      // Concurrent create — look it up again
+      const existing = await q(client).query(
+        `SELECT id, name, exercise_type FROM exercises WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2)
+         ORDER BY user_id NULLS LAST LIMIT 1`,
+        [input.trim(), userId]
+      );
+      if (existing.rows.length > 0) {
+        return { id: existing.rows[0].id, name: existing.rows[0].name, isNew: false, exerciseType: existing.rows[0].exercise_type };
+      }
+    }
+    throw err;
+  }
 }
 
 async function fillMetadataIfMissing(

@@ -278,6 +278,10 @@ async function processSingleEdit(params: {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(session)) {
       return { error: "Invalid date format. Use YYYY-MM-DD" };
     }
+    const parsed = new Date(session + 'T00:00:00Z');
+    if (isNaN(parsed.getTime())) {
+      return { error: "Invalid date. Use a valid YYYY-MM-DD date" };
+    }
     queryParams.push(session);
     sessionFilter = `AND DATE(s.started_at) = $${queryParams.length}`;
   }

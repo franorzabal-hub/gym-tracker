@@ -20,11 +20,23 @@ Actions:
       session_id: z.union([z.number().int(), z.literal("last")]).optional(),
       date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session when using 'start'. Defaults to now."),
       names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of template names for delete_bulk"),
+      limit: z.number().int().optional().describe("Max templates to return. Defaults to 50"),
+      offset: z.number().int().optional().describe("Skip first N templates for pagination. Defaults to 0"),
     },
-    async ({ action, name, session_id, date, names: rawNames }) => {
+    async ({ action, name, session_id, date, names: rawNames, limit, offset }) => {
       const userId = getUserId();
 
       if (action === "list") {
+        const effectiveLimit = limit ?? 50;
+        const effectiveOffset = offset ?? 0;
+
+        // Get total count
+        const countResult = await pool.query(
+          `SELECT COUNT(*) as total FROM session_templates WHERE user_id = $1`,
+          [userId]
+        );
+        const total = Number(countResult.rows[0].total);
+
         const { rows: templates } = await pool.query(
           `SELECT st.id, st.name, st.created_at,
              COALESCE(json_agg(
@@ -43,11 +55,12 @@ Actions:
            LEFT JOIN exercises e ON e.id = ste.exercise_id
            WHERE st.user_id = $1
            GROUP BY st.id
-           ORDER BY st.name`,
-          [userId]
+           ORDER BY st.name
+           LIMIT $2 OFFSET $3`,
+          [userId, effectiveLimit, effectiveOffset]
         );
         return {
-          content: [{ type: "text" as const, text: JSON.stringify({ templates }) }],
+          content: [{ type: "text" as const, text: JSON.stringify({ templates, total }) }],
         };
       }
 
