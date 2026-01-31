@@ -62,7 +62,13 @@ CRITICAL — First message of every conversation:
 2. If is_new_user is true, start the onboarding flow: ask for their name, then guide them through profile setup and program selection step by step.
 3. If is_new_user is false, greet them by name (from profile) and help with whatever they need.
 
-Never skip step 1. Always check onboarding status first.`,
+Never skip step 1. Always check onboarding status first.
+
+TOOL TYPES — There are two kinds of tools:
+- Data tools (manage_profile, manage_exercises, etc.): read/write data. Use these for onboarding, logging, updating, and any behind-the-scenes work. They return JSON data, no visual UI.
+- Display tools (show_profile): render a visual card/widget for the user. Use these ONLY when the user wants to SEE something visually (e.g. "mostrame mi perfil", "quiero ver mis stats").
+
+When the user asks to SEE their profile, call show_profile (NOT manage_profile).`,
     }
   );
 

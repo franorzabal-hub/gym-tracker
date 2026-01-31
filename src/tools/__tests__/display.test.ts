@@ -57,7 +57,7 @@ describe("show_profile display tool", () => {
 
     const result = await toolHandler();
     expect(result.structuredContent.profile).toEqual({ name: "Franco", weight_kg: 80 });
-    expect(result.content[0].text).toContain("Franco");
+    expect(result.content[0].text).toContain("Do NOT repeat");
   });
 
   it("returns empty profile when no data", async () => {
@@ -65,6 +65,6 @@ describe("show_profile display tool", () => {
 
     const result = await toolHandler();
     expect(result.structuredContent.profile).toEqual({});
-    expect(result.content[0].text).toContain("empty");
+    expect(result.content[0].text).toContain("Do NOT repeat");
   });
 });

@@ -28,6 +28,12 @@ function ProfileWidget() {
       </div>
 
       <div className="grid grid-2" style={{ marginBottom: 8 }}>
+        {p.sex && (
+          <div className="card">
+            <div className="stat-value" style={{ textTransform: "capitalize" }}>{p.sex === "male" ? "♂ Male" : p.sex === "female" ? "♀ Female" : p.sex}</div>
+            <div className="stat-label">Sex</div>
+          </div>
+        )}
         {p.age && (
           <div className="card">
             <div className="stat-value">{p.age}</div>
@@ -53,6 +59,17 @@ function ProfileWidget() {
           </div>
         )}
       </div>
+
+      {p.available_days?.length > 0 && (
+        <div className="card">
+          <div className="subtitle" style={{ marginBottom: 4 }}>Training Days</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {p.available_days.map((d: string, i: number) => (
+              <span key={i} className="badge badge-primary" style={{ textTransform: "capitalize" }}>{d}</span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {p.experience_level && (
         <div className="card">

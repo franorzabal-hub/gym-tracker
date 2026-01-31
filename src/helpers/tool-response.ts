@@ -12,13 +12,13 @@ export function toolResponse(data: Record<string, unknown>, isError?: boolean) {
 }
 
 /**
- * Build widget tool responses: brief summary for model, full data for widget.
- * - content: short text the LLM sees (not repeated to user)
- * - structuredContent: full data the widget renders (not added to model context)
+ * Build widget tool responses: brief instruction for LLM, full data for widget.
+ * - content: short message telling the LLM what was displayed (DO NOT repeat in response)
+ * - structuredContent: full data the widget renders visually
  */
-export function widgetResponse(summary: string, data: Record<string, unknown>) {
+export function widgetResponse(llmNote: string, data: Record<string, unknown>) {
   return {
-    content: [{ type: "text" as const, text: summary }],
+    content: [{ type: "text" as const, text: llmNote }],
     structuredContent: data,
   };
 }
