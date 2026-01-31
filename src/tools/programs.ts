@@ -37,23 +37,25 @@ Actions:
 - "list": List all programs with their current version and active status
 - "get": Get the current version of a program by name, with all days and exercises
 - "create": Create a new program with days and exercises (auto-activates it)
-- "update": Modify the current version (creates a new version). Pass the full updated days array + change_description.
+- "update": Modify a program. If "days" array is provided, creates a new version with updated days + change_description. If only metadata (new_name, description) is provided without days, updates the program metadata without creating a new version.
 - "activate": Set a program as the active one (deactivates all others). Only one program can be active.
 - "delete": Deactivate a program (soft delete). Use hard_delete=true to permanently remove with all versions/days/exercises (irreversible).
 - "history": List all versions of a program with dates and change descriptions
 
-For "create" and "update", pass the "days" array with day_label, weekdays (ISO: 1=Mon..7=Sun), and exercises.
-For "update", also pass change_description explaining what changed.
+For "create" and "update" with days, pass the "days" array with day_label, weekdays (ISO: 1=Mon..7=Sun), and exercises.
+For "update" with days, also pass change_description explaining what changed.
+For "update" metadata only, pass new_name and/or description (no days needed).
 For "activate", pass the program name.`,
     {
       action: z.enum(["list", "get", "create", "update", "activate", "delete", "history"]),
       name: z.string().optional(),
+      new_name: z.string().optional().describe("New name for the program (update metadata only)"),
       description: z.string().optional(),
       days: z.array(daySchema).optional(),
       change_description: z.string().optional(),
       hard_delete: z.boolean().optional(),
     },
-    async ({ action, name, description, days, change_description, hard_delete }) => {
+    async ({ action, name, new_name, description, days, change_description, hard_delete }) => {
       const userId = getUserId();
 
       if (action === "list") {
@@ -244,18 +246,6 @@ For "activate", pass the program name.`,
       }
 
       if (action === "update") {
-        if (!days || days.length === 0) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({ error: "Days array required for update" }),
-              },
-            ],
-            isError: true,
-          };
-        }
-
         // Find program
         const program = name
           ? await pool
@@ -269,6 +259,34 @@ For "activate", pass the program name.`,
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ error: "Program not found" }) }],
             isError: true,
+          };
+        }
+
+        // Metadata-only update (no days = no new version)
+        if (!days || days.length === 0) {
+          const updates: string[] = [];
+          const params: any[] = [];
+          if (new_name) {
+            params.push(new_name);
+            updates.push(`name = $${params.length}`);
+          }
+          if (description !== undefined) {
+            params.push(description || null);
+            updates.push(`description = $${params.length}`);
+          }
+          if (updates.length === 0) {
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: "Provide days array for versioned update, or new_name/description for metadata update" }) }],
+              isError: true,
+            };
+          }
+          params.push(program.id);
+          const { rows } = await pool.query(
+            `UPDATE programs SET ${updates.join(", ")} WHERE id = $${params.length} RETURNING id, name, description`,
+            params
+          );
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ updated: rows[0] }) }],
           };
         }
 
