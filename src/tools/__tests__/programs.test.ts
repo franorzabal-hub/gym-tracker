@@ -241,6 +241,58 @@ describe("manage_program tool", () => {
     });
   });
 
+  describe("delete_bulk action", () => {
+    it("rejects without names array", async () => {
+      const result = await toolHandler({ action: "delete_bulk" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("names array required");
+    });
+
+    it("soft-deletes multiple programs", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ name: "PPL" }] })
+        .mockResolvedValueOnce({ rows: [{ name: "Upper/Lower" }] });
+
+      const result = await toolHandler({
+        action: "delete_bulk",
+        names: ["PPL", "Upper/Lower"],
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deactivated).toEqual(["PPL", "Upper/Lower"]);
+    });
+
+    it("hard-deletes multiple programs", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ name: "PPL" }] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const result = await toolHandler({
+        action: "delete_bulk",
+        names: ["PPL", "NonExistent"],
+        hard_delete: true,
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deleted).toEqual(["PPL"]);
+      expect(parsed.not_found).toEqual(["NonExistent"]);
+    });
+
+    it("handles JSON string workaround for names", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ name: "PPL" }] });
+
+      const result = await toolHandler({
+        action: "delete_bulk",
+        names: JSON.stringify(["PPL"]),
+        hard_delete: true,
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deleted).toEqual(["PPL"]);
+    });
+  });
+
   describe("history action", () => {
     it("returns version history for a program", async () => {
       mockQuery

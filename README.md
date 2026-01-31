@@ -2,6 +2,15 @@
 
 MCP Server that turns Claude into a gym training partner — log workouts, track progress, and manage programs through natural conversation.
 
+## Features
+
+- **12 MCP tools** for full workout lifecycle (exercises, programs, sessions, stats, templates)
+- **Multi-tenant** with OAuth 2.1 authentication (WorkOS)
+- **Bulk operations** on exercises, programs, templates, sessions, and stats
+- **PR tracking** with Epley 1RM estimation and full PR history timeline
+- **Session tags**, soft delete, and restore
+- **Exercise types** (strength/mobility/cardio/warmup) with configurable rep types (reps/seconds/meters/calories)
+
 ## Prerequisites
 
 - Node.js 22+
@@ -11,7 +20,7 @@ MCP Server that turns Claude into a gym training partner — log workouts, track
 
 ```bash
 cp .env.example .env
-# Edit .env with your DATABASE_URL
+# Edit .env with your DATABASE_URL (+ WORKOS_* keys for auth)
 npm install
 npm run dev
 ```

@@ -109,6 +109,36 @@ describe("edit_log tool", () => {
     });
   });
 
+  describe("delete_sessions bulk", () => {
+    it("rejects without session IDs array", async () => {
+      const result = await toolHandler({ delete_sessions: "invalid" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("array of session IDs");
+    });
+
+    it("soft-deletes multiple sessions and reports not_found", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 1 }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: 3 }] });
+
+      const result = await toolHandler({ delete_sessions: [1, 2, 3] });
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(parsed.deleted).toEqual([1, 3]);
+      expect(parsed.not_found).toEqual([2]);
+    });
+
+    it("handles JSON string workaround for delete_sessions", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 5 }] });
+
+      const result = await toolHandler({ delete_sessions: JSON.stringify([5]) });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deleted).toEqual([5]);
+    });
+  });
+
   it("returns error when exercise not found in session", async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 

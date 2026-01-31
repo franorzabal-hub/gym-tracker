@@ -121,6 +121,43 @@ describe("manage_templates tool", () => {
     });
   });
 
+  describe("delete_bulk action", () => {
+    it("rejects without names array", async () => {
+      const result = await toolHandler({ action: "delete_bulk" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("names array required");
+    });
+
+    it("deletes multiple templates and reports not_found", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ name: "Push Day" }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ name: "Leg Day" }] });
+
+      const result = await toolHandler({
+        action: "delete_bulk",
+        names: ["Push Day", "NonExistent", "Leg Day"],
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deleted).toEqual(["Push Day", "Leg Day"]);
+      expect(parsed.not_found).toEqual(["NonExistent"]);
+    });
+
+    it("handles JSON string workaround for names", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ name: "Push Day" }] });
+
+      const result = await toolHandler({
+        action: "delete_bulk",
+        names: JSON.stringify(["Push Day"]),
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deleted).toEqual(["Push Day"]);
+    });
+  });
+
   describe("delete action", () => {
     it("removes template", async () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ name: "Old Template" }] });

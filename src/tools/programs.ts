@@ -40,6 +40,7 @@ Actions:
 - "update": Modify a program. If "days" array is provided, creates a new version with updated days + change_description. If only metadata (new_name, description) is provided without days, updates the program metadata without creating a new version.
 - "activate": Set a program as the active one (deactivates all others). Only one program can be active.
 - "delete": Deactivate a program (soft delete). Use hard_delete=true to permanently remove with all versions/days/exercises (irreversible).
+- "delete_bulk": Delete multiple programs at once. Pass "names" array. Optional hard_delete=true for permanent removal. Returns { deleted, not_found }.
 - "history": List all versions of a program with dates and change descriptions
 
 For "create" and "update" with days, pass the "days" array with day_label, weekdays (ISO: 1=Mon..7=Sun), and exercises.
@@ -47,15 +48,16 @@ For "update" with days, also pass change_description explaining what changed.
 For "update" metadata only, pass new_name and/or description (no days needed).
 For "activate", pass the program name.`,
     {
-      action: z.enum(["list", "get", "create", "update", "activate", "delete", "history"]),
+      action: z.enum(["list", "get", "create", "update", "activate", "delete", "delete_bulk", "history"]),
       name: z.string().optional(),
       new_name: z.string().optional().describe("New name for the program (update metadata only)"),
       description: z.string().optional(),
       days: z.union([z.array(daySchema), z.string()]).optional(),
       change_description: z.string().optional(),
       hard_delete: z.boolean().optional(),
+      names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of program names for delete_bulk"),
     },
-    async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete }) => {
+    async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames }) => {
       const userId = getUserId();
 
       // Some MCP clients serialize nested arrays as JSON strings
@@ -471,6 +473,56 @@ For "activate", pass the program name.`,
               }),
             },
           ],
+        };
+      }
+
+      if (action === "delete_bulk") {
+        let namesList = rawNames as any;
+        if (typeof namesList === 'string') {
+          try { namesList = JSON.parse(namesList); } catch { namesList = null; }
+        }
+        if (!namesList || !Array.isArray(namesList) || namesList.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: "names array required for delete_bulk" }) }],
+            isError: true,
+          };
+        }
+
+        const deleted: string[] = [];
+        const not_found: string[] = [];
+
+        for (const n of namesList) {
+          if (hard_delete) {
+            const { rows } = await pool.query(
+              "DELETE FROM programs WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
+              [userId, n]
+            );
+            if (rows.length === 0) {
+              not_found.push(n);
+            } else {
+              deleted.push(rows[0].name);
+            }
+          } else {
+            const { rows } = await pool.query(
+              "UPDATE programs SET is_active = FALSE WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
+              [userId, n]
+            );
+            if (rows.length === 0) {
+              not_found.push(n);
+            } else {
+              deleted.push(rows[0].name);
+            }
+          }
+        }
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              [hard_delete ? "deleted" : "deactivated"]: deleted,
+              not_found: not_found.length > 0 ? not_found : undefined,
+            }),
+          }],
         };
       }
 

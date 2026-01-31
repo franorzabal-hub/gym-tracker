@@ -13,11 +13,13 @@ export function registerExercisesTool(server: McpServer) {
 - "add_bulk": Add multiple exercises at once. Pass an "exercises" array with {name, muscle_group?, equipment?, aliases?, rep_type?, exercise_type?}. Returns created/existing/failed counts.
 - "update": Update muscle_group, equipment, rep_type, and/or exercise_type of an existing exercise by name
 - "delete": Delete an exercise. Use hard_delete=true for permanent removal (cascade deletes aliases, sets NULL on personal_records). Without hard_delete, returns an error (exercises have no soft delete).
+- "delete_bulk": Delete multiple exercises at once. Pass "names" array (string[]) and hard_delete=true. Returns { deleted, not_found, failed }.
+- "update_bulk": Update multiple exercises at once. Pass "exercises" array with [{name, muscle_group?, equipment?, rep_type?, exercise_type?}]. Returns { updated, not_found, failed }.
 
 rep_type: "reps" (default), "seconds", "meters", "calories" - how the exercise is measured
 exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category of exercise (PRs only tracked for strength)`,
     {
-      action: z.enum(["list", "add", "search", "update", "delete", "add_bulk"]),
+      action: z.enum(["list", "add", "search", "update", "delete", "add_bulk", "delete_bulk", "update_bulk"]),
       name: z.string().optional(),
       muscle_group: z.string().optional(),
       equipment: z.string().optional(),
@@ -25,6 +27,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
       hard_delete: z.boolean().optional(),
       rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
       exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
+      names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of exercise names for delete_bulk"),
       exercises: z.union([
         z.array(z.object({
           name: z.string(),
@@ -37,7 +40,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
         z.string(),
       ]).optional(),
     },
-    async ({ action, name, muscle_group, equipment, aliases, hard_delete, rep_type, exercise_type, exercises }) => {
+    async ({ action, name, muscle_group, equipment, aliases, hard_delete, rep_type, exercise_type, names: rawNames, exercises }) => {
       if (action === "list" || action === "search") {
         const results = await searchExercises(
           action === "search" ? name : undefined,
@@ -137,6 +140,113 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
               warning: refCount > 0
                 ? `This exercise was referenced in ${refCount} session log(s). Aliases were cascade-deleted and personal_records set to NULL.`
                 : "Exercise and aliases permanently deleted.",
+            }),
+          }],
+        };
+      }
+
+      if (action === "delete_bulk") {
+        if (!hard_delete) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: "hard_delete=true is required for delete_bulk (exercises have no soft delete)" }) }],
+            isError: true,
+          };
+        }
+        let namesList = rawNames as any;
+        if (typeof namesList === 'string') {
+          try { namesList = JSON.parse(namesList); } catch { namesList = null; }
+        }
+        if (!namesList || !Array.isArray(namesList) || namesList.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: "names array required for delete_bulk" }) }],
+            isError: true,
+          };
+        }
+
+        const deleted: string[] = [];
+        const not_found: string[] = [];
+        const failed: Array<{ name: string; error: string }> = [];
+
+        for (const n of namesList) {
+          try {
+            const { rows } = await pool.query(
+              "DELETE FROM exercises WHERE LOWER(name) = LOWER($1) RETURNING name",
+              [n]
+            );
+            if (rows.length === 0) {
+              not_found.push(n);
+            } else {
+              deleted.push(rows[0].name);
+            }
+          } catch (err: any) {
+            failed.push({ name: n, error: err.message || "Unknown error" });
+          }
+        }
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              deleted,
+              not_found: not_found.length > 0 ? not_found : undefined,
+              failed: failed.length > 0 ? failed : undefined,
+            }),
+          }],
+        };
+      }
+
+      if (action === "update_bulk") {
+        let exercisesList = exercises as any;
+        if (typeof exercisesList === 'string') {
+          try { exercisesList = JSON.parse(exercisesList); } catch { exercisesList = null; }
+        }
+        if (!exercisesList || !Array.isArray(exercisesList) || exercisesList.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: "exercises array required for update_bulk" }) }],
+            isError: true,
+          };
+        }
+
+        const updated: string[] = [];
+        const not_found: string[] = [];
+        const failed: Array<{ name: string; error: string }> = [];
+
+        for (const ex of exercisesList) {
+          try {
+            const updates: string[] = [];
+            const params: any[] = [];
+            if (ex.muscle_group) { params.push(ex.muscle_group); updates.push(`muscle_group = $${params.length}`); }
+            if (ex.equipment) { params.push(ex.equipment); updates.push(`equipment = $${params.length}`); }
+            if (ex.rep_type) { params.push(ex.rep_type); updates.push(`rep_type = $${params.length}`); }
+            if (ex.exercise_type) { params.push(ex.exercise_type); updates.push(`exercise_type = $${params.length}`); }
+
+            if (updates.length === 0) {
+              failed.push({ name: ex.name, error: "No fields to update" });
+              continue;
+            }
+
+            params.push(ex.name);
+            const { rows } = await pool.query(
+              `UPDATE exercises SET ${updates.join(", ")} WHERE LOWER(name) = LOWER($${params.length}) RETURNING name`,
+              params
+            );
+            if (rows.length === 0) {
+              not_found.push(ex.name);
+            } else {
+              updated.push(rows[0].name);
+            }
+          } catch (err: any) {
+            failed.push({ name: ex.name, error: err.message || "Unknown error" });
+          }
+        }
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              updated,
+              not_found: not_found.length > 0 ? not_found : undefined,
+              failed: failed.length > 0 ? failed : undefined,
             }),
           }],
         };

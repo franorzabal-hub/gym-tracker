@@ -119,6 +119,101 @@ describe("manage_exercises tool", () => {
     });
   });
 
+  describe("delete_bulk action", () => {
+    it("rejects without hard_delete", async () => {
+      const result = await toolHandler({ action: "delete_bulk", names: ["Bench Press"] });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("hard_delete=true");
+    });
+
+    it("rejects without names array", async () => {
+      const result = await toolHandler({ action: "delete_bulk", hard_delete: true });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("names array required");
+    });
+
+    it("deletes multiple exercises and reports not_found", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ name: "Bench Press" }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ name: "Squat" }] });
+
+      const result = await toolHandler({
+        action: "delete_bulk",
+        hard_delete: true,
+        names: ["Bench Press", "NonExistent", "Squat"],
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deleted).toEqual(["Bench Press", "Squat"]);
+      expect(parsed.not_found).toEqual(["NonExistent"]);
+    });
+
+    it("handles JSON string workaround for names", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ name: "Bench Press" }] });
+
+      const result = await toolHandler({
+        action: "delete_bulk",
+        hard_delete: true,
+        names: JSON.stringify(["Bench Press"]),
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deleted).toEqual(["Bench Press"]);
+    });
+  });
+
+  describe("update_bulk action", () => {
+    it("rejects without exercises array", async () => {
+      const result = await toolHandler({ action: "update_bulk" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("exercises array required");
+    });
+
+    it("updates multiple exercises and reports not_found", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ name: "Bench Press" }] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const result = await toolHandler({
+        action: "update_bulk",
+        exercises: [
+          { name: "Bench Press", muscle_group: "chest" },
+          { name: "NonExistent", equipment: "barbell" },
+        ],
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.updated).toEqual(["Bench Press"]);
+      expect(parsed.not_found).toEqual(["NonExistent"]);
+    });
+
+    it("reports failed when no fields to update", async () => {
+      const result = await toolHandler({
+        action: "update_bulk",
+        exercises: [{ name: "Bench Press" }],
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.failed).toEqual([{ name: "Bench Press", error: "No fields to update" }]);
+    });
+
+    it("handles JSON string workaround for exercises", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ name: "Bench Press" }] });
+
+      const result = await toolHandler({
+        action: "update_bulk",
+        exercises: JSON.stringify([{ name: "Bench Press", muscle_group: "chest" }]),
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.updated).toEqual(["Bench Press"]);
+    });
+  });
+
   describe("add action", () => {
     it("rejects when name missing", async () => {
       const result = await toolHandler({ action: "add" });

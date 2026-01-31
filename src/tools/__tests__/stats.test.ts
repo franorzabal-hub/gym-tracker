@@ -25,12 +25,17 @@ vi.mock("../../context/user-context.js", () => ({
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerStatsTool } from "../stats.js";
+import { findExercise } from "../../helpers/exercise-resolver.js";
+
+const mockFindExercise = findExercise as ReturnType<typeof vi.fn>;
 
 let toolHandler: Function;
 
 describe("get_stats tool", () => {
   beforeEach(() => {
     mockQuery.mockReset();
+    mockFindExercise.mockReset();
+    mockFindExercise.mockResolvedValue({ id: 1, name: "Bench Press", isNew: false });
 
     const server = {
       tool: vi.fn((_name: string, _desc: string, _schema: any, handler: Function) => {
@@ -132,5 +137,99 @@ describe("get_stats tool", () => {
     const result = await toolHandler({ exercise: "Bench Press", period: "3months" });
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.progression[0].estimated_1rm).toBe(116.7);
+  });
+
+  it("returns error when no exercise or exercises provided", async () => {
+    const result = await toolHandler({ period: "3months" });
+    expect(result.isError).toBe(true);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.error).toContain("Provide");
+  });
+
+  describe("multi-exercise mode", () => {
+    it("returns stats for multiple exercises", async () => {
+      mockFindExercise
+        .mockResolvedValueOnce({ id: 1, name: "Bench Press" })
+        .mockResolvedValueOnce({ id: 2, name: "Squat" });
+
+      // Stats queries for Bench Press (5 queries)
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ total_sessions: "3", span_days: 21 }] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      // Stats queries for Squat (5 queries)
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ total_sessions: "2", span_days: 14 }] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const result = await toolHandler({
+        exercises: ["Bench Press", "Squat"],
+        period: "3months",
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.stats).toHaveLength(2);
+      expect(parsed.stats[0].exercise).toBe("Bench Press");
+      expect(parsed.stats[1].exercise).toBe("Squat");
+    });
+
+    it("handles not-found exercises in multi mode", async () => {
+      mockFindExercise
+        .mockResolvedValueOnce({ id: 1, name: "Bench Press" })
+        .mockResolvedValueOnce(null);
+
+      // Stats queries for Bench Press
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ total_sessions: "0", span_days: null }] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const result = await toolHandler({
+        exercises: ["Bench Press", "NonExistent"],
+        period: "3months",
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.stats).toHaveLength(2);
+      expect(parsed.stats[0].exercise).toBe("Bench Press");
+      expect(parsed.stats[1].error).toContain("not found");
+    });
+
+    it("handles JSON string workaround for exercises", async () => {
+      mockFindExercise
+        .mockResolvedValueOnce({ id: 1, name: "Bench Press" })
+        .mockResolvedValueOnce({ id: 2, name: "Squat" });
+
+      // Stats queries for Bench Press
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ total_sessions: "0", span_days: null }] })
+        .mockResolvedValueOnce({ rows: [] });
+      // Stats queries for Squat
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ total_sessions: "0", span_days: null }] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const result = await toolHandler({
+        exercises: JSON.stringify(["Bench Press", "Squat"]),
+        period: "3months",
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.stats).toHaveLength(2);
+    });
   });
 });

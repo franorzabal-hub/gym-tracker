@@ -28,7 +28,8 @@ Parameters:
 - set_type_filter: filter sets by type ("warmup", "working", "drop", "failure")
 - bulk: array of { exercise, action?, set_numbers?, set_ids?, set_type_filter?, updates? } for multi-exercise edits
 - delete_session: session ID to soft-delete (sets deleted_at timestamp, can be restored)
-- restore_session: session ID to restore (clears deleted_at timestamp)`,
+- restore_session: session ID to restore (clears deleted_at timestamp)
+- delete_sessions: array of session IDs for bulk soft-delete. Returns { deleted, not_found }.`,
     {
       exercise: z.string().optional(),
       session: z
@@ -64,8 +65,9 @@ Parameters:
       })).optional(),
       delete_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to soft-delete. Sets deleted_at timestamp; can be restored later."),
       restore_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to restore from soft-delete. Clears the deleted_at timestamp."),
+      delete_sessions: z.union([z.array(z.number().int()), z.string()]).optional().describe("Array of session IDs for bulk soft-delete."),
     },
-    async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session, restore_session }) => {
+    async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session, restore_session, delete_sessions: rawDeleteSessions }) => {
       const userId = getUserId();
 
       // --- Restore session mode ---
@@ -95,6 +97,46 @@ Parameters:
               restored_session: sessionId,
               started_at: sessionRows[0].started_at,
               message: "Session restored successfully.",
+            }),
+          }],
+        };
+      }
+
+      // --- Bulk delete sessions mode ---
+      if (rawDeleteSessions !== undefined && rawDeleteSessions !== null) {
+        let sessionIds = rawDeleteSessions as any;
+        if (typeof sessionIds === 'string') {
+          try { sessionIds = JSON.parse(sessionIds); } catch { sessionIds = null; }
+        }
+        if (!sessionIds || !Array.isArray(sessionIds) || sessionIds.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: "delete_sessions requires an array of session IDs" }) }],
+            isError: true,
+          };
+        }
+
+        const deleted: number[] = [];
+        const not_found: number[] = [];
+
+        for (const sid of sessionIds) {
+          const id = Number(sid);
+          const { rows } = await pool.query(
+            "UPDATE sessions SET deleted_at = NOW() WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL RETURNING id",
+            [id, userId]
+          );
+          if (rows.length === 0) {
+            not_found.push(id);
+          } else {
+            deleted.push(id);
+          }
+        }
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              deleted,
+              not_found: not_found.length > 0 ? not_found : undefined,
             }),
           }],
         };

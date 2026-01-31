@@ -12,14 +12,16 @@ Actions:
 - "save": Save a completed session as a template. Pass session_id (or "last" for the most recent ended session) and a name.
 - "list": List all saved templates with their exercises.
 - "start": Start a new session pre-populated from a template. Pass template name. Exercises are logged as session_exercises (no sets yet — use log_exercise to fill them in).
-- "delete": Delete a template by name.`,
+- "delete": Delete a template by name.
+- "delete_bulk": Delete multiple templates at once. Pass "names" array. Returns { deleted, not_found }.`,
     {
-      action: z.enum(["save", "list", "start", "delete"]),
+      action: z.enum(["save", "list", "start", "delete", "delete_bulk"]),
       name: z.string().optional(),
       session_id: z.union([z.number().int(), z.literal("last")]).optional(),
       date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session when using 'start'. Defaults to now."),
+      names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of template names for delete_bulk"),
     },
-    async ({ action, name, session_id, date }) => {
+    async ({ action, name, session_id, date, names: rawNames }) => {
       const userId = getUserId();
 
       if (action === "list") {
@@ -253,6 +255,44 @@ Actions:
         }
         return {
           content: [{ type: "text" as const, text: JSON.stringify({ deleted: rows[0].name }) }],
+        };
+      }
+
+      if (action === "delete_bulk") {
+        let namesList = rawNames as any;
+        if (typeof namesList === 'string') {
+          try { namesList = JSON.parse(namesList); } catch { namesList = null; }
+        }
+        if (!namesList || !Array.isArray(namesList) || namesList.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: "names array required for delete_bulk" }) }],
+            isError: true,
+          };
+        }
+
+        const deleted: string[] = [];
+        const not_found: string[] = [];
+
+        for (const n of namesList) {
+          const { rows } = await pool.query(
+            "DELETE FROM session_templates WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
+            [userId, n]
+          );
+          if (rows.length === 0) {
+            not_found.push(n);
+          } else {
+            deleted.push(rows[0].name);
+          }
+        }
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              deleted,
+              not_found: not_found.length > 0 ? not_found : undefined,
+            }),
+          }],
         };
       }
 
