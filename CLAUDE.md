@@ -19,6 +19,20 @@ Always run `npm test` before committing. TypeScript must compile cleanly (`tsc -
 | Neon Postgres | `autumn-rice-23097289` (aws-us-east-2) |
 | GCP Project | `kairos-loyalty-api` |
 
+### Cloud Run Environment Variables
+
+| Variable | Purpose | Required |
+|---|---|---|
+| `DATABASE_URL` | Neon Postgres connection string | Yes |
+| `WORKOS_API_KEY` | WorkOS AuthKit API key | Yes |
+| `WORKOS_CLIENT_ID` | WorkOS client ID | Yes |
+| `BASE_URL` | Public URL of the service (used for OAuth redirects) | Yes |
+| `STATE_SECRET` | HMAC key for signing OAuth state (hex string). If unset, uses ephemeral random (resets on deploy). | Recommended |
+| `REGISTRATION_SECRET` | Bearer token required for `POST /auth/register`. If unset, endpoint is open (dev mode). | Recommended |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins. Defaults to localhost in dev. | No |
+
+Manage via: `gcloud run services update gym-tracker --region us-central1 --project kairos-loyalty-api --update-env-vars "KEY=value"`
+
 ## Stack
 
 Node.js + TypeScript, Express, CORS, `@modelcontextprotocol/sdk` (StreamableHTTP), PostgreSQL via `pg`, Zod, Vitest, WorkOS OAuth 2.1, JOSE, AsyncLocalStorage.
