@@ -17,8 +17,9 @@ Actions:
       action: z.enum(["save", "list", "start", "delete"]),
       name: z.string().optional(),
       session_id: z.union([z.number().int(), z.literal("last")]).optional(),
+      date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session when using 'start'. Defaults to now."),
     },
-    async ({ action, name, session_id }) => {
+    async ({ action, name, session_id, date }) => {
       const userId = getUserId();
 
       if (action === "list") {
@@ -197,9 +198,10 @@ Actions:
         );
 
         // Create session
+        const startedAt = date ? new Date(date) : new Date();
         const { rows: [session] } = await pool.query(
-          "INSERT INTO sessions (user_id) VALUES ($1) RETURNING id, started_at",
-          [userId]
+          "INSERT INTO sessions (user_id, started_at) VALUES ($1, $2) RETURNING id, started_at",
+          [userId, startedAt]
         );
 
         // Pre-populate session_exercises

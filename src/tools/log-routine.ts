@@ -38,8 +38,9 @@ Parameters:
         .optional(),
       skip: z.array(z.string()).optional(),
       auto_end: z.boolean().optional().describe("Whether to auto-close the session after logging. Default true. Set false to keep session open for additional exercises."),
+      date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session. Defaults to now."),
     },
-    async ({ program_day, overrides, skip, auto_end }) => {
+    async ({ program_day, overrides, skip, auto_end, date }) => {
       const userId = getUserId();
       const activeProgram = await getActiveProgram();
       if (!activeProgram) {
@@ -109,10 +110,11 @@ Parameters:
       }
 
       // Create session
+      const startedAt = date ? new Date(date) : new Date();
       const { rows: [session] } = await pool.query(
-        `INSERT INTO sessions (user_id, program_version_id, program_day_id)
-         VALUES ($1, $2, $3) RETURNING id, started_at`,
-        [userId, activeProgram.version_id, dayRow.id]
+        `INSERT INTO sessions (user_id, program_version_id, program_day_id, started_at)
+         VALUES ($1, $2, $3, $4) RETURNING id, started_at`,
+        [userId, activeProgram.version_id, dayRow.id, startedAt]
       );
 
       const exercisesLogged: any[] = [];
@@ -180,9 +182,10 @@ Parameters:
       // End session unless auto_end is explicitly false
       const shouldEnd = auto_end !== false;
       if (shouldEnd) {
+        const endedAt = date ? new Date(new Date(date).getTime() + 60 * 60 * 1000) : new Date();
         await pool.query(
-          "UPDATE sessions SET ended_at = NOW() WHERE id = $1",
-          [session.id]
+          "UPDATE sessions SET ended_at = $2 WHERE id = $1",
+          [session.id, endedAt]
         );
       }
 

@@ -13,12 +13,15 @@ export function registerSessionTools(server: McpServer) {
     "start_session",
     `Start a new workout session. Optionally specify a program_day label (e.g. "Push", "Pull", "Legs").
 If not specified, it will infer from the active program + today's weekday.
-Returns the session info and the exercises planned for that day (if any).`,
+Returns the session info and the exercises planned for that day (if any).
+
+- date: optional ISO date string (e.g. "2025-01-28") to backdate the session. Useful for logging past workouts.`,
     {
       program_day: z.string().optional(),
       notes: z.string().optional(),
+      date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session start time. Defaults to now."),
     },
-    async ({ program_day, notes }) => {
+    async ({ program_day, notes, date }) => {
       const userId = getUserId();
 
       // Check for already active session
@@ -77,10 +80,11 @@ Returns the session info and the exercises planned for that day (if any).`,
         }
       }
 
+      const startedAt = date ? new Date(date) : new Date();
       const { rows } = await pool.query(
-        `INSERT INTO sessions (user_id, program_version_id, program_day_id, notes)
-         VALUES ($1, $2, $3, $4) RETURNING id, started_at`,
-        [userId, programVersionId, programDayId, notes || null]
+        `INSERT INTO sessions (user_id, program_version_id, program_day_id, notes, started_at)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id, started_at`,
+        [userId, programVersionId, programDayId, notes || null, startedAt]
       );
 
       const result: any = {
