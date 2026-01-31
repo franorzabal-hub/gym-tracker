@@ -44,4 +44,12 @@ The server starts on `http://localhost:3001`. Migrations run automatically on st
 2. URL: `http://localhost:3001/mcp` (or your deployed URL)
 3. Start chatting: "Hice peso muerto 100kg 5x5"
 
-See [SCOPE.md](./SCOPE.md) for architecture details, schema, and tool documentation.
+## Architecture
+
+```
+Claude → HTTPS → Cloud Run (Express + MCP SDK) → Neon Postgres
+```
+
+Auth: WorkOS OAuth 2.1 → Bearer token → AsyncLocalStorage per-request user isolation.
+
+See [CLAUDE.md](./CLAUDE.md) for detailed architecture, schema, tools reference, and code patterns.
