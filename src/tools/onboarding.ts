@@ -2,7 +2,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
-import { getRecommendedTemplate } from "../helpers/program-templates.js";
 
 export function registerOnboardingTool(server: McpServer) {
   server.tool(
@@ -12,7 +11,8 @@ export function registerOnboardingTool(server: McpServer) {
 Returns the user's setup state: profile, active program, training history, and onboarding status. Without calling this first, other tools may behave incorrectly because you won't know the user's context.
 
 CRITICAL ROUTING — you MUST follow the "required_next_tool" field in the response:
-- If required_next_tool is set: call that tool IMMEDIATELY as your next action. Do NOT greet the user, do NOT explain anything, do NOT ask questions. Just call the tool.
+- If required_next_tool is "show_profile": new user — call show_profile IMMEDIATELY to let them set up their profile. After profile setup, call show_programs to help them pick a program.
+- If required_next_tool is "show_programs": profile complete but no program — call show_programs IMMEDIATELY to let them pick or create a program.
 - If required_next_tool is null: respond normally using the suggestion field.`,
     {},
     async () => {
@@ -25,7 +25,6 @@ CRITICAL ROUTING — you MUST follow the "required_next_tool" field in the respo
       );
       const profile = profileRows[0]?.data || null;
       const profileComplete = !!(profile && profile.name);
-      const onboarding = profile?.onboarding || null;
 
       // Check active program
       const { rows: programRows } = await pool.query(
@@ -43,17 +42,16 @@ CRITICAL ROUTING — you MUST follow the "required_next_tool" field in the respo
 
       const isNewUser = !profileComplete && !hasProgram && !hasHistory;
 
-      // Build suggestion
+      // Determine required next tool and suggestion
+      let required_next_tool: string | null = null;
       let suggestion: string | null = null;
-      if (!profileComplete && !isNewUser) {
+
+      if (isNewUser) {
+        required_next_tool = "show_profile";
+      } else if (!profileComplete) {
         suggestion = "Profile incomplete. Ask the user if they want to update their profile.";
-      } else if (profileComplete && !hasProgram) {
-        const available = profile?.available_days ?? 4;
-        const experience = profile?.experience ?? "intermediate";
-        const recommended = getRecommendedTemplate(available, experience);
-        suggestion = `Profile complete but no program. Recommend template "${recommended}" based on ${available} available days and ${experience} experience. Use manage_program list_templates to show options.`;
-      } else if (onboarding && !onboarding.completed) {
-        suggestion = "Almost done! Mark onboarding complete by updating profile with onboarding.completed = true.";
+      } else if (!hasProgram) {
+        required_next_tool = "show_programs";
       }
 
       return toolResponse({
@@ -61,9 +59,8 @@ CRITICAL ROUTING — you MUST follow the "required_next_tool" field in the respo
         profile_complete: profileComplete,
         has_program: hasProgram,
         has_history: hasHistory,
-        onboarding,
         suggestion,
-        required_next_tool: isNewUser ? "show_onboarding" : null,
+        required_next_tool,
       });
     }
   );

@@ -168,14 +168,14 @@ describe("show_program display tool", () => {
       "show_program",
       expect.objectContaining({
         title: "Show Program",
-        annotations: { readOnlyHint: true },
+        annotations: {},
         _meta: { ui: { resourceUri: "ui://gym-tracker/programs.html" } },
       }),
       expect.any(Function)
     );
   });
 
-  it("returns active program with days and exercises", async () => {
+  it("returns active program with id, days, exercises, initialDayIdx, and exerciseCatalog", async () => {
     mockGetActiveProgram.mockResolvedValueOnce({
       id: 1, name: "PPL", description: "Push Pull Legs",
       version_id: 10, version_number: 2,
@@ -184,13 +184,19 @@ describe("show_program display tool", () => {
       { day_label: "Push", exercises: [{ exercise_name: "Bench Press", target_sets: 4, target_reps: 8 }] },
       { day_label: "Pull", exercises: [{ exercise_name: "Barbell Row", target_sets: 4, target_reps: 8 }] },
     ]);
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ name: "Bench Press", muscle_group: "chest" }, { name: "Squat", muscle_group: "legs" }],
+    });
 
     const result = await toolHandlers["show_program"]({});
 
+    expect(result.structuredContent.program.id).toBe(1);
     expect(result.structuredContent.program.name).toBe("PPL");
     expect(result.structuredContent.program.version).toBe(2);
     expect(result.structuredContent.program.days).toHaveLength(2);
-    expect(result.content[0].text).toContain("Do NOT repeat");
+    expect(result.structuredContent.initialDayIdx).toBe(0);
+    expect(result.structuredContent.exerciseCatalog).toHaveLength(2);
+    expect(result.content[0].text).toContain("inline editing");
   });
 
   it("returns null program when none found", async () => {
@@ -203,16 +209,22 @@ describe("show_program display tool", () => {
   });
 
   it("looks up program by name when provided", async () => {
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ id: 2, name: "Full Body", description: null, version_id: 5, version_number: 1 }],
-    });
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [{ id: 2, name: "Full Body", description: null, version_id: 5, version_number: 1 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ name: "Squat", muscle_group: "legs" }],
+      });
     mockGetProgramDaysWithExercises.mockResolvedValueOnce([
       { day_label: "Day A", exercises: [{ exercise_name: "Squat", target_sets: 3, target_reps: 8 }] },
     ]);
 
     const result = await toolHandlers["show_program"]({ name: "Full Body" });
 
+    expect(result.structuredContent.program.id).toBe(2);
     expect(result.structuredContent.program.name).toBe("Full Body");
     expect(result.structuredContent.program.days).toHaveLength(1);
+    expect(result.structuredContent.exerciseCatalog).toHaveLength(1);
   });
 });

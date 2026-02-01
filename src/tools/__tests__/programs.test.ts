@@ -404,6 +404,99 @@ describe("manage_program tool", () => {
     });
   });
 
+  describe("patch action", () => {
+    it("patches metadata only (no days)", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] }); // find by program_id
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // UPDATE name
+        .mockResolvedValueOnce({}) // UPDATE description
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", program_id: 1,
+        new_name: "New PPL", description: "Updated desc",
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.program.id).toBe(1);
+      expect(parsed.program.name).toBe("New PPL");
+      expect(parsed.program.version).toBe(2);
+    });
+
+    it("patches days (deletes and re-inserts)", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] }); // find by program_id
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", program_id: 1,
+        days: [{ day_label: "Push", weekdays: [1], exercises: [{ exercise: "Bench Press", sets: 4, reps: 8 }] }],
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.program.id).toBe(1);
+      expect(parsed.days_count).toBe(1);
+      expect(parsed.exercises_count).toBe(1);
+    });
+
+    it("finds program by name when program_id not provided", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 2, name: "Upper/Lower" }] }); // find by name
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 8, version_number: 1 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // UPDATE name
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", name: "Upper/Lower", new_name: "UL Split",
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.program.name).toBe("UL Split");
+    });
+
+    it("falls back to active program", async () => {
+      mockGetActiveProgram.mockResolvedValueOnce({ id: 3, name: "Active Prog" });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 10, version_number: 1 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // UPDATE description
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", description: "New desc",
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.program.id).toBe(3);
+    });
+
+    it("returns error when program not found", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] }); // not found
+
+      const result = await toolHandler({ action: "patch", program_id: 999 });
+      expect(result.isError).toBe(true);
+    });
+
+    it("rolls back on error", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockRejectedValueOnce(new Error("DB error")); // DELETE fails
+
+      await expect(toolHandler({
+        action: "patch", program_id: 1,
+        days: [{ day_label: "Push", exercises: [{ exercise: "Bench", sets: 3, reps: 10 }] }],
+      })).rejects.toThrow("DB error");
+
+      expect(mockClientQuery).toHaveBeenCalledWith("ROLLBACK");
+    });
+  });
+
   it("returns error for unknown action", async () => {
     const result = await toolHandler({ action: "unknown" });
     expect(result.isError).toBe(true);

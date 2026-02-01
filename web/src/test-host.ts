@@ -84,8 +84,27 @@ const sampleData: Record<string, { content: Array<{ type: string; text: string }
   },
   programs: {
     content: [{ type: "text", text: JSON.stringify({
+      initialDayIdx: 0,
+      exerciseCatalog: [
+        { name: "Bench Press", muscle_group: "chest" },
+        { name: "Incline Bench Press", muscle_group: "chest" },
+        { name: "Overhead Press", muscle_group: "shoulders" },
+        { name: "Cable Fly", muscle_group: "chest" },
+        { name: "Lateral Raise", muscle_group: "shoulders" },
+        { name: "Tricep Pushdown", muscle_group: "triceps" },
+        { name: "Squat", muscle_group: "legs" },
+        { name: "Romanian Deadlift", muscle_group: "legs" },
+        { name: "Deadlift", muscle_group: "back" },
+        { name: "Barbell Row", muscle_group: "back" },
+        { name: "Pull-Up", muscle_group: "back" },
+        { name: "Bicep Curl", muscle_group: "arms" },
+        { name: "Face Pull", muscle_group: "shoulders" },
+        { name: "Leg Press", muscle_group: "legs" },
+        { name: "Leg Curl", muscle_group: "legs" },
+        { name: "Calf Raise", muscle_group: "legs" },
+      ],
       program: {
-        name: "Push Pull Legs", description: "6-day PPL split for hypertrophy", version: 2,
+        id: 1, name: "Push Pull Legs", description: "6-day PPL split for hypertrophy", version: 2,
         days: [
           { day_label: "Push A", weekdays: [1, 4], exercises: [
             { exercise_name: "Bench Press", target_sets: 4, target_reps: 6, target_weight: 85, target_rpe: 8, superset_group: null, group_type: null, rest_seconds: 120, notes: null, muscle_group: "chest" },

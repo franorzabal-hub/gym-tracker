@@ -42,6 +42,7 @@ Actions:
 - "create": Create a new program with days and exercises (auto-activates it)
 - "clone": Clone an existing program (global template or another user's program) as a new user-owned program. Pass source_id (program id). Optionally pass name to override the program name. The cloned program is auto-activated. Global programs (templates) are shown by show_programs.
 - "update": Modify a program. If "days" array is provided, creates a new version with updated days + change_description. If only metadata (new_name, description) is provided without days, updates the program metadata without creating a new version.
+- "patch": Update a program's current version in-place (no new version created). Used by the widget for inline editing. Pass program_id (or name/active fallback). Optionally pass new_name, description for metadata. Pass days array to replace all days+exercises in the current version.
 - "activate": Set a program as the active one (deactivates all others). Only one program can be active.
 - "delete": Deactivate a program (soft delete). Use hard_delete=true to permanently remove with all versions/days/exercises (irreversible).
 - "delete_bulk": Delete multiple programs at once. Pass "names" array. Optional hard_delete=true for permanent removal. Returns { deleted, not_found }.
@@ -62,8 +63,9 @@ For "update" with days, also pass change_description explaining what changed.
 For "update" metadata only, pass new_name and/or description (no days needed).
 For "activate", pass the program name.`,
     {
-      action: z.enum(["list", "get", "create", "clone", "update", "activate", "delete", "delete_bulk", "history"]),
+      action: z.enum(["list", "get", "create", "clone", "update", "patch", "activate", "delete", "delete_bulk", "history"]),
       name: z.string().optional(),
+      program_id: z.number().int().optional().describe("Program ID (for patch action). Identifies which program to patch."),
       source_id: z.number().int().optional().describe("Program ID to clone (for clone action). Typically a global template program ID from show_programs."),
       new_name: z.string().optional().describe("New name for the program (update metadata only)"),
       description: z.string().optional(),
@@ -73,7 +75,7 @@ For "activate", pass the program name.`,
       names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of program names for delete_bulk"),
       include_exercises: z.boolean().optional().describe("If true, include exercise details for each day. Defaults to true"),
     },
-    async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames, include_exercises, source_id }) => {
+    async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames, include_exercises, source_id, program_id }) => {
       const userId = getUserId();
 
       // Some MCP clients serialize nested arrays as JSON strings
@@ -455,6 +457,115 @@ For "activate", pass the program name.`,
                 total: createdExercises.size + existingExercises.size,
               },
             });
+        } catch (err) {
+          await client.query("ROLLBACK");
+          throw err;
+        } finally {
+          client.release();
+        }
+      }
+
+      if (action === "patch") {
+        // Find program by program_id, name, or active
+        let program: any;
+        if (program_id) {
+          program = await pool
+            .query("SELECT id, name FROM programs WHERE id = $1 AND user_id = $2", [program_id, userId])
+            .then(r => r.rows[0]);
+        } else if (name) {
+          program = await pool
+            .query("SELECT id, name FROM programs WHERE user_id = $1 AND LOWER(name) = LOWER($2)", [userId, name])
+            .then(r => r.rows[0]);
+        } else {
+          program = await getActiveProgram();
+        }
+
+        if (!program) {
+          return toolResponse({ error: "Program not found" }, true);
+        }
+
+        const latestVersion = await getLatestVersion(program.id);
+        if (!latestVersion) {
+          return toolResponse({ error: "No version found" }, true);
+        }
+
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+
+          // Update metadata if provided
+          if (new_name) {
+            await client.query(
+              "UPDATE programs SET name = $1 WHERE id = $2 AND user_id = $3",
+              [new_name, program.id, userId]
+            );
+          }
+          if (description !== undefined && description !== null) {
+            await client.query(
+              "UPDATE programs SET description = $1 WHERE id = $2 AND user_id = $3",
+              [description || null, program.id, userId]
+            );
+          }
+
+          let daysCount = 0;
+          let exercisesCount = 0;
+
+          // Replace days if provided
+          if (days && days.length > 0) {
+            // Delete existing days (CASCADE deletes exercises)
+            await client.query(
+              "DELETE FROM program_days WHERE version_id = $1",
+              [latestVersion.id]
+            );
+
+            for (let i = 0; i < days.length; i++) {
+              const day = days[i];
+              const { rows: [newDay] } = await client.query(
+                `INSERT INTO program_days (version_id, day_label, weekdays, sort_order)
+                 VALUES ($1, $2, $3, $4) RETURNING id`,
+                [latestVersion.id, day.day_label, day.weekdays || null, i]
+              );
+              daysCount++;
+
+              for (let j = 0; j < day.exercises.length; j++) {
+                const ex = day.exercises[j];
+                const resolved = await resolveExercise(ex.exercise, undefined, undefined, undefined, undefined, client);
+
+                await client.query(
+                  `INSERT INTO program_day_exercises
+                     (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, group_type, rest_seconds, notes)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                  [
+                    newDay.id,
+                    resolved.id,
+                    ex.sets,
+                    ex.reps,
+                    ex.weight || null,
+                    ex.rpe || null,
+                    j,
+                    ex.superset_group || null,
+                    ex.superset_group ? (ex.group_type || "superset") : null,
+                    ex.rest_seconds || null,
+                    ex.notes || null,
+                  ]
+                );
+                exercisesCount++;
+              }
+            }
+          }
+
+          await client.query("COMMIT");
+
+          return toolResponse({
+            program: {
+              id: program.id,
+              name: new_name || program.name,
+              description: description !== undefined ? (description || null) : undefined,
+              version: latestVersion.version_number,
+            },
+            days_count: daysCount || undefined,
+            exercises_count: exercisesCount || undefined,
+          });
         } catch (err) {
           await client.query("ROLLBACK");
           throw err;

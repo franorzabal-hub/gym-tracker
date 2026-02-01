@@ -114,15 +114,15 @@ If the user chooses "Custom program", help them build one via manage_program cre
 
   registerAppToolWithMeta(server, "show_program", {
     title: "Show Program",
-    description: `${APP_CONTEXT}Display a workout program as a visual widget with all days and exercises. The widget shows the full program structure — do NOT repeat exercises or program details in your response. Just confirm it's displayed or offer next steps.
-Use this whenever the user asks to see/show their program, routine, or plan.
+    description: `${APP_CONTEXT}Display a workout program as a visual widget with inline editing. All fields (name, description, days, exercises, sets, reps, weight, RPE, rest) are editable in-place with auto-save. The widget shows the full program structure — do NOT repeat exercises or program details in your response. Just confirm it's displayed or offer next steps.
+Use this whenever the user asks to see/show/edit their program, routine, or plan.
 Defaults to the active program. Pass a name to show a specific program.
-Pass "day" to show only a specific day (e.g. "lunes", "Dia 2", "monday"). Useful when user asks "show me Monday's routine".`,
+Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday"). The widget always receives all days for editing.`,
     inputSchema: {
       name: z.string().optional().describe("Program name. Omit for active program."),
-      day: z.string().optional().describe("Filter to a specific day. Accepts day label (e.g. 'Dia 1'), weekday name (e.g. 'lunes', 'monday'), or weekday number (1=Mon..7=Sun)."),
+      day: z.string().optional().describe("Scroll to a specific day. Accepts day label (e.g. 'Dia 1'), weekday name (e.g. 'lunes', 'monday'), or weekday number (1=Mon..7=Sun)."),
     },
-    annotations: { readOnlyHint: true },
+    annotations: {},
     _meta: { ui: { resourceUri: "ui://gym-tracker/programs.html" } },
   }, async ({ name, day }: { name?: string; day?: string }) => {
     const userId = getUserId();
@@ -146,36 +146,45 @@ Pass "day" to show only a specific day (e.g. "lunes", "Dia 2", "monday"). Useful
       );
     }
 
-    let days = await getProgramDaysWithExercises(program.version_id);
+    const days = await getProgramDaysWithExercises(program.version_id);
 
-    // Filter to a specific day if requested
+    // Find initial day index if day filter is provided (widget scrolls to it)
+    let initialDayIdx = 0;
     if (day) {
       const dayLower = day.trim().toLowerCase();
-      const filtered = days.filter((d: any) => {
-        // Match by day_label (e.g. "Dia 1", "Push A")
+      const matchIdx = days.findIndex((d: any) => {
         if (d.day_label.toLowerCase().includes(dayLower)) return true;
-        // Match by weekday name (e.g. "lunes", "monday")
         const weekdayNum = WEEKDAY_NAMES[dayLower];
         if (weekdayNum && d.weekdays?.includes(weekdayNum)) return true;
-        // Match by weekday number
         const num = parseInt(dayLower, 10);
         if (!isNaN(num) && d.weekdays?.includes(num)) return true;
         return false;
       });
-      if (filtered.length > 0) days = filtered;
+      if (matchIdx >= 0) initialDayIdx = matchIdx;
     }
 
     const totalExercises = days.reduce((sum: number, d: any) => sum + d.exercises.length, 0);
 
+    // Fetch exercise catalog for autocomplete in the widget
+    const { rows: exerciseRows } = await pool.query(
+      `SELECT name, muscle_group FROM exercises
+       WHERE user_id IS NULL OR user_id = $1
+       ORDER BY user_id NULLS LAST, name`,
+      [userId]
+    );
+
     return widgetResponse(
-      `Program widget displayed showing "${program.name}" (v${program.version_number}, ${days.length} day${days.length > 1 ? "s" : ""}, ${totalExercises} exercises). Do NOT repeat this information — the user can see it in the widget.`,
+      `Program widget displayed showing "${program.name}" (v${program.version_number}, ${days.length} day${days.length > 1 ? "s" : ""}, ${totalExercises} exercises). The widget supports inline editing — do NOT repeat this information.`,
       {
         program: {
+          id: program.id,
           name: program.name,
           description: program.description,
           version: program.version_number,
           days,
         },
+        initialDayIdx,
+        exerciseCatalog: exerciseRows.map((r: any) => ({ name: r.name, muscle_group: r.muscle_group })),
       }
     );
   });

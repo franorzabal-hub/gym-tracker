@@ -27,7 +27,7 @@ describe("initialize_gym_session tool", () => {
     registerOnboardingTool(server);
   });
 
-  it("returns required_next_tool=show_onboarding for new user", async () => {
+  it("returns required_next_tool=show_profile for new user", async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [] }) // no profile
       .mockResolvedValueOnce({ rows: [] }) // no program
@@ -37,10 +37,10 @@ describe("initialize_gym_session tool", () => {
     const data = JSON.parse(result.content[0].text);
 
     expect(data.is_new_user).toBe(true);
-    expect(data.required_next_tool).toBe("show_onboarding");
+    expect(data.required_next_tool).toBe("show_profile");
   });
 
-  it("detects user with profile but no program", async () => {
+  it("returns required_next_tool=show_programs when profile complete but no program", async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ data: { name: "Juan", experience: "beginner", available_days: 3 } }] })
       .mockResolvedValueOnce({ rows: [] }) // no program
@@ -50,13 +50,12 @@ describe("initialize_gym_session tool", () => {
     const data = JSON.parse(result.content[0].text);
 
     expect(data.is_new_user).toBe(false);
-    expect(data.required_next_tool).toBeNull();
-    expect(data.suggestion).toContain("full_body_3x");
+    expect(data.required_next_tool).toBe("show_programs");
   });
 
   it("detects fully set up user", async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ data: { name: "Juan", onboarding: { completed: true } } }] })
+      .mockResolvedValueOnce({ rows: [{ data: { name: "Juan" } }] })
       .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // has program
       .mockResolvedValueOnce({ rows: [{ id: 1 }] }); // has sessions
 
@@ -68,9 +67,9 @@ describe("initialize_gym_session tool", () => {
     expect(data.suggestion).toBeNull();
   });
 
-  it("suggests completing onboarding when profile exists but onboarding not marked complete", async () => {
+  it("suggests updating profile when incomplete and not new user", async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ data: { name: "Juan", onboarding: { completed: false } } }] })
+      .mockResolvedValueOnce({ rows: [{ data: {} }] }) // profile exists but no name
       .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // has program
       .mockResolvedValueOnce({ rows: [] }); // no sessions
 
@@ -78,7 +77,7 @@ describe("initialize_gym_session tool", () => {
     const data = JSON.parse(result.content[0].text);
 
     expect(data.required_next_tool).toBeNull();
-    expect(data.suggestion).toContain("Mark onboarding complete");
+    expect(data.suggestion).toContain("Profile incomplete");
   });
 
   it("uses default values when profile has no experience or available_days", async () => {
@@ -90,6 +89,6 @@ describe("initialize_gym_session tool", () => {
     const result = await toolHandler({});
     const data = JSON.parse(result.content[0].text);
 
-    expect(data.suggestion).toContain("upper_lower_4x");
+    expect(data.required_next_tool).toBe("show_programs");
   });
 });
