@@ -22,12 +22,12 @@ const WIDGET_TOOLS: Record<string, { tool: string; args: Record<string, unknown>
   workouts:            { tool: "show_workouts", args: {}, type: "ui" },
   // Data tools with widget HTML
   session:       { tool: "get_active_session", args: {}, type: "data" },
-  stats:         { tool: "get_stats", args: { exercise: "Bench Press", period: "3m" }, type: "data" },
+  stats:         { tool: "get_stats", args: { exercise: "Bench Press", period: "3months" }, type: "data" },
   "today-plan":  { tool: "get_today_plan", args: {}, type: "data" },
   exercises:     { tool: "manage_exercises", args: { action: "list" }, type: "data" },
   templates:     { tool: "manage_templates", args: { action: "list" }, type: "data" },
   measurements:  { tool: "manage_body_measurements", args: { action: "latest" }, type: "data" },
-  export:        { tool: "export_data", args: { format: "json", scope: "all" }, type: "data" },
+  export:        { tool: "export_data", args: { action: "json", scope: "all" }, type: "data" },
   // Data-only tools — no widget HTML, show raw JSON response
   "init-session":   { tool: "initialize_gym_session", args: {}, type: "data-only" },
   "manage-profile": { tool: "manage_profile", args: { action: "get" }, type: "data-only" },
