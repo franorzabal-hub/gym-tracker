@@ -93,7 +93,7 @@ body {
 .chip-group { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { padding: 4px 12px; border-radius: 16px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; cursor: pointer; transition: all 0.15s; font-family: var(--font); text-transform: capitalize; }
 .chip:hover { border-color: var(--primary); }
-.chip-active { background: var(--primary); color: white; border-color: var(--primary); }
+.chip-active { background: light-dark(#dbeafe, #172554); color: light-dark(#1e40af, #60a5fa); border-color: light-dark(#93c5fd, #1e3a5f); }
 
 .step-indicator { display: flex; gap: 8px; margin-bottom: 16px; }
 .step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
