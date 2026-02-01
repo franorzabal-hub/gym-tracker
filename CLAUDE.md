@@ -96,8 +96,8 @@ server.ts                    # Express + MCP server + auth middleware
 src/auth/                    # middleware.ts, oauth-routes.ts, workos.ts
 src/context/user-context.ts  # AsyncLocalStorage: getUserId() / runWithUser()
 src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-012
-src/tools/                   # 13 files → 18 MCP tools (15 data + 3 display)
-src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts, date-helpers.ts, parse-helpers.ts, tool-response.ts
+src/tools/                   # 12 files → 16 MCP tools (12 data + 4 display)
+src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts, log-exercise-helper.ts, date-helpers.ts, parse-helpers.ts, tool-response.ts
 src/resources/               # register-widgets.ts — registers all widget resources
 src/tools/__tests__/         # Vitest tests (1 per tool file)
 web/                         # Widget UI (separate npm project, see "MCP Apps Widgets" section)
@@ -137,9 +137,9 @@ dynamic_clients (client_id PK, redirect_uris TEXT[])
 
 Key: per-set rows, program versioning, soft delete on sessions, GIN index on tags, `rep_type` (reps/seconds/meters/calories), `exercise_type` (strength/mobility/cardio/warmup — PRs only for strength). Auth tokens/codes persisted in Postgres with TTL cleanup every 15 min.
 
-## MCP Tools (18)
+## MCP Tools (16)
 
-### Data Tools (15) — return JSON, no UI
+### Data Tools (12) — return JSON, no UI
 
 | Tool | Actions / Params |
 |---|---|
@@ -147,12 +147,10 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 | `manage_profile` | get, update (JSONB) |
 | `manage_exercises` | list, search, add, add_bulk, update, update_bulk, delete, delete_bulk |
 | `manage_program` | list, get, create, clone, update, activate, delete, delete_bulk, history |
-| `start_session` | program_day?, date?, tags? — infers day from weekday |
+| `log_workout` | Unified: start session, log exercise(s), log routine day. Auto-creates session, infers program day, supports overrides/skip, single/bulk exercises, PR check. Replaces start_session + log_exercise + log_routine |
 | `end_session` | notes?, force?, tags? — summary + comparison vs last |
 | `get_active_session` | no params — returns active session with exercises or `{active: false}` |
 | `get_today_plan` | no params — today's day + exercises + last workout (read-only, no session created) |
-| `log_exercise` | single or bulk (`exercises[]`), auto-session, auto-create, drop_percent, PR check |
-| `log_routine` | log full program day, overrides[], skip[], auto_end, date?, tags? |
 | `get_history` | period, exercise?, program_day?, tags? filter |
 | `get_stats` | single (`exercise`) or multi (`exercises[]`), period — PRs, progression, volume, frequency |
 | `edit_log` | update/delete sets, bulk[], delete_session, restore_session, delete_sessions[] |
@@ -160,13 +158,14 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 | `manage_body_measurements` | log, history, latest — temporal tracking (weight_kg, body_fat_pct, chest_cm, etc.) |
 | `export_data` | json or csv — scopes: all, sessions, exercises, programs, measurements, prs; period filter |
 
-### Display Tools (3) — render visual widgets, LLM must NOT repeat data
+### Display Tools (4) — render visual widgets, LLM must NOT repeat data
 
 | Tool | Widget | Description |
 |---|---|---|
 | `show_profile` | profile.html | User profile card |
 | `show_programs` | programs-list.html | Programs list with user's existing programs and global program templates. Users can activate programs, clone global programs, or choose custom |
 | `show_program` | programs.html | Program viewer with days, exercises, supersets, weights. Defaults to active program, optional `name` param |
+| `show_workout` | workout.html | Interactive workout session editor. Shows active session with inline-editable sets (reps, weight, RPE, type). Add/remove exercises and sets. |
 
 ## MCP Apps Widgets
 
@@ -395,6 +394,7 @@ Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture
 | 012 | `body_measurements` table, `pg_trgm` extension + trigram indexes, `description` column on exercises |
 | 013 | `group_type` column on program_day_exercises |
 | 014 | Global programs: nullable `user_id` on programs + seed 3 global program templates (Full Body 3x, Upper/Lower 4x, PPL 6x) |
+| 015 | Seed 25 new global exercises + 22 well-known workout programs (Starting Strength, StrongLifts, 5/3/1 BBB, PHUL, PHAT, nSuns, Arnold Split, Reddit PPL, etc.) |
 
 ## Pending (Phase 3)
 

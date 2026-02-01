@@ -10,9 +10,8 @@ import { registerOnboardingTool } from "./src/tools/onboarding.js";
 import { registerProfileTool } from "./src/tools/profile.js";
 import { registerExercisesTool } from "./src/tools/exercises.js";
 import { registerSessionTools } from "./src/tools/session.js";
-import { registerLogExerciseTool } from "./src/tools/log-exercise.js";
 import { registerProgramTool } from "./src/tools/programs.js";
-import { registerLogRoutineTool } from "./src/tools/log-routine.js";
+import { registerLogWorkoutTool } from "./src/tools/log-workout.js";
 import { registerHistoryTool } from "./src/tools/history.js";
 import { registerStatsTool } from "./src/tools/stats.js";
 import { registerEditLogTool } from "./src/tools/edit-log.js";
@@ -22,6 +21,7 @@ import { registerBodyMeasurementsTool } from "./src/tools/body-measurements.js";
 import { registerExportTool } from "./src/tools/export.js";
 import { registerDisplayTools } from "./src/tools/display.js";
 import { registerDashboardTool } from "./src/tools/dashboard.js";
+import { registerWorkoutTool } from "./src/tools/workout.js";
 import { registerWidgetResources } from "./src/resources/register-widgets.js";
 
 import oauthRoutes from "./src/auth/oauth-routes.js";
@@ -78,9 +78,8 @@ When the user asks to SEE their profile, call show_profile (NOT manage_profile).
   registerProfileTool(server);
   registerExercisesTool(server);
   registerSessionTools(server);
-  registerLogExerciseTool(server);
   registerProgramTool(server);
-  registerLogRoutineTool(server);
+  registerLogWorkoutTool(server);
   registerHistoryTool(server);
   registerStatsTool(server);
   registerEditLogTool(server);
@@ -90,6 +89,7 @@ When the user asks to SEE their profile, call show_profile (NOT manage_profile).
   registerExportTool(server);
   registerDisplayTools(server);
   registerDashboardTool(server);
+  registerWorkoutTool(server);
   registerWidgetResources(server);
 
   return server;

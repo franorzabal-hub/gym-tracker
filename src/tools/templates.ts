@@ -11,7 +11,7 @@ export function registerTemplatesTool(server: McpServer) {
 Actions:
 - "save": Save a completed session as a template. Pass session_id (or "last" for the most recent ended session) and a name.
 - "list": List all saved templates with their exercises.
-- "start": Start a new session pre-populated from a template. Pass template name. Exercises are logged as session_exercises (no sets yet — use log_exercise to fill them in).
+- "start": Start a new session pre-populated from a template. Pass template name. Exercises are logged as session_exercises (no sets yet — use log_workout to fill them in).
 - "delete": Delete a template by name.
 - "delete_bulk": Delete multiple templates at once. Pass "names" array. Returns { deleted, not_found }.`, {
         action: z.enum(["save", "list", "start", "delete", "delete_bulk"]),

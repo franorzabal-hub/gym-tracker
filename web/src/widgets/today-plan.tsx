@@ -48,7 +48,7 @@ function TodayPlanWidget() {
         </div>
       )}
       <button className="btn btn-primary" style={{ marginTop: 16, width: "100%" }}
-        onClick={() => callTool("start_session")}
+        onClick={() => callTool("log_workout", {})}
         disabled={loading}>
         {loading ? "Starting..." : "Start Session"}
       </button>
