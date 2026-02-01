@@ -93,44 +93,44 @@ function ProgramsListWidget() {
     );
   }
 
-  const currentProgram = programs[activeIdx];
-
   const handleActivate = async (programName: string) => {
     setActivatingName(programName);
     await callTool("manage_program", { action: "activate", name: programName });
     setActivatingName(null);
   };
 
-  const activeBadge = currentProgram.is_active ? (
-    <span className="badge badge-success">Active</span>
-  ) : null;
-
   return (
-    <div style={{ maxWidth: 600, display: "flex", flexDirection: "column", height: "85vh" }}>
-      <div
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-        style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
-      >
-        <ProgramEditor
-          key={currentProgram.id}
-          program={currentProgram}
-          exerciseCatalog={catalog}
-          badge={activeBadge}
-          fillHeight
-        />
-
-        {/* Activate button for inactive programs */}
-        {!currentProgram.is_active && (
-          <button
-            className="btn"
-            style={{ width: "100%", justifyContent: "center", marginTop: 12, flexShrink: 0 }}
-            disabled={loading && activatingName === currentProgram.name}
-            onClick={() => handleActivate(currentProgram.name)}
+    <div style={{ maxWidth: 600 }} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      {/* Grid stacks all programs in the same cell — container takes the tallest height */}
+      <div style={{ display: "grid" }}>
+        {programs.map((prog, i) => (
+          <div
+            key={prog.id}
+            style={{
+              gridRow: 1,
+              gridColumn: 1,
+              visibility: i === activeIdx ? "visible" : "hidden",
+              pointerEvents: i === activeIdx ? "auto" : "none",
+            }}
           >
-            {loading && activatingName === currentProgram.name ? "..." : "Activate"}
-          </button>
-        )}
+            <ProgramEditor
+              program={prog}
+              exerciseCatalog={catalog}
+              badge={prog.is_active ? <span className="badge badge-success">Active</span> : undefined}
+            />
+
+            {!prog.is_active && (
+              <button
+                className="btn"
+                style={{ width: "100%", justifyContent: "center", marginTop: 12 }}
+                disabled={loading && activatingName === prog.name}
+                onClick={() => handleActivate(prog.name)}
+              >
+                {loading && activatingName === prog.name ? "..." : "Activate"}
+              </button>
+            )}
+          </div>
+        ))}
       </div>
 
       <DotIndicator total={programs.length} active={activeIdx} onDot={goTo} />
