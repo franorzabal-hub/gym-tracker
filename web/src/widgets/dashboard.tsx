@@ -286,8 +286,23 @@ function SwipeCarousel({ children, count }: { children: (idx: number) => React.R
 
   return (
     <div>
-      <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        {children(activeIdx)}
+      <div
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        style={{ display: "grid", gridTemplateColumns: "1fr" }}
+      >
+        {Array.from({ length: count }, (_, i) => (
+          <div
+            key={i}
+            style={{
+              gridArea: "1 / 1",
+              visibility: i === activeIdx ? "visible" : "hidden",
+            }}
+            aria-hidden={i !== activeIdx}
+          >
+            {children(i)}
+          </div>
+        ))}
       </div>
       {count > 1 && (
         <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 10 }}>
