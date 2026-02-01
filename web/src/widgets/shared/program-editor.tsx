@@ -1942,24 +1942,46 @@ function EditableDayCarousel({
 
 // ── Main ProgramEditor component ──
 
+export interface ProgramMenuItem {
+  label: string;
+  icon?: string;
+  danger?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}
+
 export function ProgramEditor({
   program,
   exerciseCatalog,
   initialDayIdx,
   badge,
+  menuItems,
 }: {
   program: Program;
   exerciseCatalog?: ExerciseSuggestion[];
   initialDayIdx?: number;
   badge?: React.ReactNode;
+  menuItems?: ProgramMenuItem[];
 }) {
   const [programName, setProgramName] = useState(program.name);
   const [description, setDescription] = useState<string | null>(program.description);
   const [days, setDays] = useState<EditableDay[]>(program.days.map(toEditableDay));
   const [viewingIdx, setViewingIdx] = useState(initialDayIdx || 0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const { save, status } = useProgramAutoSave(program.id);
   const catalog = exerciseCatalog || [];
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
 
   // Trigger save on any change
   const triggerSave = useCallback(
@@ -2039,6 +2061,77 @@ export function ProgramEditor({
           </div>
           {badge}
           <SaveIndicator status={status} />
+          {menuItems && menuItems.length > 0 && (
+            <div ref={menuRef} style={{ position: "relative" }}>
+              <span
+                onClick={() => setMenuOpen(!menuOpen)}
+                style={{
+                  cursor: "pointer",
+                  fontSize: 16,
+                  opacity: 0.5,
+                  color: "var(--text-secondary)",
+                  padding: "2px 6px",
+                  transition: "opacity 0.15s",
+                  userSelect: "none",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.9"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.5"; }}
+                title="Program actions"
+              >
+                ⋮
+              </span>
+              {menuOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    right: 0,
+                    background: "var(--bg)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    boxShadow: "0 6px 20px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08)",
+                    zIndex: 100,
+                    marginTop: 4,
+                    minWidth: 150,
+                    padding: "4px 0",
+                  }}
+                >
+                  {menuItems.map((item, idx) => {
+                    const isDanger = item.danger;
+                    const isLast = idx === menuItems.length - 1;
+                    const hasSeparator = isDanger && idx > 0;
+                    return (
+                      <div key={idx}>
+                        {hasSeparator && <div style={{ borderTop: "1px solid var(--border)", margin: "4px 8px" }} />}
+                        <div
+                          style={{
+                            padding: "6px 12px",
+                            cursor: item.disabled ? "default" : "pointer",
+                            fontSize: 12,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            whiteSpace: "nowrap",
+                            color: item.disabled ? "var(--text-secondary)" : isDanger ? "var(--danger, #e74c3c)" : "var(--text)",
+                            opacity: item.disabled ? 0.5 : 1,
+                            borderRadius: 4,
+                            margin: "1px 4px",
+                            ...(isDanger && isLast ? { background: "color-mix(in srgb, var(--danger, #e74c3c) 5%, transparent)", borderRadius: "0 0 6px 6px" } : {}),
+                          }}
+                          onClick={() => { if (!item.disabled) { item.onClick(); setMenuOpen(false); } }}
+                          onMouseEnter={(e) => { if (!item.disabled) (e.currentTarget as HTMLElement).style.background = "var(--bg-secondary)"; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = isDanger && isLast ? "color-mix(in srgb, var(--danger, #e74c3c) 5%, transparent)" : "transparent"; }}
+                        >
+                          {item.icon && <span style={{ width: 16, textAlign: "center", fontSize: 12, flexShrink: 0, opacity: 0.6 }}>{item.icon}</span>}
+                          {item.label}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
           <div style={{ flex: 1, minWidth: 120 }}>

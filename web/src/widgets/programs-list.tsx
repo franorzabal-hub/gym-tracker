@@ -7,6 +7,7 @@ import {
   ProgramEditor,
   type Program,
   type ExerciseSuggestion,
+  type ProgramMenuItem,
 } from "./shared/program-editor.js";
 
 interface UserProgram extends Program {
@@ -99,38 +100,54 @@ function ProgramsListWidget() {
     setActivatingName(null);
   };
 
+  const handleDelete = async (programName: string) => {
+    await callTool("manage_program", { action: "delete", name: programName });
+  };
+
   return (
     <div style={{ maxWidth: 600 }} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       {/* Grid stacks all programs in the same cell — container takes the tallest height */}
       <div style={{ display: "grid" }}>
-        {programs.map((prog, i) => (
-          <div
-            key={prog.id}
-            style={{
-              gridRow: 1,
-              gridColumn: 1,
-              visibility: i === activeIdx ? "visible" : "hidden",
-              pointerEvents: i === activeIdx ? "auto" : "none",
-            }}
-          >
-            <ProgramEditor
-              program={prog}
-              exerciseCatalog={catalog}
-              badge={prog.is_active ? <span className="badge badge-success">Active</span> : undefined}
-            />
+        {programs.map((prog, i) => {
+          const menu: ProgramMenuItem[] = [];
+          if (!prog.is_active) {
+            menu.push({
+              label: loading && activatingName === prog.name ? "Activating..." : "Activate",
+              icon: "✦",
+              disabled: loading && activatingName === prog.name,
+              onClick: () => handleActivate(prog.name),
+            });
+          }
+          menu.push({
+            label: "Delete",
+            icon: "×",
+            danger: true,
+            onClick: () => handleDelete(prog.name),
+          });
 
-            {!prog.is_active && (
-              <button
-                className="btn"
-                style={{ width: "100%", justifyContent: "center", marginTop: 12 }}
-                disabled={loading && activatingName === prog.name}
-                onClick={() => handleActivate(prog.name)}
-              >
-                {loading && activatingName === prog.name ? "..." : "Activate"}
-              </button>
-            )}
-          </div>
-        ))}
+          return (
+            <div
+              key={prog.id}
+              style={{
+                gridRow: 1,
+                gridColumn: 1,
+                visibility: i === activeIdx ? "visible" : "hidden",
+                pointerEvents: i === activeIdx ? "auto" : "none",
+              }}
+            >
+              <ProgramEditor
+                program={prog}
+                exerciseCatalog={catalog}
+                badge={
+                  prog.is_active
+                    ? <span className="badge badge-success">Active</span>
+                    : <span className="badge badge-muted">Inactive</span>
+                }
+                menuItems={menu}
+              />
+            </div>
+          );
+        })}
       </div>
 
       <DotIndicator total={programs.length} active={activeIdx} onDot={goTo} />
