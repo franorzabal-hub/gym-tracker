@@ -179,7 +179,7 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday"). The wi
     const program = name
       ? await pool
           .query(
-            `SELECT p.id, p.name, p.description, pv.id as version_id, pv.version_number
+            `SELECT p.id, p.name, p.description, p.is_active, pv.id as version_id, pv.version_number
              FROM programs p JOIN program_versions pv ON pv.program_id = p.id
              WHERE p.user_id = $1 AND LOWER(p.name) = LOWER($2)
              ORDER BY pv.version_number DESC LIMIT 1`,
@@ -230,6 +230,7 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday"). The wi
           name: program.name,
           description: program.description,
           version: program.version_number,
+          is_active: program.is_active ?? false,
           days,
         },
         initialDayIdx,
