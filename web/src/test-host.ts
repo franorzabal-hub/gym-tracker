@@ -5,25 +5,41 @@ import {
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-// Widget name → MCP tool call to fetch initial data
-const WIDGET_TOOLS: Record<string, { tool: string; args: Record<string, unknown> }> = {
-  profile: { tool: "show_profile", args: {} },
-  session: { tool: "get_active_session", args: {} },
-  stats: { tool: "get_stats", args: { exercise: "Bench Press", period: "3m" } },
-  "today-plan": { tool: "get_today_plan", args: {} },
-  exercises: { tool: "manage_exercises", args: { action: "list" } },
-  programs: { tool: "show_program", args: {} },
-  templates: { tool: "manage_templates", args: { action: "list" } },
-  measurements: { tool: "manage_body_measurements", args: { action: "latest" } },
-  "programs-list": { tool: "show_programs", args: {} },
-  "available-programs": { tool: "show_available_programs", args: {} },
-  export: { tool: "export_data", args: { format: "json", scope: "all" } },
-  dashboard: { tool: "show_dashboard", args: {} },
-  workout: { tool: "show_workout", args: {} },
+// ---------------------------------------------------------------------------
+// Widget registry
+// ---------------------------------------------------------------------------
+
+type WidgetType = "ui" | "data" | "data-only";
+
+const WIDGET_TOOLS: Record<string, { tool: string; args: Record<string, unknown>; type: WidgetType }> = {
+  // Display tools — render visual widgets (show_* tools)
+  profile:             { tool: "show_profile", args: {}, type: "ui" },
+  programs:            { tool: "show_program", args: {}, type: "ui" },
+  "programs-list":     { tool: "show_programs", args: {}, type: "ui" },
+  "available-programs": { tool: "show_available_programs", args: {}, type: "ui" },
+  dashboard:           { tool: "show_dashboard", args: {}, type: "ui" },
+  workout:             { tool: "show_workout", args: {}, type: "ui" },
+  workouts:            { tool: "show_workouts", args: {}, type: "ui" },
+  // Data tools with widget HTML
+  session:       { tool: "get_active_session", args: {}, type: "data" },
+  stats:         { tool: "get_stats", args: { exercise: "Bench Press", period: "3m" }, type: "data" },
+  "today-plan":  { tool: "get_today_plan", args: {}, type: "data" },
+  exercises:     { tool: "manage_exercises", args: { action: "list" }, type: "data" },
+  templates:     { tool: "manage_templates", args: { action: "list" }, type: "data" },
+  measurements:  { tool: "manage_body_measurements", args: { action: "latest" }, type: "data" },
+  export:        { tool: "export_data", args: { format: "json", scope: "all" }, type: "data" },
+  // Data-only tools — no widget HTML, show raw JSON response
+  "init-session":   { tool: "initialize_gym_session", args: {}, type: "data-only" },
+  "manage-profile": { tool: "manage_profile", args: { action: "get" }, type: "data-only" },
+  "manage-program": { tool: "manage_program", args: { action: "list" }, type: "data-only" },
+  "log-workout":    { tool: "log_workout", args: { exercises: [{ name: "Bench Press", sets: [{ reps: 10, weight: 80 }] }] }, type: "data-only" },
+  "end-session":    { tool: "end_session", args: {}, type: "data-only" },
+  "get-history":    { tool: "get_history", args: { period: "1m" }, type: "data-only" },
+  "edit-log":       { tool: "edit_log", args: {}, type: "data-only" },
 };
 
 // Sample data fallback when server is not running
-const sampleData: Record<string, { content: Array<{ type: string; text: string }> }> = {
+const sampleData: Record<string, { content?: Array<{ type: string; text: string }>; structuredContent?: any }> = {
   profile: {
     content: [{ type: "text", text: JSON.stringify({
       profile: {
@@ -277,6 +293,32 @@ const sampleData: Record<string, { content: Array<{ type: string; text: string }
       ],
     })}],
   },
+  workouts: {
+    content: [{ type: "text", text: JSON.stringify({
+      sessions: [
+        {
+          session_id: 42, started_at: new Date(Date.now() - 2 * 3600000).toISOString(),
+          ended_at: new Date(Date.now() - 1 * 3600000).toISOString(),
+          duration_minutes: 58, program_day: "Push A", tags: ["morning"],
+          exercise_count: 5, set_count: 18, total_volume: 12450,
+        },
+        {
+          session_id: 41, started_at: new Date(Date.now() - 26 * 3600000).toISOString(),
+          ended_at: new Date(Date.now() - 25 * 3600000).toISOString(),
+          duration_minutes: 52, program_day: "Pull A", tags: [],
+          exercise_count: 4, set_count: 16, total_volume: 10200,
+        },
+        {
+          session_id: 40, started_at: new Date(Date.now() - 50 * 3600000).toISOString(),
+          ended_at: new Date(Date.now() - 49 * 3600000).toISOString(),
+          duration_minutes: 65, program_day: "Legs", tags: ["heavy"],
+          exercise_count: 6, set_count: 22, total_volume: 18300,
+        },
+      ],
+      total: 3,
+      hasMore: false,
+    })}],
+  },
   dashboard: {
     structuredContent: {
       period: "3months",
@@ -335,17 +377,49 @@ const sampleData: Record<string, { content: Array<{ type: string; text: string }
   },
 };
 
-const MCP_SERVER_URL = "http://localhost:3001/mcp";
+// ---------------------------------------------------------------------------
+// Device presets
+// ---------------------------------------------------------------------------
+
+interface DevicePreset {
+  label: string;
+  width: number | null; // null = responsive (100%)
+  height: number | null;
+}
+
+const DEVICE_PRESETS: DevicePreset[] = [
+  { label: "Responsive", width: null, height: null },
+  { label: "iPhone SE", width: 375, height: 667 },
+  { label: "iPhone Pro", width: 390, height: 844 },
+  { label: "iPad", width: 768, height: 1024 },
+  { label: "Desktop", width: 1280, height: 800 },
+];
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
+const MCP_SERVER_URL = "/mcp";
 
 const logEl = document.getElementById("log") as HTMLPreElement;
 const frame = document.getElementById("widget-frame") as HTMLIFrameElement;
+const statusDot = document.getElementById("status-dot") as HTMLSpanElement;
+const statusText = document.getElementById("status-text") as HTMLSpanElement;
 const modeLabel = document.getElementById("mode-label") as HTMLSpanElement;
+const deviceSelect = document.getElementById("device-select") as HTMLSelectElement;
+const deviceFrame = document.getElementById("device-frame") as HTMLDivElement;
+const navContainer = document.getElementById("widget-nav") as HTMLDivElement;
 
 let currentTheme: "light" | "dark" = "light";
 let currentWidget = "profile";
 let currentBridge: AppBridge | null = null;
 let mcpClient: Client | null = null;
 let isLiveMode = false;
+let currentFrameLoadHandler: (() => void) | null = null;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function log(label: string, data?: unknown) {
   const time = new Date().toLocaleTimeString();
@@ -354,22 +428,104 @@ function log(label: string, data?: unknown) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-function updateModeLabel() {
-  if (modeLabel) {
-    modeLabel.textContent = isLiveMode ? "LIVE (dev DB)" : "Sample data";
-    modeLabel.style.color = isLiveMode ? "#16a34a" : "#f59e0b";
+function removeAllChildren(el: Element) {
+  while (el.firstChild) el.removeChild(el.firstChild);
+}
+
+function setConnectionStatus(connected: boolean) {
+  if (statusDot) {
+    statusDot.style.background = connected ? "#22c55e" : "#ef4444";
+  }
+  if (statusText) {
+    statusText.textContent = connected ? "Connected" : "Disconnected";
   }
 }
+
+function updateModeLabel() {
+  if (modeLabel) {
+    modeLabel.textContent = isLiveMode ? "LIVE" : "Sample";
+    modeLabel.style.color = isLiveMode ? "#22c55e" : "#f59e0b";
+  }
+}
+
+function applyDevicePreset(preset: DevicePreset) {
+  if (!deviceFrame || !frame) return;
+  if (preset.width === null) {
+    deviceFrame.style.width = "100%";
+    deviceFrame.style.maxWidth = "none";
+    frame.style.height = "700px";
+  } else {
+    deviceFrame.style.width = `${preset.width}px`;
+    deviceFrame.style.maxWidth = `${preset.width}px`;
+    frame.style.height = `${preset.height}px`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Build dynamic widget nav buttons
+// ---------------------------------------------------------------------------
+
+function buildWidgetNav() {
+  if (!navContainer) return;
+  removeAllChildren(navContainer);
+
+  const groups: { label: string; type: WidgetType }[] = [
+    { label: "Display (UI)", type: "ui" },
+    { label: "Data (Widget)", type: "data" },
+    { label: "Data Only (JSON)", type: "data-only" },
+  ];
+
+  for (const group of groups) {
+    const header = document.createElement("div");
+    header.className = "nav-section";
+    header.textContent = group.label;
+    navContainer.appendChild(header);
+
+    for (const [name, entry] of Object.entries(WIDGET_TOOLS)) {
+      if (entry.type !== group.type) continue;
+      const btn = document.createElement("button");
+      btn.className = "nav-btn" + (name === currentWidget ? " active" : "");
+      btn.textContent = name.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      btn.addEventListener("click", () => loadWidget(name));
+      navContainer.appendChild(btn);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Build device dropdown
+// ---------------------------------------------------------------------------
+
+function buildDeviceDropdown() {
+  if (!deviceSelect) return;
+  removeAllChildren(deviceSelect);
+  for (const preset of DEVICE_PRESETS) {
+    const opt = document.createElement("option");
+    opt.value = preset.label;
+    opt.textContent = preset.label + (preset.width ? ` (${preset.width}\u00D7${preset.height})` : "");
+    deviceSelect.appendChild(opt);
+  }
+  deviceSelect.addEventListener("change", () => {
+    const preset = DEVICE_PRESETS.find((p) => p.label === deviceSelect.value);
+    if (preset) applyDevicePreset(preset);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// MCP client
+// ---------------------------------------------------------------------------
 
 async function connectMcpClient(): Promise<Client | null> {
   try {
     const client = new Client({ name: "TestHost", version: "1.0.0" });
-    const transport = new StreamableHTTPClientTransport(new URL(MCP_SERVER_URL));
+    const transport = new StreamableHTTPClientTransport(new URL(MCP_SERVER_URL, window.location.origin));
     await client.connect(transport);
-    log("MCP client connected to " + MCP_SERVER_URL);
+    log("MCP client connected via proxy");
+    setConnectionStatus(true);
     return client;
   } catch (err) {
     log("MCP server not available, using sample data", err instanceof Error ? err.message : err);
+    setConnectionStatus(false);
     return null;
   }
 }
@@ -380,6 +536,10 @@ async function callToolViaClient(client: Client, toolName: string, args: Record<
   log(`Tool result received`, result);
   return result;
 }
+
+// ---------------------------------------------------------------------------
+// Host context (theme + styles for widgets)
+// ---------------------------------------------------------------------------
 
 function getHostContext() {
   const darkVars = {
@@ -402,14 +562,16 @@ function getHostContext() {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Bridge connection
+// ---------------------------------------------------------------------------
+
 async function connectBridge() {
-  // Clean up previous bridge
   if (currentBridge) {
     try { await currentBridge.close(); } catch { /* ignore */ }
     currentBridge = null;
   }
 
-  // Try to connect MCP client if not already connected
   if (!mcpClient) {
     mcpClient = await connectMcpClient();
     isLiveMode = mcpClient !== null;
@@ -417,7 +579,7 @@ async function connectBridge() {
   }
 
   const bridge = new AppBridge(
-    mcpClient, // real client for auto-forwarding tool calls, or null for sample data
+    mcpClient,
     { name: "TestHost", version: "1.0.0" },
     { openLinks: {}, serverTools: {}, logging: {} },
     { hostContext: getHostContext() },
@@ -428,7 +590,6 @@ async function connectBridge() {
 
     let data: any;
     if (mcpClient && WIDGET_TOOLS[currentWidget]) {
-      // Live mode: call actual MCP tool
       try {
         const { tool, args } = WIDGET_TOOLS[currentWidget];
         data = await callToolViaClient(mcpClient, tool, args);
@@ -437,7 +598,6 @@ async function connectBridge() {
         data = sampleData[currentWidget];
       }
     } else {
-      // Sample data mode
       data = sampleData[currentWidget];
     }
 
@@ -447,10 +607,11 @@ async function connectBridge() {
   };
 
   bridge.onsizechange = ({ height }) => {
-    if (height != null) {
-      frame.style.height = `${Math.min(height + 40, 800)}px`;
+    // Only auto-resize in responsive mode
+    const preset = DEVICE_PRESETS.find((p) => p.label === deviceSelect?.value);
+    if (preset?.width === null && height != null) {
+      frame.style.height = `${Math.min(height + 40, 1200)}px`;
     }
-    // Don't override width — keep iframe at CSS 100% so widgets can be responsive
   };
 
   bridge.onloggingmessage = ({ level, logger, data }) => {
@@ -459,8 +620,12 @@ async function connectBridge() {
 
   currentBridge = bridge;
 
-  // Wait for iframe to load before connecting transport
-  frame.addEventListener("load", async () => {
+  // Remove previous listener to avoid accumulation across loadWidget calls
+  if (currentFrameLoadHandler) {
+    frame.removeEventListener("load", currentFrameLoadHandler);
+  }
+
+  const loadHandler = async () => {
     if (!frame.contentWindow) return;
     const transport = new PostMessageTransport(
       frame.contentWindow,
@@ -472,40 +637,92 @@ async function connectBridge() {
     } catch (err) {
       log("Bridge connect error", err instanceof Error ? err.message : err);
     }
-  }, { once: true });
+  };
+  currentFrameLoadHandler = loadHandler;
+  frame.addEventListener("load", loadHandler);
 }
 
-// Expose functions to the HTML buttons
-(window as any).loadWidget = async function loadWidget(name: string, btn?: HTMLButtonElement) {
-  currentWidget = name;
-  document.querySelectorAll(".controls button").forEach((b) => b.classList.remove("active"));
-  if (btn) btn.classList.add("active");
-  logEl.textContent = `// Loading ${name} widget...\n`;
+// ---------------------------------------------------------------------------
+// Public API (exposed to HTML)
+// ---------------------------------------------------------------------------
 
-  await connectBridge();
-  frame.src = `/dist/${name}.html`;
-};
+async function loadWidget(name: string) {
+  currentWidget = name;
+
+  // Update active state on nav buttons
+  navContainer?.querySelectorAll(".nav-btn").forEach((b) => {
+    const matches = b.textContent?.toLowerCase().replace(/ /g, "-") === name;
+    b.classList.toggle("active", matches);
+  });
+
+  logEl.textContent = `// Loading ${name}...\n`;
+
+  const entry = WIDGET_TOOLS[name];
+
+  if (entry?.type === "data-only") {
+    // No widget HTML — call tool directly and show raw JSON
+    await loadDataOnly(name, entry);
+  } else {
+    await connectBridge();
+    // Vite serves source HTML at root path with HMR support
+    frame.src = `/${name}.html`;
+  }
+}
+
+async function loadDataOnly(name: string, entry: { tool: string; args: Record<string, unknown> }) {
+  // Ensure MCP client is connected
+  if (!mcpClient) {
+    mcpClient = await connectMcpClient();
+    isLiveMode = mcpClient !== null;
+    updateModeLabel();
+  }
+
+  let result: any;
+  if (mcpClient) {
+    try {
+      result = await callToolViaClient(mcpClient, entry.tool, entry.args);
+    } catch (err) {
+      result = { error: err instanceof Error ? err.message : String(err) };
+      log("Tool call failed", result.error);
+    }
+  } else {
+    result = sampleData[name] ?? { info: "No sample data. Start the MCP server for live results." };
+  }
+
+  // Render JSON in the iframe via srcdoc
+  const json = JSON.stringify(result, null, 2);
+  const escaped = json.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  frame.srcdoc = `<!DOCTYPE html>
+<html><head><style>
+  body { margin: 0; padding: 16px; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; background: #0d1117; color: #c9d1d9; }
+  .tool-name { color: #7ee787; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+  pre { white-space: pre-wrap; word-break: break-all; margin: 0; }
+</style></head><body>
+  <div class="tool-name">${entry.tool}</div>
+  <pre>${escaped}</pre>
+</body></html>`;
+}
+
+(window as any).loadWidget = loadWidget;
 
 (window as any).toggleTheme = async function toggleTheme() {
   currentTheme = currentTheme === "light" ? "dark" : "light";
-  document.getElementById("theme-label")!.textContent = `Theme: ${currentTheme}`;
-  document.body.style.background = currentTheme === "dark" ? "#111" : "#f5f5f5";
-  document.body.style.color = currentTheme === "dark" ? "#eee" : "#000";
+  const themeLabel = document.getElementById("theme-label");
+  if (themeLabel) themeLabel.textContent = currentTheme === "dark" ? "Dark" : "Light";
 
-  // Reload widget with new theme (AppProvider reads context at init only)
-  (window as any).loadWidget(currentWidget);
+  // Reload widget with new theme
+  loadWidget(currentWidget);
 };
 
 (window as any).toggleMode = async function toggleMode() {
   if (isLiveMode) {
-    // Switch to sample data
     if (mcpClient) {
       try { await mcpClient.close(); } catch { /* ignore */ }
       mcpClient = null;
     }
     isLiveMode = false;
+    setConnectionStatus(false);
   } else {
-    // Try to connect to live server
     mcpClient = await connectMcpClient();
     isLiveMode = mcpClient !== null;
     if (!isLiveMode) {
@@ -513,9 +730,14 @@ async function connectBridge() {
     }
   }
   updateModeLabel();
-  // Reload current widget
-  (window as any).loadWidget(currentWidget);
+  loadWidget(currentWidget);
 };
 
-// Load profile widget on startup
-(window as any).loadWidget("profile");
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+
+buildWidgetNav();
+buildDeviceDropdown();
+applyDevicePreset(DEVICE_PRESETS[0]);
+loadWidget("profile");

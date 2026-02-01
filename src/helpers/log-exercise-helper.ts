@@ -53,7 +53,7 @@ export async function logSingleExercise(sessionId: number, entry: ExerciseEntry,
   if (existingRows.length > 0) {
     // Reuse existing session_exercise
     se = { id: existingRows[0].id };
-    startSetNumber = parseInt(existingRows[0].max_set_number, 10);
+    startSetNumber = parseInt(existingRows[0].max_set_number, 10) || 0;
 
     // Update notes/rest_seconds/superset_group if currently null and new values provided
     const updates: string[] = [];

@@ -58,6 +58,7 @@ Examples:
           dateFilter = "";
       }
 
+      const EXPORT_ROW_LIMIT = 10000;
       const data: Record<string, any> = {};
       const sessionParams: any[] = hasDateFilter ? [userId, userDate] : [userId];
 
@@ -72,7 +73,8 @@ Examples:
            JOIN exercises e ON e.id = se.exercise_id
            JOIN sets st ON st.session_exercise_id = se.id
            WHERE s.user_id = $1 AND s.deleted_at IS NULL ${dateFilter}
-           ORDER BY s.started_at DESC, se.sort_order, st.set_number`,
+           ORDER BY s.started_at DESC, se.sort_order, st.set_number
+           LIMIT ${EXPORT_ROW_LIMIT}`,
           sessionParams
         );
         data.sessions = rows;
@@ -86,7 +88,8 @@ Examples:
            FROM exercises e
            LEFT JOIN exercise_aliases ea ON ea.exercise_id = e.id
            WHERE e.user_id = $1 OR e.user_id IS NULL
-           GROUP BY e.id ORDER BY e.name`,
+           GROUP BY e.id ORDER BY e.name
+           LIMIT ${EXPORT_ROW_LIMIT}`,
           [userId]
         );
         data.exercises = rows;
@@ -104,7 +107,8 @@ Examples:
            LEFT JOIN program_day_exercises pde ON pde.day_id = pd.id
            LEFT JOIN exercises e ON e.id = pde.exercise_id
            WHERE p.user_id = $1
-           ORDER BY p.name, pv.version_number DESC, pd.day_label, pde.sort_order`,
+           ORDER BY p.name, pv.version_number DESC, pd.day_label, pde.sort_order
+           LIMIT ${EXPORT_ROW_LIMIT}`,
           [userId]
         );
         data.programs = rows;
@@ -115,7 +119,8 @@ Examples:
         const { rows } = await pool.query(
           `SELECT measurement_type, value, measured_at, notes
            FROM body_measurements WHERE user_id = $1
-           ORDER BY measurement_type, measured_at DESC`,
+           ORDER BY measurement_type, measured_at DESC
+           LIMIT ${EXPORT_ROW_LIMIT}`,
           [userId]
         );
         data.measurements = rows;
@@ -131,7 +136,8 @@ Examples:
            FROM personal_records pr
            JOIN exercises e ON e.id = pr.exercise_id
            WHERE pr.user_id = $1
-           ORDER BY e.name, pr.record_type`,
+           ORDER BY e.name, pr.record_type
+           LIMIT ${EXPORT_ROW_LIMIT}`,
           [userId]
         );
         data.prs = rows;

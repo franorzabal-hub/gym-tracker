@@ -2,47 +2,287 @@
 <html>
 <head>
   <title>Widget Test Host</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: system-ui; padding: 20px; background: #f5f5f5; }
-    h1 { font-size: 18px; margin-bottom: 16px; }
-    .controls { margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
-    button { padding: 8px 16px; border-radius: 6px; border: 1px solid #ccc; cursor: pointer; background: white; }
-    button:hover { background: #eee; }
-    button.active { background: #2563eb; color: white; border-color: #2563eb; }
-    iframe { width: 100%; height: 500px; border: 1px solid #ccc; border-radius: 8px; background: white; }
-    .theme-toggle { margin-bottom: 16px; }
-    pre { font-size: 12px; background: #1a1a1a; color: #e5e5e5; padding: 12px; border-radius: 8px; margin-top: 16px; max-height: 200px; overflow: auto; }
+    :root {
+      --host-bg: #f5f5f5;
+      --host-text: #1a1a1a;
+      --host-text-dim: #666;
+      --host-surface: #fff;
+      --host-border: #e0e0e0;
+      --host-active: #2563eb;
+      --host-active-text: #fff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --host-bg: #111;
+        --host-text: #e5e5e5;
+        --host-text-dim: #888;
+        --host-surface: #1a1a1a;
+        --host-border: #333;
+        --host-active: #3b82f6;
+        --host-active-text: #fff;
+      }
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--host-bg);
+      color: var(--host-text);
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      grid-template-rows: auto 1fr auto;
+      height: 100vh;
+    }
+
+    /* --- Sidebar --- */
+    .sidebar {
+      grid-row: 1 / -1;
+      background: var(--host-surface);
+      border-right: 1px solid var(--host-border);
+      overflow-y: auto;
+      padding: 12px 0;
+    }
+    .sidebar-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--host-text-dim);
+      padding: 8px 16px 4px;
+    }
+    #widget-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      padding: 4px 8px;
+    }
+    .nav-btn {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 7px 12px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--host-text);
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .nav-section {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--host-text-dim);
+      padding: 10px 12px 3px;
+    }
+    .nav-section:first-child { padding-top: 4px; }
+    .nav-btn:hover { background: var(--host-border); }
+    .nav-btn.active {
+      background: var(--host-active);
+      color: var(--host-active-text);
+      font-weight: 600;
+    }
+
+    /* --- Toolbar --- */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+      background: var(--host-surface);
+      border-bottom: 1px solid var(--host-border);
+      flex-wrap: wrap;
+    }
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .toolbar-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--host-text-dim);
+    }
+    .toolbar-btn {
+      padding: 4px 10px;
+      border: 1px solid var(--host-border);
+      border-radius: 5px;
+      background: var(--host-surface);
+      color: var(--host-text);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .toolbar-btn:hover { background: var(--host-border); }
+    .toolbar select {
+      padding: 4px 8px;
+      border: 1px solid var(--host-border);
+      border-radius: 5px;
+      background: var(--host-surface);
+      color: var(--host-text);
+      font-size: 12px;
+    }
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: var(--host-text-dim);
+    }
+    #status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+      display: inline-block;
+    }
+    #mode-label {
+      font-weight: 700;
+      font-size: 11px;
+      color: #f59e0b;
+    }
+    .toolbar-spacer { flex: 1; }
+
+    /* --- Device frame --- */
+    .main-area {
+      overflow: auto;
+      display: flex;
+      justify-content: center;
+      padding: 16px;
+      background: var(--host-bg);
+    }
+    #device-frame {
+      width: 100%;
+      transition: width 0.2s, max-width 0.2s;
+    }
+    #widget-frame {
+      width: 100%;
+      height: 700px;
+      border: 1px solid var(--host-border);
+      border-radius: 8px;
+      background: white;
+      display: block;
+      transition: height 0.2s;
+    }
+
+    /* --- Log --- */
+    .log-panel {
+      background: var(--host-surface);
+      border-top: 1px solid var(--host-border);
+      padding: 0 16px;
+    }
+    .log-panel summary {
+      padding: 6px 0;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--host-text-dim);
+      cursor: pointer;
+      user-select: none;
+    }
+    #log {
+      font-size: 11px;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      background: #0d1117;
+      color: #c9d1d9;
+      padding: 8px 12px;
+      border-radius: 6px;
+      max-height: 180px;
+      overflow: auto;
+      margin-bottom: 8px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* --- Mobile responsive --- */
+    @media (max-width: 768px) {
+      .layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto 1fr auto;
+      }
+      .sidebar {
+        grid-row: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--host-border);
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 8px;
+      }
+      #widget-nav {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 0;
+      }
+      .nav-btn {
+        width: auto;
+        padding: 5px 10px;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .sidebar-title { display: none; }
+      .main-area { padding: 8px; }
+    }
   </style>
 </head>
 <body>
-  <h1>MCP Apps Widget Test Host (AppBridge)</h1>
+  <div class="layout">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <div class="sidebar-title">Widgets</div>
+      <div id="widget-nav"></div>
+    </nav>
 
-  <div class="controls">
-    <button onclick="loadWidget('profile', this)" class="active">Profile</button>
-    <button onclick="loadWidget('session', this)">Session</button>
-    <button onclick="loadWidget('stats', this)">Stats</button>
-    <button onclick="loadWidget('today-plan', this)">Today Plan</button>
-    <button onclick="loadWidget('exercises', this)">Exercises</button>
-    <button onclick="loadWidget('programs', this)">Programs</button>
-    <button onclick="loadWidget('templates', this)">Templates</button>
-    <button onclick="loadWidget('measurements', this)">Measurements</button>
-    <button onclick="loadWidget('export', this)">Export</button>
-    <button onclick="loadWidget('programs-list', this)">Programs List</button>
-    <button onclick="loadWidget('available-programs', this)">Available Programs</button>
-    <button onclick="loadWidget('dashboard', this)">Dashboard</button>
-    <button onclick="loadWidget('workout', this)">Workout</button>
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <span class="toolbar-label">Theme</span>
+        <button class="toolbar-btn" onclick="toggleTheme()">
+          <span id="theme-label">Light</span>
+        </button>
+      </div>
+      <div class="toolbar-group">
+        <span class="toolbar-label">Data</span>
+        <button class="toolbar-btn" onclick="toggleMode()">
+          <span id="mode-label" style="font-weight:700;color:#f59e0b">Sample</span>
+        </button>
+      </div>
+      <div class="toolbar-group">
+        <span class="toolbar-label">Device</span>
+        <select id="device-select"></select>
+      </div>
+      <div class="toolbar-spacer"></div>
+      <div class="status-indicator">
+        <span id="status-dot"></span>
+        <span id="status-text">Disconnected</span>
+      </div>
+    </div>
+
+    <!-- Main content area -->
+    <div class="main-area">
+      <div id="device-frame">
+        <iframe id="widget-frame"></iframe>
+      </div>
+    </div>
+
+    <!-- Collapsible log -->
+    <details class="log-panel">
+      <summary>Message Log</summary>
+      <pre id="log">// Message log</pre>
+    </details>
   </div>
-
-  <div class="theme-toggle">
-    <button onclick="toggleTheme()">Toggle Dark/Light</button>
-    <span id="theme-label">Theme: light</span>
-    &nbsp;&nbsp;
-    <button onclick="toggleMode()">Toggle Live/Sample</button>
-    <span id="mode-label" style="font-weight: 600; color: #f59e0b">Sample data</span>
-  </div>
-
-  <iframe id="widget-frame"></iframe>
-  <pre id="log">// Message log</pre>
 
   <script type="module" src="/src/test-host.ts"></script>
 </body>

@@ -35,6 +35,21 @@ Examples:
         if (value === undefined || value === null) {
           return toolResponse({ error: "value is required for log action" }, true);
         }
+        if (!Number.isFinite(value) || value < 0) {
+          return toolResponse({ error: "value must be a finite positive number" }, true);
+        }
+        const MEASUREMENT_BOUNDS: Record<string, { max: number }> = {
+          weight_kg: { max: 500 },
+          body_fat_pct: { max: 60 },
+          chest_cm: { max: 300 },
+          waist_cm: { max: 300 },
+          arm_cm: { max: 100 },
+          thigh_cm: { max: 150 },
+        };
+        const bounds = MEASUREMENT_BOUNDS[measurement_type];
+        if (bounds && value > bounds.max) {
+          return toolResponse({ error: `${measurement_type} value exceeds maximum of ${bounds.max}` }, true);
+        }
 
         const measuredAtDate = measured_at ? new Date(measured_at + 'T00:00:00') : new Date();
         const { rows } = await pool.query(

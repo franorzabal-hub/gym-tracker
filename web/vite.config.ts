@@ -11,8 +11,12 @@ const htmlFiles = readdirSync(__dirname).filter((f) => f.endsWith(".html"));
 // The build script loops over all widgets.
 const widget = process.env.WIDGET;
 
-export default defineConfig({
-  plugins: [react(), viteSingleFile()],
+export default defineConfig(({ command }) => ({
+  plugins: [
+    react(),
+    // Only inline assets for production builds — viteSingleFile breaks Vite HMR
+    ...(command === "build" ? [viteSingleFile()] : []),
+  ],
   build: {
     outDir: "dist",
     emptyOutDir: false,
@@ -22,4 +26,10 @@ export default defineConfig({
         : resolve(__dirname, htmlFiles[0]),
     },
   },
-});
+  server: {
+    port: 5173,
+    proxy: {
+      "/mcp": "http://localhost:3001",
+    },
+  },
+}));

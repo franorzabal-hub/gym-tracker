@@ -30,7 +30,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: cd web && npm ci
       - run: npx tsc --noEmit
+      - run: cd web && npm run build
       - run: npx vitest run
 
   deploy:

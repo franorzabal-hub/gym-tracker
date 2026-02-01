@@ -304,9 +304,9 @@ router.post("/token", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Fetch and delete code in one operation (one-time use)
+    // Fetch code (don't delete yet — validate PKCE first)
     const { rows } = await client.query(
-      "DELETE FROM auth_codes WHERE code = $1 AND expires_at > NOW() RETURNING workos_user_id, email, code_challenge, code_challenge_method",
+      "SELECT workos_user_id, email, code_challenge, code_challenge_method FROM auth_codes WHERE code = $1 AND expires_at > NOW() FOR UPDATE",
       [code]
     );
 
@@ -334,6 +334,9 @@ router.post("/token", async (req, res) => {
       res.status(400).json({ error: "invalid_grant", error_description: "code_verifier mismatch" });
       return;
     }
+
+    // PKCE valid — now consume the code (one-time use)
+    await client.query("DELETE FROM auth_codes WHERE code = $1", [code]);
 
     // Generate our own opaque access token
     const opaqueToken = crypto.randomBytes(32).toString("hex");

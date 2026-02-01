@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:host": "vite --port 5173 --open /test-host.html",
     "build": "bash build.sh",
     "preview": "vite preview"
   },
