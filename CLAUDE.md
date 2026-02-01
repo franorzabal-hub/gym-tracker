@@ -96,7 +96,7 @@ server.ts                    # Express + MCP server + auth middleware
 src/auth/                    # middleware.ts, oauth-routes.ts, workos.ts
 src/context/user-context.ts  # AsyncLocalStorage: getUserId() / runWithUser()
 src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-012
-src/tools/                   # 12 files → 16 MCP tools (12 data + 4 display)
+src/tools/                   # 12 files → 17 MCP tools (12 data + 5 display)
 src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts, log-exercise-helper.ts, date-helpers.ts, parse-helpers.ts, tool-response.ts
 src/resources/               # register-widgets.ts — registers all widget resources
 src/tools/__tests__/         # Vitest tests (1 per tool file)
@@ -137,7 +137,7 @@ dynamic_clients (client_id PK, redirect_uris TEXT[])
 
 Key: per-set rows, program versioning, soft delete on sessions, GIN index on tags, `rep_type` (reps/seconds/meters/calories), `exercise_type` (strength/mobility/cardio/warmup — PRs only for strength). Auth tokens/codes persisted in Postgres with TTL cleanup every 15 min.
 
-## MCP Tools (16)
+## MCP Tools (17)
 
 ### Data Tools (12) — return JSON, no UI
 
@@ -158,7 +158,7 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 | `manage_body_measurements` | log, history, latest — temporal tracking (weight_kg, body_fat_pct, chest_cm, etc.) |
 | `export_data` | json or csv — scopes: all, sessions, exercises, programs, measurements, prs; period filter |
 
-### Display Tools (4) — render visual widgets, LLM must NOT repeat data
+### Display Tools (5) — render visual widgets, LLM must NOT repeat data
 
 | Tool | Widget | Description |
 |---|---|---|
@@ -166,6 +166,7 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 | `show_programs` | programs-list.html | Programs list with user's existing programs and global program templates. Users can activate programs, clone global programs, or choose custom |
 | `show_program` | programs.html | Program viewer with days, exercises, supersets, weights. Defaults to active program, optional `name` param |
 | `show_workout` | workout.html | Interactive workout session editor. Optional `session_id` to view a specific (possibly ended) session in read-only mode. Without it, shows active session with inline-editable sets (reps, weight, RPE, type). Add/remove exercises and sets. |
+| `show_workouts` | workouts.html | Workout history list with clickable session cards. Filters: period, exercise, program_day, tags, limit, offset. Each card opens `show_workout` with that session_id. |
 
 ## MCP Apps Widgets
 

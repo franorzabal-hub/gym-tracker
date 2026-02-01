@@ -5,6 +5,7 @@ import { getUserId } from "../context/user-context.js";
 import { widgetResponse, registerAppToolWithMeta, APP_CONTEXT } from "../helpers/tool-response.js";
 import { getActiveProgram, getProgramDaysWithExercises } from "../helpers/program-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
+import { getUserCurrentDate } from "../helpers/date-helpers.js";
 
 export function registerDisplayTools(server: McpServer) {
   registerAppToolWithMeta(server, "show_profile", {
@@ -234,6 +235,136 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday"). The wi
         initialDayIdx,
         exerciseCatalog: exerciseRows.map((r: any) => ({ name: r.name, muscle_group: r.muscle_group })),
       }
+    );
+  });
+
+  registerAppToolWithMeta(server, "show_workouts", {
+    title: "Workout History",
+    description: `${APP_CONTEXT}Display workout history as a visual list of session cards. Each card is clickable to view full session details.
+The widget already shows all information visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps.
+Use this when the user wants to see past workouts, training history, or review their sessions.`,
+    inputSchema: {
+      period: z
+        .union([
+          z.enum(["today", "week", "month", "year"]),
+          z.number().int().min(1),
+        ])
+        .optional()
+        .default("month"),
+      exercise: z.string().optional().describe("Filter sessions containing this exercise"),
+      program_day: z.string().optional().describe("Filter by program day label"),
+      tags: z.union([z.array(z.string()), z.string()]).optional().describe("Filter sessions with ALL of these tags"),
+      limit: z.number().int().optional().describe("Max sessions to return. Defaults to 50"),
+      offset: z.number().int().optional().describe("Skip first N sessions for pagination. Defaults to 0"),
+    },
+    annotations: { readOnlyHint: true },
+    _meta: { ui: { resourceUri: "ui://gym-tracker/workouts.html" } },
+  }, async ({ period, exercise, program_day, tags: rawTags, limit: rawLimit, offset: rawOffset }: {
+    period?: "today" | "week" | "month" | "year" | number;
+    exercise?: string;
+    program_day?: string;
+    tags?: string[] | string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const tags = parseJsonArrayParam<string>(rawTags);
+    const userId = getUserId();
+    const effectiveLimit = rawLimit ?? 50;
+    const effectiveOffset = rawOffset ?? 0;
+    const effectivePeriod = period ?? "month";
+
+    const params: any[] = [userId];
+
+    // Build date filter
+    const userDate = await getUserCurrentDate();
+    let dateFilter: string;
+    if (effectivePeriod === "today") {
+      params.push(userDate);
+      dateFilter = `s.started_at >= $${params.length}::date`;
+    } else if (effectivePeriod === "week") {
+      params.push(userDate);
+      dateFilter = `s.started_at >= $${params.length}::date - INTERVAL '7 days'`;
+    } else if (effectivePeriod === "month") {
+      params.push(userDate);
+      dateFilter = `s.started_at >= $${params.length}::date - INTERVAL '30 days'`;
+    } else if (effectivePeriod === "year") {
+      params.push(userDate);
+      dateFilter = `s.started_at >= $${params.length}::date - INTERVAL '365 days'`;
+    } else {
+      params.push(userDate);
+      params.push(effectivePeriod);
+      dateFilter = `s.started_at >= $${params.length - 1}::date - make_interval(days => $${params.length})`;
+    }
+
+    // Build extra WHERE clauses
+    let extraWhere = "";
+    if (exercise) {
+      params.push(`%${exercise}%`);
+      extraWhere += ` AND EXISTS (
+        SELECT 1 FROM session_exercises se2
+        JOIN exercises e2 ON e2.id = se2.exercise_id
+        LEFT JOIN exercise_aliases ea ON ea.exercise_id = e2.id
+        WHERE se2.session_id = s.id
+          AND (e2.name ILIKE $${params.length} OR ea.alias ILIKE $${params.length})
+      )`;
+    }
+    if (program_day) {
+      params.push(program_day.toLowerCase());
+      extraWhere += ` AND LOWER(pd.day_label) = $${params.length}`;
+    }
+    if (tags && tags.length > 0) {
+      params.push(tags);
+      extraWhere += ` AND s.tags @> $${params.length}::text[]`;
+    }
+
+    params.push(effectiveLimit);
+    const limitIdx = params.length;
+    params.push(effectiveOffset);
+    const offsetIdx = params.length;
+
+    const sql = `
+      SELECT s.id as session_id, s.started_at, s.ended_at,
+        pd.day_label as program_day, s.tags,
+        COUNT(DISTINCT se.id) as exercises_count,
+        COALESCE(SUM((SELECT COUNT(*) FROM sets st WHERE st.session_exercise_id = se.id)), 0) as total_sets,
+        COALESCE(SUM((SELECT COALESCE(SUM(st.weight * st.reps), 0) FROM sets st WHERE st.session_exercise_id = se.id AND st.set_type != 'warmup' AND st.weight IS NOT NULL)), 0) as total_volume_kg
+      FROM sessions s
+      LEFT JOIN program_days pd ON pd.id = s.program_day_id
+      LEFT JOIN session_exercises se ON se.session_id = s.id
+      WHERE s.user_id = $1 AND s.deleted_at IS NULL AND ${dateFilter}${extraWhere}
+      GROUP BY s.id, pd.day_label, s.tags
+      ORDER BY s.started_at DESC
+      LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
+
+    const { rows } = await pool.query(sql, params);
+    const sessions = rows.map(s => ({
+      session_id: s.session_id,
+      started_at: s.started_at,
+      ended_at: s.ended_at,
+      program_day: s.program_day,
+      tags: s.tags,
+      exercises_count: Number(s.exercises_count),
+      total_sets: Number(s.total_sets),
+      total_volume_kg: Math.round(Number(s.total_volume_kg)),
+    }));
+
+    const summary = {
+      total_sessions: sessions.length,
+      total_volume_kg: sessions.reduce((acc, s) => acc + s.total_volume_kg, 0),
+      exercises_count: sessions.reduce((acc, s) => acc + s.exercises_count, 0),
+    };
+
+    const periodStr = typeof effectivePeriod === "number" ? `${effectivePeriod}` : effectivePeriod;
+    const filters = {
+      period: periodStr,
+      ...(exercise && { exercise }),
+      ...(program_day && { program_day }),
+      ...(tags && tags.length > 0 && { tags }),
+    };
+
+    return widgetResponse(
+      `Workout history widget displayed showing ${sessions.length} session(s) for period "${periodStr}". Do NOT repeat this information — the user can see it in the widget.`,
+      { sessions, summary, filters }
     );
   });
 }
