@@ -96,7 +96,7 @@ server.ts                    # Express + MCP server + auth middleware
 src/auth/                    # middleware.ts, oauth-routes.ts, workos.ts
 src/context/user-context.ts  # AsyncLocalStorage: getUserId() / runWithUser()
 src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-012
-src/tools/                   # 13 files → 15 MCP tools
+src/tools/                   # 13 files → 18 MCP tools (15 data + 3 display)
 src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts, date-helpers.ts, parse-helpers.ts, tool-response.ts
 src/resources/               # register-widgets.ts — registers all widget resources
 src/tools/__tests__/         # Vitest tests (1 per tool file)
@@ -136,13 +136,16 @@ dynamic_clients (client_id PK, redirect_uris TEXT[])
 
 Key: per-set rows, program versioning, soft delete on sessions, GIN index on tags, `rep_type` (reps/seconds/meters/calories), `exercise_type` (strength/mobility/cardio/warmup — PRs only for strength). Auth tokens/codes persisted in Postgres with TTL cleanup every 15 min.
 
-## MCP Tools (15)
+## MCP Tools (18)
+
+### Data Tools (15) — return JSON, no UI
 
 | Tool | Actions / Params |
 |---|---|
+| `initialize_gym_session` | MANDATORY first call. Returns user state + `required_next_tool` routing. New users → `show_onboarding` |
 | `manage_profile` | get, update (JSONB) |
 | `manage_exercises` | list, search, add, add_bulk, update, update_bulk, delete, delete_bulk |
-| `manage_program` | list, get, create, update (days→new version, or metadata-only), activate, delete, delete_bulk, history |
+| `manage_program` | list, get, create, create_from_template, list_templates, update, activate, delete, delete_bulk, history |
 | `start_session` | program_day?, date?, tags? — infers day from weekday |
 | `end_session` | notes?, force?, tags? — summary + comparison vs last |
 | `get_active_session` | no params — returns active session with exercises or `{active: false}` |
@@ -155,6 +158,14 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 | `manage_templates` | save, list, start, delete, delete_bulk |
 | `manage_body_measurements` | log, history, latest — temporal tracking (weight_kg, body_fat_pct, chest_cm, etc.) |
 | `export_data` | json or csv — scopes: all, sessions, exercises, programs, measurements, prs; period filter |
+
+### Display Tools (3) — render visual widgets, LLM must NOT repeat data
+
+| Tool | Widget | Description |
+|---|---|---|
+| `show_profile` | profile.html | User profile card |
+| `show_onboarding` | onboarding.html | Multi-step onboarding wizard (profile form + program selection). Widget calls `manage_profile` and `manage_program` internally via `callServerTool` |
+| `show_program` | programs.html | Program viewer with days, exercises, supersets, weights. Defaults to active program, optional `name` param |
 
 ## MCP Apps Widgets
 
@@ -299,11 +310,13 @@ See "Local Development Setup" section above for server startup and database mana
 
 For Claude Desktop widget testing:
 1. Server must be running: `DEV_USER_ID=1 npm run dev`
-2. Expose via tunnel: `cloudflared tunnel --url http://localhost:3001 --protocol http2`
-3. In Claude Desktop, add custom connector with URL: `https://<tunnel-url>/mcp`
+2. Start the permanent Cloudflare tunnel: `cloudflared tunnel --protocol http2 run gym-tracker`
+   - Tunnel config: `~/.cloudflared/config.yml` → `gym-tracker.1kairos.com` → `http://localhost:3001`
+   - **Must use `--protocol http2`** — QUIC is blocked on some networks
+3. In Claude Desktop, connector URL: `https://gym-tracker.1kairos.com/mcp`
 4. After widget code changes: `cd web && npm run build`, then start a new conversation in Claude Desktop
 
-**Local test host** (no Claude Desktop needed): `cd web && npx vite --port 5173`, then open `http://localhost:5173/test-host.html`. Uses `AppBridge` to simulate the host-side protocol. Rebuild widgets first. Supports theme toggle and all 9 widgets with sample data.
+**Local test host** (no Claude Desktop needed): `cd web && npx vite --port 5173`, then open `http://localhost:5173/test-host.html`. Uses `AppBridge` to simulate the host-side protocol. Rebuild widgets first. Supports theme toggle and all 10 widgets with sample data.
 
 ### How the postMessage protocol works (for debugging)
 
@@ -386,5 +399,5 @@ Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture
 - Tests for `body-measurements.ts` and `export.ts`
 - Rate limiting persistence (currently in-memory, resets on deploy)
 - Persist `STATE_SECRET` as a Cloud Run secret (currently falls back to ephemeral random)
-- Widget UIs are styled (profile, session, stats, today-plan, exercises, programs, templates, measurements); export widget intentionally shows raw JSON
+- Widget UIs are styled (profile, session, stats, today-plan, exercises, programs, templates, measurements, onboarding); export widget intentionally shows raw JSON
 - Remove debug logging from server.ts (MCP method/resource logging) and register-widgets.ts before production

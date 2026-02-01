@@ -27,11 +27,15 @@
     <button onclick="loadWidget('templates', this)">Templates</button>
     <button onclick="loadWidget('measurements', this)">Measurements</button>
     <button onclick="loadWidget('export', this)">Export</button>
+    <button onclick="loadWidget('onboarding', this)">Onboarding</button>
   </div>
 
   <div class="theme-toggle">
     <button onclick="toggleTheme()">Toggle Dark/Light</button>
     <span id="theme-label">Theme: light</span>
+    &nbsp;&nbsp;
+    <button onclick="toggleMode()">Toggle Live/Sample</button>
+    <span id="mode-label" style="font-weight: 600; color: #f59e0b">Sample data</span>
   </div>
 
   <iframe id="widget-frame"></iframe>

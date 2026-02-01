@@ -11,9 +11,9 @@ export function registerOnboardingTool(server: McpServer) {
 
 Returns the user's setup state: profile, active program, training history, and onboarding status. Without calling this first, other tools may behave incorrectly because you won't know the user's context.
 
-Based on the response:
-- If is_new_user=true: The user has no profile. Guide them through setup: ask for name, weight, height, goal, experience level, available training days (save with manage_profile), then help pick a program (manage_program list_templates + create_from_template).
-- If is_new_user=false: The user is set up. Greet them by name and proceed with their request. Use the "suggestion" field for recommended next actions.`,
+CRITICAL ROUTING — you MUST follow the "required_next_tool" field in the response:
+- If required_next_tool is set: call that tool IMMEDIATELY as your next action. Do NOT greet the user, do NOT explain anything, do NOT ask questions. Just call the tool.
+- If required_next_tool is null: respond normally using the suggestion field.`,
     {},
     async () => {
       const userId = getUserId();
@@ -45,9 +45,9 @@ Based on the response:
 
       // Build suggestion
       let suggestion: string | null = null;
-      if (!profileComplete) {
-        suggestion = "Start onboarding: ask for name, weight, height, goal, experience level, and available training days.";
-      } else if (!hasProgram) {
+      if (!profileComplete && !isNewUser) {
+        suggestion = "Profile incomplete. Ask the user if they want to update their profile.";
+      } else if (profileComplete && !hasProgram) {
         const available = profile?.available_days ?? 4;
         const experience = profile?.experience ?? "intermediate";
         const recommended = getRecommendedTemplate(available, experience);
@@ -63,6 +63,7 @@ Based on the response:
         has_history: hasHistory,
         onboarding,
         suggestion,
+        required_next_tool: isNewUser ? "show_onboarding" : null,
       });
     }
   );

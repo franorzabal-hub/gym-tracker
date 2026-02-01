@@ -2,8 +2,24 @@ import {
   AppBridge,
   PostMessageTransport,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-// Sample tool output data for each widget
+// Widget name → MCP tool call to fetch initial data
+const WIDGET_TOOLS: Record<string, { tool: string; args: Record<string, unknown> }> = {
+  profile: { tool: "show_profile", args: {} },
+  session: { tool: "get_active_session", args: {} },
+  stats: { tool: "get_stats", args: { exercise: "Bench Press", period: "3m" } },
+  "today-plan": { tool: "get_today_plan", args: {} },
+  exercises: { tool: "manage_exercises", args: { action: "list" } },
+  programs: { tool: "show_program", args: {} },
+  templates: { tool: "manage_templates", args: { action: "list" } },
+  measurements: { tool: "manage_body_measurements", args: { action: "latest" } },
+  onboarding: { tool: "show_onboarding", args: {} },
+  export: { tool: "export_data", args: { format: "json", scope: "all" } },
+};
+
+// Sample data fallback when server is not running
 const sampleData: Record<string, { content: Array<{ type: string; text: string }> }> = {
   profile: {
     content: [{ type: "text", text: JSON.stringify({
@@ -68,7 +84,18 @@ const sampleData: Record<string, { content: Array<{ type: string; text: string }
   },
   programs: {
     content: [{ type: "text", text: JSON.stringify({
-      programs: [{ name: "PPL", is_active: true, days: ["Push", "Pull", "Legs"] }],
+      program: {
+        name: "Push Pull Legs", description: "6-day PPL split for hypertrophy", version: 2,
+        days: [
+          { day_label: "Push A", weekdays: [1, 4], exercises: [
+            { exercise_name: "Bench Press", target_sets: 4, target_reps: 6, target_weight: 85, target_rpe: 8, superset_group: null, group_type: null, rest_seconds: 120, notes: null, muscle_group: "chest" },
+            { exercise_name: "Overhead Press", target_sets: 3, target_reps: 10, target_weight: 50, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "shoulders" },
+            { exercise_name: "Cable Fly", target_sets: 3, target_reps: 12, target_weight: 15, target_rpe: null, superset_group: 1, group_type: "superset", rest_seconds: 60, notes: null, muscle_group: "chest" },
+            { exercise_name: "Lateral Raise", target_sets: 3, target_reps: 15, target_weight: 12, target_rpe: null, superset_group: 1, group_type: "superset", rest_seconds: 60, notes: null, muscle_group: "shoulders" },
+            { exercise_name: "Tricep Pushdown", target_sets: 3, target_reps: 12, target_weight: 25, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 60, notes: "Rope attachment", muscle_group: "triceps" },
+          ]},
+        ],
+      },
     })}],
   },
   templates: {
@@ -81,6 +108,21 @@ const sampleData: Record<string, { content: Array<{ type: string; text: string }
       measurements: [{ type: "weight_kg", value: 82, date: "2025-01-28" }],
     })}],
   },
+  onboarding: {
+    content: [{ type: "text", text: JSON.stringify({
+      profile: {},
+      templates: [
+        { id: "full_body_3x", name: "Full Body 3x", description: "3 days/week full body routine.", days_per_week: 3, target_experience: "beginner",
+          days: [
+            { day_label: "Full Body A", exercises: [{ name: "Squat", sets: 3, reps: 8 }, { name: "Bench Press", sets: 3, reps: 8 }, { name: "Barbell Row", sets: 3, reps: 8 }] },
+          ]},
+        { id: "ppl_6x", name: "Push Pull Legs 6x", description: "6 days/week PPL split.", days_per_week: 6, target_experience: "advanced",
+          days: [
+            { day_label: "Push A", exercises: [{ name: "Bench Press", sets: 4, reps: 6 }, { name: "Overhead Press", sets: 3, reps: 10 }] },
+          ]},
+      ],
+    })}],
+  },
   export: {
     content: [{ type: "text", text: JSON.stringify({
       format: "json", scope: "all",
@@ -89,18 +131,50 @@ const sampleData: Record<string, { content: Array<{ type: string; text: string }
   },
 };
 
+const MCP_SERVER_URL = "http://localhost:3001/mcp";
+
 const logEl = document.getElementById("log") as HTMLPreElement;
 const frame = document.getElementById("widget-frame") as HTMLIFrameElement;
+const modeLabel = document.getElementById("mode-label") as HTMLSpanElement;
 
 let currentTheme: "light" | "dark" = "light";
 let currentWidget = "profile";
 let currentBridge: AppBridge | null = null;
+let mcpClient: Client | null = null;
+let isLiveMode = false;
 
 function log(label: string, data?: unknown) {
   const time = new Date().toLocaleTimeString();
   const text = data ? JSON.stringify(data, null, 2).slice(0, 500) : "";
   logEl.textContent += `[${time}] ${label}\n${text}\n\n`;
   logEl.scrollTop = logEl.scrollHeight;
+}
+
+function updateModeLabel() {
+  if (modeLabel) {
+    modeLabel.textContent = isLiveMode ? "LIVE (dev DB)" : "Sample data";
+    modeLabel.style.color = isLiveMode ? "#16a34a" : "#f59e0b";
+  }
+}
+
+async function connectMcpClient(): Promise<Client | null> {
+  try {
+    const client = new Client({ name: "TestHost", version: "1.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(MCP_SERVER_URL));
+    await client.connect(transport);
+    log("MCP client connected to " + MCP_SERVER_URL);
+    return client;
+  } catch (err) {
+    log("MCP server not available, using sample data", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+async function callToolViaClient(client: Client, toolName: string, args: Record<string, unknown>): Promise<any> {
+  log(`Calling tool: ${toolName}`, args);
+  const result = await client.callTool({ name: toolName, arguments: args });
+  log(`Tool result received`, result);
+  return result;
 }
 
 function getHostContext() {
@@ -131,29 +205,48 @@ async function connectBridge() {
     currentBridge = null;
   }
 
+  // Try to connect MCP client if not already connected
+  if (!mcpClient) {
+    mcpClient = await connectMcpClient();
+    isLiveMode = mcpClient !== null;
+    updateModeLabel();
+  }
+
   const bridge = new AppBridge(
-    null, // no MCP client — we provide data manually
+    mcpClient, // real client for auto-forwarding tool calls, or null for sample data
     { name: "TestHost", version: "1.0.0" },
     { openLinks: {}, serverTools: {}, logging: {} },
     { hostContext: getHostContext() },
   );
 
-  bridge.oninitialized = () => {
-    log("Widget initialized, sending tool data...");
-    const data = sampleData[currentWidget];
-    // sendToolInput with empty args, then sendToolResult with the actual data
+  bridge.oninitialized = async () => {
+    log("Widget initialized, fetching data...");
+
+    let data: any;
+    if (mcpClient && WIDGET_TOOLS[currentWidget]) {
+      // Live mode: call actual MCP tool
+      try {
+        const { tool, args } = WIDGET_TOOLS[currentWidget];
+        data = await callToolViaClient(mcpClient, tool, args);
+      } catch (err) {
+        log("Tool call failed, falling back to sample data", err instanceof Error ? err.message : err);
+        data = sampleData[currentWidget];
+      }
+    } else {
+      // Sample data mode
+      data = sampleData[currentWidget];
+    }
+
     bridge.sendToolInput({ arguments: {} });
     bridge.sendToolResult(data);
-    log("Sent tool-input + tool-result", data);
+    log("Data sent to widget", { mode: isLiveMode ? "live" : "sample" });
   };
 
-  bridge.onsizechange = ({ width, height }) => {
+  bridge.onsizechange = ({ height }) => {
     if (height != null) {
       frame.style.height = `${Math.min(height + 40, 800)}px`;
     }
-    if (width != null) {
-      frame.style.width = `${width}px`;
-    }
+    // Don't override width — keep iframe at CSS 100% so widgets can be responsive
   };
 
   bridge.onloggingmessage = ({ level, logger, data }) => {
@@ -196,6 +289,27 @@ async function connectBridge() {
   document.body.style.color = currentTheme === "dark" ? "#eee" : "#000";
 
   // Reload widget with new theme (AppProvider reads context at init only)
+  (window as any).loadWidget(currentWidget);
+};
+
+(window as any).toggleMode = async function toggleMode() {
+  if (isLiveMode) {
+    // Switch to sample data
+    if (mcpClient) {
+      try { await mcpClient.close(); } catch { /* ignore */ }
+      mcpClient = null;
+    }
+    isLiveMode = false;
+  } else {
+    // Try to connect to live server
+    mcpClient = await connectMcpClient();
+    isLiveMode = mcpClient !== null;
+    if (!isLiveMode) {
+      log("Cannot switch to live mode — server not available");
+    }
+  }
+  updateModeLabel();
+  // Reload current widget
   (window as any).loadWidget(currentWidget);
 };
 

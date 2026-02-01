@@ -20,6 +20,7 @@ const dayExerciseSchema = z.object({
   weight: z.number().optional(),
   rpe: z.number().min(1).max(10).optional(),
   superset_group: z.number().int().optional(),
+  group_type: z.enum(["superset", "paired", "circuit"]).optional().describe("Type of exercise grouping. 'superset' = back-to-back no rest, 'paired' = active rest / related exercises, 'circuit' = rotate through exercises. Required when superset_group is set."),
   rest_seconds: z.number().int().optional(),
   notes: z.string().optional(),
 });
@@ -49,6 +50,15 @@ Actions:
 - "history": List all versions of a program with dates and change descriptions
 
 For "create" and "update" with days, pass the "days" array with day_label, weekdays (ISO: 1=Mon..7=Sun), and exercises.
+Each exercise needs: sets (number), reps (number — use the FIRST set's rep count), weight (optional, in kg).
+If the rep scheme varies per set (e.g. pyramid 12/10/8), set reps to the first set's value (12) and put the full scheme in notes as "reps: 12/10/8". The widget displays it as "3×(12/10/8)" automatically.
+If there's a progression instruction, append it in notes (e.g. "reps: 12/10/8 con progresión").
+Do NOT put redundant rep info — either use a flat reps number OR put the varying scheme in notes, never both.
+Each exercise can have superset_group (integer) + group_type to link exercises:
+  - "superset": exercises done back-to-back with no rest (e.g., Cable Fly + Lateral Raise)
+  - "paired": active rest / related exercises done together (e.g., Deadlift + Mobility drill between sets)
+  - "circuit": rotate through exercises in sequence (e.g., Dorsalera → Remo → repeat)
+Exercises with the same superset_group number in a day are grouped together. Always set group_type when using superset_group.
 For "create_from_template", pass template_id. Use list_templates to see available options.
 For "update" with days, also pass change_description explaining what changed.
 For "update" metadata only, pass new_name and/or description (no days needed).
@@ -199,8 +209,8 @@ For "activate", pass the program name.`,
 
               await client.query(
                 `INSERT INTO program_day_exercises
-                   (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, rest_seconds, notes)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                   (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, group_type, rest_seconds, notes)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
                 [
                   newDay.id,
                   resolved.id,
@@ -210,6 +220,7 @@ For "activate", pass the program name.`,
                   ex.rpe || null,
                   j,
                   ex.superset_group || null,
+                  ex.superset_group ? (ex.group_type || "superset") : null,
                   ex.rest_seconds || null,
                   ex.notes || null,
                 ]
@@ -411,8 +422,8 @@ For "activate", pass the program name.`,
 
               await client.query(
                 `INSERT INTO program_day_exercises
-                   (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, rest_seconds, notes)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                   (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, group_type, rest_seconds, notes)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
                 [
                   newDay.id,
                   resolved.id,
@@ -422,6 +433,7 @@ For "activate", pass the program name.`,
                   ex.rpe || null,
                   j,
                   ex.superset_group || null,
+                  ex.superset_group ? (ex.group_type || "superset") : null,
                   ex.rest_seconds || null,
                   ex.notes || null,
                 ]

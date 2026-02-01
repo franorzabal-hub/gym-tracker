@@ -27,7 +27,7 @@ describe("initialize_gym_session tool", () => {
     registerOnboardingTool(server);
   });
 
-  it("detects new user with no profile, no program, no sessions", async () => {
+  it("returns required_next_tool=show_onboarding for new user", async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [] }) // no profile
       .mockResolvedValueOnce({ rows: [] }) // no program
@@ -37,11 +37,7 @@ describe("initialize_gym_session tool", () => {
     const data = JSON.parse(result.content[0].text);
 
     expect(data.is_new_user).toBe(true);
-    expect(data.profile_complete).toBe(false);
-    expect(data.has_program).toBe(false);
-    expect(data.has_history).toBe(false);
-    expect(data.onboarding).toBeNull();
-    expect(data.suggestion).toContain("onboarding");
+    expect(data.required_next_tool).toBe("show_onboarding");
   });
 
   it("detects user with profile but no program", async () => {
@@ -54,8 +50,7 @@ describe("initialize_gym_session tool", () => {
     const data = JSON.parse(result.content[0].text);
 
     expect(data.is_new_user).toBe(false);
-    expect(data.profile_complete).toBe(true);
-    expect(data.has_program).toBe(false);
+    expect(data.required_next_tool).toBeNull();
     expect(data.suggestion).toContain("full_body_3x");
   });
 
@@ -69,10 +64,7 @@ describe("initialize_gym_session tool", () => {
     const data = JSON.parse(result.content[0].text);
 
     expect(data.is_new_user).toBe(false);
-    expect(data.profile_complete).toBe(true);
-    expect(data.has_program).toBe(true);
-    expect(data.has_history).toBe(true);
-    expect(data.onboarding).toEqual({ completed: true });
+    expect(data.required_next_tool).toBeNull();
     expect(data.suggestion).toBeNull();
   });
 
@@ -85,8 +77,7 @@ describe("initialize_gym_session tool", () => {
     const result = await toolHandler({});
     const data = JSON.parse(result.content[0].text);
 
-    expect(data.profile_complete).toBe(true);
-    expect(data.has_program).toBe(true);
+    expect(data.required_next_tool).toBeNull();
     expect(data.suggestion).toContain("Mark onboarding complete");
   });
 
@@ -99,6 +90,6 @@ describe("initialize_gym_session tool", () => {
     const result = await toolHandler({});
     const data = JSON.parse(result.content[0].text);
 
-    expect(data.suggestion).toContain("upper_lower_4x"); // default 4 days, intermediate
+    expect(data.suggestion).toContain("upper_lower_4x");
   });
 });

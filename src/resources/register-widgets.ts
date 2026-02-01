@@ -21,6 +21,7 @@ const WIDGETS: Array<{ name: string; uri: string; file: string; description: str
   { name: "measurements-widget", uri: "ui://gym-tracker/measurements.html", file: "measurements.html", description: "Body measurement tracking" },
   { name: "profile-widget", uri: "ui://gym-tracker/profile.html", file: "profile.html", description: "User profile data" },
   { name: "export-widget", uri: "ui://gym-tracker/export.html", file: "export.html", description: "Data export viewer" },
+  { name: "onboarding-widget", uri: "ui://gym-tracker/onboarding.html", file: "onboarding.html", description: "Interactive onboarding wizard" },
 ];
 
 /**

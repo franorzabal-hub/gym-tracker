@@ -39,10 +39,12 @@ export async function getProgramDaysWithExercises(versionId: number) {
            'target_rpe', pde.target_rpe,
            'sort_order', pde.sort_order,
            'superset_group', pde.superset_group,
+           'group_type', pde.group_type,
            'notes', pde.notes,
            'rest_seconds', pde.rest_seconds,
            'rep_type', e.rep_type,
-           'exercise_type', e.exercise_type
+           'exercise_type', e.exercise_type,
+           'muscle_group', e.muscle_group
          ) ORDER BY pde.sort_order
        ) FILTER (WHERE pde.id IS NOT NULL), '[]') as exercises
      FROM program_days pd
@@ -124,8 +126,8 @@ export async function cloneVersion(
       // Clone exercises for this day
       await client.query(
         `INSERT INTO program_day_exercises
-           (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, rest_seconds, notes)
-         SELECT $1, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, rest_seconds, notes
+           (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, group_type, rest_seconds, notes)
+         SELECT $1, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, group_type, rest_seconds, notes
          FROM program_day_exercises WHERE day_id = $2 ORDER BY sort_order`,
         [newDay.id, day.id]
       );

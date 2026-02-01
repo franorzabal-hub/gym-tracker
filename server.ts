@@ -32,7 +32,7 @@ function getAllowedOrigins(): string[] {
     return process.env.ALLOWED_ORIGINS.split(",").map(s => s.trim()).filter(Boolean);
   }
   if (!process.env.NODE_ENV || process.env.NODE_ENV === "development") {
-    return ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173", "http://localhost:8080"];
+    return ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173", "http://localhost:5174", "http://localhost:8080"];
   }
   return [];
 }
