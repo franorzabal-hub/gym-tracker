@@ -35,10 +35,12 @@ vi.mock("../../context/user-context.js", () => ({
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerProgramTool } from "../programs.js";
 import { getActiveProgram, getLatestVersion, getProgramDaysWithExercises } from "../../helpers/program-helpers.js";
+import { resolveExercise } from "../../helpers/exercise-resolver.js";
 
 const mockGetActiveProgram = getActiveProgram as ReturnType<typeof vi.fn>;
 const mockGetLatestVersion = getLatestVersion as ReturnType<typeof vi.fn>;
 const mockGetDays = getProgramDaysWithExercises as ReturnType<typeof vi.fn>;
+const mockResolveExercise = resolveExercise as ReturnType<typeof vi.fn>;
 
 let toolHandler: Function;
 
@@ -50,6 +52,8 @@ describe("manage_program tool", () => {
     mockGetActiveProgram.mockReset();
     mockGetLatestVersion.mockReset();
     mockGetDays.mockReset();
+    mockResolveExercise.mockReset();
+    mockResolveExercise.mockResolvedValue({ id: 1, name: "Bench Press", isNew: false });
 
     const server = {
       tool: vi.fn((_name: string, _desc: string, _schema: any, handler: Function) => {
@@ -494,6 +498,683 @@ describe("manage_program tool", () => {
       })).rejects.toThrow("DB error");
 
       expect(mockClientQuery).toHaveBeenCalledWith("ROLLBACK");
+    });
+
+    // --- Nullable fields (widget sends null) ---
+
+    it("stores null for all nullable exercise fields", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({
+        action: "patch", program_id: 1,
+        days: [{
+          day_label: "Push",
+          exercises: [{
+            exercise: "Bench Press", sets: 3, reps: 10,
+            weight: null, rpe: null, superset_group: null,
+            group_type: null, rest_seconds: null, notes: null,
+          }],
+        }],
+      });
+
+      // INSERT exercise is the 4th call (index 3)
+      const insertArgs = mockClientQuery.mock.calls[3][1];
+      // weight=null, rpe=null, superset_group=null, group_type=null, rest_seconds=null, notes=null
+      expect(insertArgs[4]).toBeNull(); // weight
+      expect(insertArgs[5]).toBeNull(); // rpe
+      expect(insertArgs[7]).toBeNull(); // superset_group
+      expect(insertArgs[8]).toBeNull(); // group_type
+      expect(insertArgs[9]).toBeNull(); // rest_seconds
+      expect(insertArgs[10]).toBeNull(); // notes
+    });
+
+    it("stores null for weekdays: null on days", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({
+        action: "patch", program_id: 1,
+        days: [{
+          day_label: "Push", weekdays: null,
+          exercises: [{ exercise: "Bench Press", sets: 3, reps: 10 }],
+        }],
+      });
+
+      // INSERT day is the 3rd call (index 2)
+      const dayArgs = mockClientQuery.mock.calls[2][1];
+      expect(dayArgs[2]).toBeNull(); // weekdays
+    });
+
+    it("handles mixed null and non-null values across exercises", async () => {
+      mockResolveExercise
+        .mockResolvedValueOnce({ id: 1, name: "Bench Press", isNew: false })
+        .mockResolvedValueOnce({ id: 2, name: "Lateral Raise", isNew: false });
+
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT exercise 1
+        .mockResolvedValueOnce({}) // INSERT exercise 2
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({
+        action: "patch", program_id: 1,
+        days: [{
+          day_label: "Push",
+          exercises: [
+            { exercise: "Bench Press", sets: 4, reps: 8, weight: 80, rpe: null, rest_seconds: 120, notes: null },
+            { exercise: "Lateral Raise", sets: 3, reps: 12, weight: null, rpe: 8, rest_seconds: null, notes: "slow eccentric" },
+          ],
+        }],
+      });
+
+      // Exercise 1 (index 3)
+      const ex1Args = mockClientQuery.mock.calls[3][1];
+      expect(ex1Args[4]).toBe(80);   // weight
+      expect(ex1Args[5]).toBeNull();  // rpe (null)
+      expect(ex1Args[9]).toBe(120);   // rest_seconds
+      expect(ex1Args[10]).toBeNull(); // notes (null)
+
+      // Exercise 2 (index 4)
+      const ex2Args = mockClientQuery.mock.calls[4][1];
+      expect(ex2Args[4]).toBeNull();            // weight (null)
+      expect(ex2Args[5]).toBe(8);               // rpe
+      expect(ex2Args[9]).toBeNull();            // rest_seconds (null)
+      expect(ex2Args[10]).toBe("slow eccentric"); // notes
+    });
+
+    // --- Metadata updates ---
+
+    it("updates name only (no days, no description)", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // UPDATE name
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", program_id: 1, new_name: "Push Pull Legs",
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.program.name).toBe("Push Pull Legs");
+      expect(parsed.days_count).toBeUndefined();
+
+      // Only BEGIN, UPDATE name, COMMIT — no description UPDATE
+      expect(mockClientQuery).toHaveBeenCalledTimes(3);
+    });
+
+    it("updates description only", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // UPDATE description
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", program_id: 1, description: "A new description",
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.program.description).toBe("A new description");
+    });
+
+    it("updates both name and description together", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // UPDATE name
+        .mockResolvedValueOnce({}) // UPDATE description
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", program_id: 1,
+        new_name: "New PPL", description: "Updated desc",
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.program.name).toBe("New PPL");
+      expect(parsed.program.description).toBe("Updated desc");
+      expect(mockClientQuery).toHaveBeenCalledTimes(4);
+    });
+
+    it("clears description with empty string (stores as null)", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // UPDATE description
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", program_id: 1, description: "",
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      // description || null → "" || null → null
+      expect(parsed.program.description).toBeNull();
+
+      // Verify UPDATE query received null
+      const descUpdateArgs = mockClientQuery.mock.calls[1][1];
+      expect(descUpdateArgs[0]).toBeNull();
+    });
+
+    it("skips description update when undefined (not provided)", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // UPDATE name
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", program_id: 1, new_name: "New PPL",
+        // description not provided → undefined
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.program.name).toBe("New PPL");
+      // description should not appear in response (undefined is omitted in JSON)
+      expect(parsed.program.description).toBeUndefined();
+      // Only 3 calls: BEGIN, UPDATE name, COMMIT
+      expect(mockClientQuery).toHaveBeenCalledTimes(3);
+    });
+
+    // --- Day operations ---
+
+    it("replaces multiple days with exercises", async () => {
+      mockResolveExercise
+        .mockResolvedValueOnce({ id: 1, name: "Bench Press", isNew: false })
+        .mockResolvedValueOnce({ id: 2, name: "Squat", isNew: false });
+
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 1
+        .mockResolvedValueOnce({}) // INSERT exercise 1
+        .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 2
+        .mockResolvedValueOnce({}) // INSERT exercise 2
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", program_id: 1,
+        days: [
+          { day_label: "Push", exercises: [{ exercise: "Bench Press", sets: 4, reps: 8 }] },
+          { day_label: "Legs", exercises: [{ exercise: "Squat", sets: 5, reps: 5 }] },
+        ],
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.days_count).toBe(2);
+      expect(parsed.exercises_count).toBe(2);
+    });
+
+    it("sends empty exercises array for a day (day created, 0 exercises)", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day (no exercises)
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", program_id: 1,
+        days: [{ day_label: "Rest Day", exercises: [] }],
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.days_count).toBe(1);
+      // exercisesCount is 0, and the response uses `exercisesCount || undefined` which yields undefined for 0
+      expect(parsed.exercises_count).toBeUndefined();
+    });
+
+    it("patches with multiple days each having multiple exercises", async () => {
+      mockResolveExercise
+        .mockResolvedValueOnce({ id: 1, name: "Bench Press", isNew: false })
+        .mockResolvedValueOnce({ id: 2, name: "Incline DB", isNew: false })
+        .mockResolvedValueOnce({ id: 3, name: "Squat", isNew: false })
+        .mockResolvedValueOnce({ id: 4, name: "Leg Press", isNew: false });
+
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 1
+        .mockResolvedValueOnce({}) // INSERT ex 1
+        .mockResolvedValueOnce({}) // INSERT ex 2
+        .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 2
+        .mockResolvedValueOnce({}) // INSERT ex 3
+        .mockResolvedValueOnce({}) // INSERT ex 4
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", program_id: 1,
+        days: [
+          { day_label: "Push", exercises: [
+            { exercise: "Bench Press", sets: 4, reps: 8 },
+            { exercise: "Incline DB", sets: 3, reps: 10 },
+          ]},
+          { day_label: "Legs", exercises: [
+            { exercise: "Squat", sets: 5, reps: 5 },
+            { exercise: "Leg Press", sets: 3, reps: 12 },
+          ]},
+        ],
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.days_count).toBe(2);
+      expect(parsed.exercises_count).toBe(4);
+    });
+
+    it("preserves day ordering via sort_order", async () => {
+      mockResolveExercise
+        .mockResolvedValueOnce({ id: 1, name: "A", isNew: false })
+        .mockResolvedValueOnce({ id: 2, name: "B", isNew: false })
+        .mockResolvedValueOnce({ id: 3, name: "C", isNew: false });
+
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 0
+        .mockResolvedValueOnce({}) // INSERT ex
+        .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 1
+        .mockResolvedValueOnce({}) // INSERT ex
+        .mockResolvedValueOnce({ rows: [{ id: 22 }] }) // INSERT day 2
+        .mockResolvedValueOnce({}) // INSERT ex
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({
+        action: "patch", program_id: 1,
+        days: [
+          { day_label: "Push", exercises: [{ exercise: "A", sets: 3, reps: 10 }] },
+          { day_label: "Pull", exercises: [{ exercise: "B", sets: 3, reps: 10 }] },
+          { day_label: "Legs", exercises: [{ exercise: "C", sets: 3, reps: 10 }] },
+        ],
+      });
+
+      // Day inserts at indices 2, 4, 6 (after BEGIN, DELETE)
+      expect(mockClientQuery.mock.calls[2][1][3]).toBe(0); // sort_order for day 0
+      expect(mockClientQuery.mock.calls[4][1][3]).toBe(1); // sort_order for day 1
+      expect(mockClientQuery.mock.calls[6][1][3]).toBe(2); // sort_order for day 2
+    });
+
+    it("handles weekdays: null vs weekdays: [1,3,5]", async () => {
+      mockResolveExercise
+        .mockResolvedValueOnce({ id: 1, name: "A", isNew: false })
+        .mockResolvedValueOnce({ id: 2, name: "B", isNew: false });
+
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 1 (weekdays null)
+        .mockResolvedValueOnce({}) // INSERT ex
+        .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 2 (weekdays [1,3,5])
+        .mockResolvedValueOnce({}) // INSERT ex
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({
+        action: "patch", program_id: 1,
+        days: [
+          { day_label: "Day A", weekdays: null, exercises: [{ exercise: "A", sets: 3, reps: 10 }] },
+          { day_label: "Day B", weekdays: [1, 3, 5], exercises: [{ exercise: "B", sets: 3, reps: 10 }] },
+        ],
+      });
+
+      // Day 1 weekdays (index 2, param index 2)
+      expect(mockClientQuery.mock.calls[2][1][2]).toBeNull();
+      // Day 2 weekdays (index 4, param index 2)
+      expect(mockClientQuery.mock.calls[4][1][2]).toEqual([1, 3, 5]);
+    });
+
+    // --- Exercise operations ---
+
+    it("stores all optional exercise fields when populated", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({
+        action: "patch", program_id: 1,
+        days: [{
+          day_label: "Push",
+          exercises: [{
+            exercise: "Bench Press", sets: 4, reps: 8,
+            weight: 100, rpe: 8, superset_group: 1,
+            group_type: "paired", rest_seconds: 90, notes: "slow tempo",
+          }],
+        }],
+      });
+
+      const insertArgs = mockClientQuery.mock.calls[3][1];
+      expect(insertArgs[4]).toBe(100);       // weight
+      expect(insertArgs[5]).toBe(8);         // rpe
+      expect(insertArgs[7]).toBe(1);         // superset_group
+      expect(insertArgs[8]).toBe("paired");  // group_type
+      expect(insertArgs[9]).toBe(90);        // rest_seconds
+      expect(insertArgs[10]).toBe("slow tempo"); // notes
+    });
+
+    it("defaults group_type to 'superset' when superset_group set but no group_type", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({
+        action: "patch", program_id: 1,
+        days: [{
+          day_label: "Push",
+          exercises: [{
+            exercise: "Bench Press", sets: 3, reps: 10,
+            superset_group: 1,
+            // group_type not provided
+          }],
+        }],
+      });
+
+      const insertArgs = mockClientQuery.mock.calls[3][1];
+      expect(insertArgs[7]).toBe(1);           // superset_group
+      expect(insertArgs[8]).toBe("superset");  // group_type defaults to "superset"
+    });
+
+    it("stores group_type as null when no superset_group", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({
+        action: "patch", program_id: 1,
+        days: [{
+          day_label: "Push",
+          exercises: [{
+            exercise: "Bench Press", sets: 3, reps: 10,
+            // no superset_group
+            group_type: "circuit", // should be ignored
+          }],
+        }],
+      });
+
+      const insertArgs = mockClientQuery.mock.calls[3][1];
+      expect(insertArgs[7]).toBeNull(); // superset_group null
+      expect(insertArgs[8]).toBeNull(); // group_type null (because no superset_group)
+    });
+
+    it("passes transaction client to resolveExercise", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({
+        action: "patch", program_id: 1,
+        days: [{
+          day_label: "Push",
+          exercises: [{ exercise: "Bench Press", sets: 3, reps: 10 }],
+        }],
+      });
+
+      expect(mockResolveExercise).toHaveBeenCalledWith(
+        "Bench Press", undefined, undefined, undefined, undefined, mockClient
+      );
+    });
+
+    // --- Superset/group scenarios ---
+
+    it("groups multiple exercises with same superset_group", async () => {
+      mockResolveExercise
+        .mockResolvedValueOnce({ id: 1, name: "Cable Fly", isNew: false })
+        .mockResolvedValueOnce({ id: 2, name: "Lateral Raise", isNew: false });
+
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT ex 1
+        .mockResolvedValueOnce({}) // INSERT ex 2
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({
+        action: "patch", program_id: 1,
+        days: [{
+          day_label: "Push",
+          exercises: [
+            { exercise: "Cable Fly", sets: 3, reps: 12, superset_group: 1, group_type: "superset" },
+            { exercise: "Lateral Raise", sets: 3, reps: 15, superset_group: 1, group_type: "superset" },
+          ],
+        }],
+      });
+
+      const ex1Args = mockClientQuery.mock.calls[3][1];
+      const ex2Args = mockClientQuery.mock.calls[4][1];
+      expect(ex1Args[7]).toBe(1); // same superset_group
+      expect(ex2Args[7]).toBe(1);
+      expect(ex1Args[8]).toBe("superset");
+      expect(ex2Args[8]).toBe("superset");
+    });
+
+    it("handles mixed group types in same day", async () => {
+      mockResolveExercise
+        .mockResolvedValueOnce({ id: 1, name: "A", isNew: false })
+        .mockResolvedValueOnce({ id: 2, name: "B", isNew: false })
+        .mockResolvedValueOnce({ id: 3, name: "C", isNew: false })
+        .mockResolvedValueOnce({ id: 4, name: "D", isNew: false });
+
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT ex 1
+        .mockResolvedValueOnce({}) // INSERT ex 2
+        .mockResolvedValueOnce({}) // INSERT ex 3
+        .mockResolvedValueOnce({}) // INSERT ex 4
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({
+        action: "patch", program_id: 1,
+        days: [{
+          day_label: "Full",
+          exercises: [
+            { exercise: "A", sets: 3, reps: 10, superset_group: 1, group_type: "superset" },
+            { exercise: "B", sets: 3, reps: 10, superset_group: 1, group_type: "superset" },
+            { exercise: "C", sets: 3, reps: 10, superset_group: 2, group_type: "paired" },
+            { exercise: "D", sets: 3, reps: 10, superset_group: 3, group_type: "circuit" },
+          ],
+        }],
+      });
+
+      expect(mockClientQuery.mock.calls[3][1][8]).toBe("superset");
+      expect(mockClientQuery.mock.calls[4][1][8]).toBe("superset");
+      expect(mockClientQuery.mock.calls[5][1][8]).toBe("paired");
+      expect(mockClientQuery.mock.calls[6][1][8]).toBe("circuit");
+    });
+
+    it("nullifies group_type when superset_group not set even if group_type provided", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({
+        action: "patch", program_id: 1,
+        days: [{
+          day_label: "Push",
+          exercises: [{
+            exercise: "Bench Press", sets: 3, reps: 10,
+            group_type: "paired",
+            // superset_group not set
+          }],
+        }],
+      });
+
+      const insertArgs = mockClientQuery.mock.calls[3][1];
+      expect(insertArgs[7]).toBeNull(); // superset_group
+      expect(insertArgs[8]).toBeNull(); // group_type forced to null
+    });
+
+    // --- Combined operations (widget auto-save pattern) ---
+
+    it("combines name + description + days in one patch (full widget save)", async () => {
+      mockResolveExercise
+        .mockResolvedValueOnce({ id: 1, name: "Bench Press", isNew: false });
+
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // UPDATE name
+        .mockResolvedValueOnce({}) // UPDATE description
+        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", program_id: 1,
+        new_name: "My PPL", description: "Custom PPL",
+        days: [{
+          day_label: "Push",
+          exercises: [{ exercise: "Bench Press", sets: 4, reps: 8, weight: 80 }],
+        }],
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.program.name).toBe("My PPL");
+      expect(parsed.program.description).toBe("Custom PPL");
+      expect(parsed.days_count).toBe(1);
+      expect(parsed.exercises_count).toBe(1);
+      expect(mockClientQuery).toHaveBeenCalledTimes(7);
+    });
+
+    it("metadata-only patch when days is not provided", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // UPDATE name
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", program_id: 1, new_name: "Better PPL",
+        // days not provided at all
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.program.name).toBe("Better PPL");
+      expect(parsed.days_count).toBeUndefined();
+      expect(parsed.exercises_count).toBeUndefined();
+    });
+
+    // --- Error handling ---
+
+    it("returns error when no version found", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce(null); // no version
+
+      const result = await toolHandler({ action: "patch", program_id: 1, new_name: "Test" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("No version found");
+    });
+
+    it("rolls back and releases client on exercise resolution error", async () => {
+      mockResolveExercise.mockRejectedValueOnce(new Error("Exercise not found"));
+
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }); // INSERT day
+
+      await expect(toolHandler({
+        action: "patch", program_id: 1,
+        days: [{ day_label: "Push", exercises: [{ exercise: "Unknown", sets: 3, reps: 10 }] }],
+      })).rejects.toThrow("Exercise not found");
+
+      expect(mockClientQuery).toHaveBeenCalledWith("ROLLBACK");
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    it("always releases client in finally block", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // UPDATE name
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({
+        action: "patch", program_id: 1, new_name: "Test",
+      });
+
+      expect(mockClient.release).toHaveBeenCalledTimes(1);
+    });
+
+    // --- JSON string workaround ---
+
+    it("handles days passed as JSON string", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "patch", program_id: 1,
+        days: JSON.stringify([{
+          day_label: "Push",
+          exercises: [{ exercise: "Bench Press", sets: 3, reps: 10 }],
+        }]),
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.days_count).toBe(1);
+      expect(parsed.exercises_count).toBe(1);
     });
   });
 
