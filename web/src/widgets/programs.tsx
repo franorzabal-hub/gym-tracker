@@ -337,12 +337,14 @@ function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Exercise[
                 📈 {progression}
               </span>
             )}
-            {/* Remaining notes — skip if it just repeats the seconds already shown in the rep scheme */}
+            {/* Remaining notes — skip if it just repeats the seconds/duration already shown in metrics */}
             {noteText && (() => {
-              // If rep_type is seconds/time-based, filter out notes that just restate the duration
-              if (ex.rep_type === "seconds" && /^\d+\s*seg/i.test(noteText)) {
-                const noteSecs = parseInt(noteText, 10);
-                if (noteSecs === ex.target_reps) return null;
+              // Filter notes that just restate a duration already visible in the rep scheme
+              const durationMatch = noteText.match(/^(\d+)\s*seg/i);
+              if (durationMatch) {
+                const noteSecs = parseInt(durationMatch[1], 10);
+                // Skip if it matches the target_reps (already shown) or rest_seconds (already shown)
+                if (noteSecs === ex.target_reps || noteSecs === ex.rest_seconds) return null;
               }
               return (
                 <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 1, opacity: 0.7 }}>
