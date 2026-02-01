@@ -10,8 +10,8 @@ MCP Server that turns Claude into a gym training partner. Users talk naturally i
 2. **Run `npm test` before every commit** — TypeScript must compile (`tsc --noEmit`) and all tests must pass
 3. **Push to main triggers CI only** — never deploys automatically
 4. **Deploy only when explicitly asked** — never deploy on your own initiative
-5. **After code changes, always restart the dev server** — kill the running process and start a new one with `DEV_USER_ID=1 npm run dev`. The server loads code at startup; changes aren't reflected until restart.
-6. **After widget changes, rebuild** — `cd web && npm run build`. Then restart the server.
+5. **After server-side code changes, always restart the dev server** — kill the running process and start a new one with `DEV_USER_ID=1 npm run dev`. The server loads code at startup; changes aren't reflected until restart.
+6. **For widget development, use the test host** — `cd web && npm run dev:host`. Vite HMR applies changes instantly in the browser (no rebuild, no restart). Only run `cd web && npm run build` when preparing for Claude Desktop testing or production.
 7. **Claude Desktop requires a new conversation** after server restart to pick up MCP changes (it caches the connection per conversation)
 
 To deploy (only when the user asks):
@@ -71,9 +71,9 @@ Manage via: `gcloud run services update gym-tracker --region us-central1 --proje
 5. `npm install && cd web && npm install`
 
 ### Daily workflow
-1. `npm run dev` (server on port 3001, migrations auto-apply)
-2. For widgets: `cd web && npm run build`
-3. Test host: `cd web && npx vite --port 5173` → http://localhost:5173/test-host.html
+1. `DEV_USER_ID=1 npm run dev` (server on port 3001, migrations auto-apply)
+2. For widget development: `cd web && npm run dev:host` → opens http://localhost:5173/test-host.html with HMR
+3. For production/Claude Desktop: `cd web && npm run build` (only needed when done iterating)
 
 ### Database management
 - Dev branch is isolated from prod (copy-on-write)
@@ -234,7 +234,7 @@ web/
     app-context.tsx           # AppProvider: useApp + useHostStyles + toolOutput context
     hooks.ts                 # React hooks: useToolOutput(), useCallTool(), useTheme()
     styles.css               # Shared styles with host CSS variable aliases
-    test-host.ts             # Dev-only: test host using AppBridge (not committed)
+    test-host.ts             # Widget test host: AppBridge + MCP client, HMR, device presets, all 21 tools
     widgets/                 # One React component per widget (profile.tsx, etc.)
 ```
 
@@ -305,7 +305,8 @@ createRoot(document.getElementById("root")!).render(
 3. Create `web/foo.html` entry point (minimal HTML with `<div id="root">` + `<script type="module" src="/src/widgets/foo.tsx">`)
 4. Add to `WIDGETS` array in `src/resources/register-widgets.ts` with name, URI (`ui://gym-tracker/foo.html`), file, description
 5. In the tool file, use `registerAppToolWithMeta` with `_meta: { ui: { resourceUri: "ui://gym-tracker/foo.html" } }`
-6. Build: `cd web && npm run build`
+6. Add to `WIDGET_TOOLS` in `web/src/test-host.ts` with the tool name, default args, and type (`"ui"` for display tools, `"data"` for data tools with widgets). Also add sample data in `sampleData` for offline testing.
+7. Build: `cd web && npm run build`
 
 ### Local development
 
@@ -319,7 +320,20 @@ For Claude Desktop widget testing:
 3. In Claude Desktop, connector URL: `https://gym-tracker.1kairos.com/mcp`
 4. After widget code changes: `cd web && npm run build`, then start a new conversation in Claude Desktop
 
-**Local test host** (no Claude Desktop needed): `cd web && npx vite --port 5173`, then open `http://localhost:5173/test-host.html`. Uses `AppBridge` to simulate the host-side protocol. Rebuild widgets first. Supports theme toggle and all 14 widgets with sample data.
+**Widget test host** (no Claude Desktop needed): `cd web && npm run dev:host` → opens http://localhost:5173/test-host.html. This is the primary tool for widget development.
+
+Features:
+- **HMR**: Edit any `.tsx` widget file → change appears instantly (no rebuild, no restart)
+- **Live mode**: When the MCP server is running (`DEV_USER_ID=1 npm run dev`), widgets load real data from the dev database via Vite proxy (`/mcp` → `localhost:3001`)
+- **Sample mode**: Works without the MCP server using hardcoded sample data (fallback)
+- **All 21 tools**: Sidebar lists every MCP tool in 3 groups — Display (UI), Data (Widget), Data Only (JSON). Data-only tools render raw JSON response in the iframe.
+- **Device presets**: Responsive, iPhone SE, iPhone Pro, iPad, Desktop — test layout at different sizes
+- **Theme toggle**: Switch light/dark to test widget theming
+- **Connection status**: Green/red dot shows if MCP server is reachable
+
+The test host registry is in `web/src/test-host.ts` (`WIDGET_TOOLS` + `sampleData`). When adding a new tool or changing tool args, update both.
+
+**Important**: `vite-plugin-singlefile` is disabled in dev mode (it breaks HMR). It only runs during `npm run build`. The `vite.config.ts` conditionally applies it based on `command === "build"`.
 
 ### How the postMessage protocol works (for debugging)
 
