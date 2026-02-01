@@ -34,7 +34,7 @@ const WIDGET_TOOLS: Record<string, { tool: string; args: Record<string, unknown>
   "manage-program": { tool: "manage_program", args: { action: "list" }, type: "data-only" },
   "log-workout":    { tool: "log_workout", args: { exercises: [{ name: "Bench Press", sets: [{ reps: 10, weight: 80 }] }] }, type: "data-only" },
   "end-session":    { tool: "end_session", args: {}, type: "data-only" },
-  "get-history":    { tool: "get_history", args: { period: "1m" }, type: "data-only" },
+  "get-history":    { tool: "get_history", args: { period: "month" }, type: "data-only" },
   "edit-log":       { tool: "edit_log", args: {}, type: "data-only" },
 };
 
@@ -664,7 +664,8 @@ async function loadWidget(name: string) {
     await loadDataOnly(name, entry);
   } else {
     await connectBridge();
-    // Vite serves source HTML at root path with HMR support
+    // Clear srcdoc from any previous data-only view, then set src
+    frame.removeAttribute("srcdoc");
     frame.src = `/${name}.html`;
   }
 }
