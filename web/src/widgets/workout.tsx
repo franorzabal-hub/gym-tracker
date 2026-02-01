@@ -508,6 +508,12 @@ function ExerciseCard({
     [callTool, exercise.name, onRefresh],
   );
 
+  useEffect(() => {
+    return () => {
+      pendingUpdates.current.forEach(({ timer }) => clearTimeout(timer));
+    };
+  }, []);
+
   const deleteSet = useCallback(
     async (setNumber: number) => {
       await callTool("edit_log", {

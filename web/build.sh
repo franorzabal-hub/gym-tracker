@@ -4,6 +4,7 @@ set -euo pipefail
 # Build each widget HTML as a self-contained single file
 first=true
 for f in *.html; do
+  [[ "$f" == "test-host.html" ]] && continue
   echo "Building $f..."
   WIDGET="$f" npx vite build
   first=false

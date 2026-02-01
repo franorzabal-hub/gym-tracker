@@ -20,6 +20,7 @@ export function useCallTool() {
       setError(null);
       try {
         const result = await app.callServerTool({ name, arguments: args });
+        if (result?.structuredContent) return result.structuredContent;
         const textContent = result?.content?.find(
           (c) => c.type === "text",
         );
@@ -30,7 +31,7 @@ export function useCallTool() {
             return textContent.text;
           }
         }
-        return result?.structuredContent ?? result;
+        return result;
       } catch (err: any) {
         setError(err.message || "Unknown error");
         return null;

@@ -76,7 +76,6 @@ For "activate", pass the program name.`,
       include_exercises: z.boolean().optional().describe("If true, include exercise details for each day. Defaults to true"),
     },
     async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames, include_exercises, source_id, program_id }) => {
-      console.log(`[manage_program HANDLER] action=${action} name=${name} program_id=${program_id}`);
       try {
       const userId = getUserId();
 

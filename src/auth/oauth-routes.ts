@@ -24,7 +24,9 @@ function verifyState(state: string): Record<string, any> | null {
   const data = state.substring(0, dotIdx);
   const sig = state.substring(dotIdx + 1);
   const expected = createHmac("sha256", STATE_SECRET).update(data).digest("base64url");
-  if (sig !== expected) return null;
+  const sigBuf = Buffer.from(sig, "base64url");
+  const expectedBuf = Buffer.from(expected, "base64url");
+  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
   try {
     const payload = JSON.parse(Buffer.from(data, "base64url").toString());
     // Check TTL: 10 minutes
@@ -69,8 +71,8 @@ setInterval(async () => {
   try {
     await pool.query("DELETE FROM auth_tokens WHERE expires_at < NOW()");
     await pool.query("DELETE FROM auth_codes WHERE expires_at < NOW()");
-  } catch {
-    // Ignore cleanup errors
+  } catch (err) {
+    console.error("Token/code cleanup failed:", err instanceof Error ? err.message : err);
   }
 }, 15 * 60 * 1000).unref();
 
@@ -105,39 +107,44 @@ router.post("/register", async (req, res) => {
     return;
   }
 
-  // Registration secret check
-  const registrationSecret = process.env.REGISTRATION_SECRET;
-  if (registrationSecret) {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-    if (token !== registrationSecret) {
-      res.status(401).json({ error: "unauthorized", error_description: "Registration requires authorization" });
+  try {
+    // Registration secret check
+    const registrationSecret = process.env.REGISTRATION_SECRET;
+    if (registrationSecret) {
+      const authHeader = req.headers.authorization;
+      const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+      if (!token || !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(registrationSecret))) {
+        res.status(401).json({ error: "unauthorized", error_description: "Registration requires authorization" });
+        return;
+      }
+    }
+
+    const { client_name, redirect_uris, grant_types, response_types, token_endpoint_auth_method } = req.body;
+
+    if (!redirect_uris || !Array.isArray(redirect_uris) || redirect_uris.length === 0) {
+      res.status(400).json({ error: "invalid_client_metadata", error_description: "redirect_uris must be a non-empty array" });
       return;
     }
+
+    const clientId = `client_${crypto.randomBytes(16).toString("hex")}`;
+
+    await pool.query(
+      "INSERT INTO dynamic_clients (client_id, redirect_uris) VALUES ($1, $2)",
+      [clientId, redirect_uris]
+    );
+
+    res.status(201).json({
+      client_id: clientId,
+      client_name: client_name || "MCP Client",
+      redirect_uris: redirect_uris || [],
+      grant_types: grant_types || ["authorization_code"],
+      response_types: response_types || ["code"],
+      token_endpoint_auth_method: token_endpoint_auth_method || "none",
+    });
+  } catch (err) {
+    console.error("Registration error:", err);
+    res.status(500).json({ error: "server_error", error_description: "Registration failed" });
   }
-
-  const { client_name, redirect_uris, grant_types, response_types, token_endpoint_auth_method } = req.body;
-
-  if (!redirect_uris || !Array.isArray(redirect_uris) || redirect_uris.length === 0) {
-    res.status(400).json({ error: "invalid_client_metadata", error_description: "redirect_uris must be a non-empty array" });
-    return;
-  }
-
-  const clientId = `client_${crypto.randomBytes(16).toString("hex")}`;
-
-  await pool.query(
-    "INSERT INTO dynamic_clients (client_id, redirect_uris) VALUES ($1, $2)",
-    [clientId, redirect_uris]
-  );
-
-  res.status(201).json({
-    client_id: clientId,
-    client_name: client_name || "MCP Client",
-    redirect_uris: redirect_uris || [],
-    grant_types: grant_types || ["authorization_code"],
-    response_types: response_types || ["code"],
-    token_endpoint_auth_method: token_endpoint_auth_method || "none",
-  });
 });
 
 // Authorize → redirect to WorkOS AuthKit
@@ -293,48 +300,64 @@ router.post("/token", async (req, res) => {
     return;
   }
 
-  // Fetch and delete code in one operation (one-time use)
-  const { rows } = await pool.query(
-    "DELETE FROM auth_codes WHERE code = $1 AND expires_at > NOW() RETURNING workos_user_id, email, code_challenge, code_challenge_method",
-    [code]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-  if (rows.length === 0) {
-    res.status(400).json({ error: "invalid_grant", error_description: "Code expired or invalid" });
-    return;
+    // Fetch and delete code in one operation (one-time use)
+    const { rows } = await client.query(
+      "DELETE FROM auth_codes WHERE code = $1 AND expires_at > NOW() RETURNING workos_user_id, email, code_challenge, code_challenge_method",
+      [code]
+    );
+
+    if (rows.length === 0) {
+      await client.query("ROLLBACK");
+      res.status(400).json({ error: "invalid_grant", error_description: "Code expired or invalid" });
+      return;
+    }
+
+    const stored = rows[0];
+
+    // PKCE verification — code_challenge must exist (enforced at /authorize)
+    if (!stored.code_challenge) {
+      await client.query("ROLLBACK");
+      res.status(400).json({ error: "invalid_grant", error_description: "Auth code was issued without PKCE challenge. Re-authorize with code_challenge." });
+      return;
+    }
+
+    const expectedChallenge = crypto
+      .createHash("sha256")
+      .update(code_verifier)
+      .digest("base64url");
+    if (expectedChallenge !== stored.code_challenge) {
+      await client.query("ROLLBACK");
+      res.status(400).json({ error: "invalid_grant", error_description: "code_verifier mismatch" });
+      return;
+    }
+
+    // Generate our own opaque access token
+    const opaqueToken = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    await client.query(
+      "INSERT INTO auth_tokens (token, workos_user_id, email, expires_at) VALUES ($1, $2, $3, $4)",
+      [opaqueToken, stored.workos_user_id, stored.email, expiresAt]
+    );
+
+    await client.query("COMMIT");
+
+    res.json({
+      access_token: opaqueToken,
+      token_type: "Bearer",
+      expires_in: 86400,
+    });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("Token exchange error:", err);
+    res.status(500).json({ error: "server_error", error_description: "Token exchange failed" });
+  } finally {
+    client.release();
   }
-
-  const stored = rows[0];
-
-  // PKCE verification — code_challenge must exist (enforced at /authorize)
-  if (!stored.code_challenge) {
-    res.status(400).json({ error: "invalid_grant", error_description: "Auth code was issued without PKCE challenge. Re-authorize with code_challenge." });
-    return;
-  }
-
-  const expectedChallenge = crypto
-    .createHash("sha256")
-    .update(code_verifier)
-    .digest("base64url");
-  if (expectedChallenge !== stored.code_challenge) {
-    res.status(400).json({ error: "invalid_grant", error_description: "code_verifier mismatch" });
-    return;
-  }
-
-  // Generate our own opaque access token
-  const opaqueToken = crypto.randomBytes(32).toString("hex");
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
-  await pool.query(
-    "INSERT INTO auth_tokens (token, workos_user_id, email, expires_at) VALUES ($1, $2, $3, $4)",
-    [opaqueToken, stored.workos_user_id, stored.email, expiresAt]
-  );
-
-  res.json({
-    access_token: opaqueToken,
-    token_type: "Bearer",
-    expires_in: 86400,
-  });
 });
 
 export default router;

@@ -73,6 +73,9 @@ Parameters:
       // --- Restore session mode ---
       if (restore_session !== undefined && restore_session !== null) {
         const sessionId = Number(restore_session);
+        if (Number.isNaN(sessionId)) {
+          return toolResponse({ error: "Invalid session ID" }, true);
+        }
         const { rows: sessionRows } = await pool.query(
           "SELECT id, started_at, deleted_at FROM sessions WHERE id = $1 AND user_id = $2",
           [sessionId, userId]
@@ -122,6 +125,9 @@ Parameters:
       // --- Delete session mode (soft delete) ---
       if (delete_session !== undefined && delete_session !== null) {
         const sessionId = Number(delete_session);
+        if (Number.isNaN(sessionId)) {
+          return toolResponse({ error: "Invalid session ID" }, true);
+        }
         // Verify ownership
         const { rows: sessionRows } = await pool.query(
           "SELECT id, started_at, ended_at FROM sessions WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",

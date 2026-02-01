@@ -64,9 +64,15 @@ export async function authenticateToken(req: Request): Promise<number> {
 
   const userId = userRows[0].id;
 
-  // Evict all if cache is full
+  // Evict oldest 25% if cache is full (avoid thundering herd from clearing all)
   if (tokenCache.size >= TOKEN_CACHE_MAX) {
-    tokenCache.clear();
+    const toDelete = Math.floor(TOKEN_CACHE_MAX * 0.25);
+    const keys = tokenCache.keys();
+    for (let i = 0; i < toDelete; i++) {
+      const next = keys.next();
+      if (next.done) break;
+      tokenCache.delete(next.value);
+    }
   }
 
   tokenCache.set(token, {

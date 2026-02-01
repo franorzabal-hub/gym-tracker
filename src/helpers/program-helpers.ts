@@ -101,6 +101,9 @@ export async function cloneVersion(
       "SELECT version_number FROM program_versions WHERE id = $1",
       [currentVersionId]
     );
+    if (!current) {
+      throw new Error(`Program version ${currentVersionId} not found`);
+    }
     const newVersionNumber = current.version_number + 1;
 
     // Create new version

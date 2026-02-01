@@ -97,7 +97,7 @@ Parameters:
     const userId = getUserId();
     const tags = parseJsonArrayParam<string>(params.tags);
     const overrides = parseJsonParam<any[]>(params.overrides);
-    const skip = parseJsonParam<string[]>(params.skip);
+    const skip = parseJsonArrayParam<string>(params.skip);
     const exercisesList = parseJsonParam<ExerciseEntry[]>(params.exercises);
 
     const hasExplicitExercise = !!params.exercise;
@@ -232,7 +232,7 @@ Parameters:
         // Build override map
         const overrideMap = new Map<string, any>();
         for (const o of overrides || []) {
-          const resolved = await resolveExercise(o.exercise);
+          const resolved = await resolveExercise(o.exercise, undefined, undefined, undefined, undefined, client);
           overrideMap.set(resolved.name.toLowerCase(), o);
         }
 

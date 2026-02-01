@@ -48,10 +48,13 @@ export function registerWidgetResources(server: McpServer) {
         const filePath = path.join(DIST_DIR, widget.file);
         try {
           html = await fs.readFile(filePath, "utf-8");
-          console.log(`[Widget] Serving ${widget.uri} (${html.length} bytes) from ${filePath}`);
-        } catch (err) {
-          console.error(`[Widget] Failed to read ${filePath}:`, err);
-          html = `<!DOCTYPE html><html><body><p>Widget not built. Run: cd web && npm run build</p></body></html>`;
+        } catch (err: any) {
+          if (err?.code === "ENOENT") {
+            console.error(`[Widget] File not found: ${filePath}. Run: cd web && npm run build`);
+            html = `<!DOCTYPE html><html><body><p>Widget not built. Run: cd web && npm run build</p></body></html>`;
+          } else {
+            throw err;
+          }
         }
         return {
           contents: [

@@ -97,20 +97,14 @@ When the user asks to SEE their profile, call show_profile (NOT manage_profile).
 
 // MCP endpoint
 app.all("/mcp", async (req, res) => {
-  const method = req.body?.method ?? req.body?.map?.((m: any) => m.method) ?? "?";
-  console.log(`[MCP] ${req.method} /mcp — ${JSON.stringify(method)}`);
-  if (req.body?.method === "resources/read" || req.body?.method === "resources/list") {
-    console.log(`[MCP] Resource request params:`, JSON.stringify(req.body.params));
-  }
-  // DEBUG: log tool call params for manage_program
-  if (req.body?.method === "tools/call" && req.body?.params?.name === "manage_program") {
-    console.log(`[DEBUG manage_program] params:`, JSON.stringify(req.body.params.arguments, null, 2));
-  }
   try {
     let userId: number;
 
     if (process.env.DEV_USER_ID && process.env.NODE_ENV !== "production") {
       userId = Number(process.env.DEV_USER_ID);
+      if (Number.isNaN(userId)) {
+        throw new Error("DEV_USER_ID must be a valid number");
+      }
     } else {
       userId = await authenticateToken(req);
     }

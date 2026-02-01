@@ -323,7 +323,9 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
                     "INSERT INTO exercise_aliases (exercise_id, alias) VALUES ($1, $2) ON CONFLICT DO NOTHING",
                     [resolved.id, alias.toLowerCase().trim()]
                   )
-                  .catch(() => {});
+                  .catch((err) => {
+                    console.error(`Failed to insert alias "${alias}" for exercise ${resolved.id}:`, err instanceof Error ? err.message : err);
+                  });
               }
             }
           } catch (err: any) {
@@ -520,7 +522,9 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
               "INSERT INTO exercise_aliases (exercise_id, alias) VALUES ($1, $2) ON CONFLICT DO NOTHING",
               [resolved.id, alias.toLowerCase().trim()]
             )
-            .catch(() => {}); // ignore duplicate alias
+            .catch((err) => {
+              console.error(`Failed to insert alias "${alias}" for exercise ${resolved.id}:`, err instanceof Error ? err.message : err);
+            });
         }
       }
 
