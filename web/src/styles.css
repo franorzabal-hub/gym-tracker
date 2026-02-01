@@ -52,6 +52,7 @@ body {
 .badge-warning { background: light-dark(#fef3c7, #451a03); color: light-dark(#92400e, #fbbf24); }
 .badge-danger { background: light-dark(#fee2e2, #450a0a); color: light-dark(#991b1b, #f87171); }
 .badge-primary { background: light-dark(#dbeafe, #172554); color: light-dark(#1e40af, #60a5fa); }
+.badge-muted { background: light-dark(#f3f4f6, #1f2937); color: light-dark(#6b7280, #9ca3af); }
 
 .btn {
   display: inline-flex;

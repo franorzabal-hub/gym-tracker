@@ -4,6 +4,7 @@ import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { widgetResponse, registerAppToolWithMeta, APP_CONTEXT } from "../helpers/tool-response.js";
 import { getActiveProgram, getProgramDaysWithExercises } from "../helpers/program-helpers.js";
+import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 
 export function registerDisplayTools(server: McpServer) {
   registerAppToolWithMeta(server, "show_profile", {
@@ -26,24 +27,15 @@ export function registerDisplayTools(server: McpServer) {
   });
 
   registerAppToolWithMeta(server, "show_programs", {
-    title: "Programs List",
-    description: `${APP_CONTEXT}Display a programs list widget showing the user's existing programs and global program templates.
-The widget shows both user programs (with activate/deactivate) and global templates (with "Use this program" to clone).
-Users can clone a global program or choose to build a custom one via chat.
+    title: "My Programs",
+    description: `${APP_CONTEXT}Display the user's programs as an editable carousel widget. Each program page supports inline editing (name, description, days, exercises, sets, reps, weight, RPE, rest) with auto-save and drag-and-drop reordering.
 The widget already shows all information visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps.
-Call this when the user has a profile but no active program, or when they want to browse/manage their programs.
-If the user chooses "Custom program", help them build one via manage_program create action.`,
+Call this when the user wants to see, edit, or manage their programs. For browsing global templates, use show_available_programs instead.`,
     inputSchema: {},
-    annotations: { readOnlyHint: true },
+    annotations: {},
     _meta: { ui: { resourceUri: "ui://gym-tracker/programs-list.html" } },
   }, async () => {
     const userId = getUserId();
-
-    // Fetch profile
-    const { rows: profileRows } = await pool.query(
-      "SELECT data FROM user_profile WHERE user_id = $1 LIMIT 1", [userId]
-    );
-    const profile = profileRows[0]?.data || {};
 
     // Fetch user's programs with latest version_id
     const { rows: programRows } = await pool.query(
@@ -70,6 +62,50 @@ If the user chooses "Custom program", help them build one via manage_program cre
       }))
     );
 
+    // Fetch exercise catalog for autocomplete in the widget
+    const { rows: exerciseRows } = await pool.query(
+      `SELECT name, muscle_group FROM exercises
+       WHERE user_id IS NULL OR user_id = $1
+       ORDER BY user_id NULLS LAST, name`,
+      [userId]
+    );
+
+    return widgetResponse(
+      `Programs carousel widget displayed showing ${programsWithDays.length} user program(s) with inline editing. Do NOT repeat this information — the user can see it in the widget.`,
+      {
+        programs: programsWithDays,
+        exerciseCatalog: exerciseRows.map((r: any) => ({ name: r.name, muscle_group: r.muscle_group })),
+      }
+    );
+  });
+
+  registerAppToolWithMeta(server, "show_available_programs", {
+    title: "Available Programs",
+    description: `${APP_CONTEXT}Display global program templates for browsing and cloning. Shows read-only program cards with day carousel, "Already added" badges for cloned programs, and "Recommended" badge for best match.
+The widget already shows all information visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps.
+Call this when the user wants to browse available programs, pick a new program, or when they have no programs yet.
+Use the filter param to show only relevant global programs (max ~5) based on user goals/level/experience. If omitted, all global programs are returned.
+After a user clones a program from the widget, follow up with show_program so the user can review, edit, and activate it.`,
+    inputSchema: {
+      filter: z.array(z.string()).optional()
+        .describe("Program names to show from global templates (LLM filters based on user context). If omitted, returns all global programs."),
+    },
+    annotations: { readOnlyHint: true },
+    _meta: { ui: { resourceUri: "ui://gym-tracker/available-programs.html" } },
+  }, async ({ filter }: { filter?: string[] }) => {
+    const userId = getUserId();
+
+    // Fetch profile
+    const { rows: profileRows } = await pool.query(
+      "SELECT data FROM user_profile WHERE user_id = $1 LIMIT 1", [userId]
+    );
+    const profile = profileRows[0]?.data || {};
+
+    // Fetch user's program names for clonedNames detection
+    const { rows: userProgramRows } = await pool.query(
+      "SELECT name FROM programs WHERE user_id = $1", [userId]
+    );
+
     // Fetch global programs (templates) with full exercise data
     const { rows: globalRows } = await pool.query(
       `SELECT * FROM (
@@ -82,8 +118,14 @@ If the user chooses "Custom program", help them build one via manage_program cre
        ) sub ORDER BY name`
     );
 
+    // Apply filter to global programs if provided
+    const parsedFilter = parseJsonArrayParam<string>(filter);
+    const filteredGlobalRows = parsedFilter
+      ? globalRows.filter((p) => parsedFilter.some((f) => f.toLowerCase() === p.name.toLowerCase()))
+      : globalRows;
+
     const globalPrograms = await Promise.all(
-      globalRows.map(async (p) => {
+      filteredGlobalRows.map(async (p) => {
         const days = await getProgramDaysWithExercises(p.version_id);
         return {
           id: p.id,
@@ -96,9 +138,15 @@ If the user chooses "Custom program", help them build one via manage_program cre
       })
     );
 
+    // Compute which global programs the user has already cloned (case-insensitive name match)
+    const userProgramNamesLower = userProgramRows.map((p) => p.name.toLowerCase());
+    const clonedNames = globalPrograms
+      .filter((g) => userProgramNamesLower.includes(g.name.toLowerCase()))
+      .map((g) => g.name);
+
     return widgetResponse(
-      `Programs list widget displayed showing ${programsWithDays.length} user program(s) and ${globalPrograms.length} global template(s). Do NOT repeat this information — the user can see it in the widget. If user chooses "Custom program", help them build one via manage_program create.`,
-      { profile, programs: programsWithDays, globalPrograms }
+      `Available programs widget displayed showing ${globalPrograms.length} global template(s). Do NOT repeat this information — the user can see it in the widget. After a clone, follow up with show_program.`,
+      { profile, globalPrograms, clonedNames }
     );
   });
 
