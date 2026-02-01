@@ -123,7 +123,8 @@ user_profile (user_id FK UNIQUE, data JSONB)
 exercises (user_id FK nullable, name, muscle_group, equipment, rep_type, exercise_type, description)
   → UNIQUE on (COALESCE(user_id, 0), LOWER(name)) — global (user_id NULL) + per-user
 exercise_aliases (exercise_id FK, alias UNIQUE)
-programs (user_id FK, name, is_active) → program_versions → program_days → program_day_exercises
+programs (user_id FK nullable, name, is_active) → program_versions → program_days → program_day_exercises
+  → user_id NULL = global template program; user_id set = user-owned program
 sessions (user_id FK, started_at, ended_at, tags TEXT[], deleted_at) → session_exercises → sets
 personal_records (user_id FK, exercise_id FK, record_type) UNIQUE per user+exercise+type
 pr_history (user_id FK, exercise_id FK, record_type, value, achieved_at)
@@ -142,10 +143,10 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 
 | Tool | Actions / Params |
 |---|---|
-| `initialize_gym_session` | MANDATORY first call. Returns user state + `required_next_tool` routing. New users → `show_onboarding` |
+| `initialize_gym_session` | MANDATORY first call. Returns user state + `required_next_tool` routing. New users → `show_profile`, then `show_programs` |
 | `manage_profile` | get, update (JSONB) |
 | `manage_exercises` | list, search, add, add_bulk, update, update_bulk, delete, delete_bulk |
-| `manage_program` | list, get, create, create_from_template, list_templates, update, activate, delete, delete_bulk, history |
+| `manage_program` | list, get, create, clone, update, activate, delete, delete_bulk, history |
 | `start_session` | program_day?, date?, tags? — infers day from weekday |
 | `end_session` | notes?, force?, tags? — summary + comparison vs last |
 | `get_active_session` | no params — returns active session with exercises or `{active: false}` |
@@ -164,7 +165,7 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 | Tool | Widget | Description |
 |---|---|---|
 | `show_profile` | profile.html | User profile card |
-| `show_onboarding` | onboarding.html | Multi-step onboarding wizard (profile form + program selection). Widget calls `manage_profile` and `manage_program` internally via `callServerTool` |
+| `show_programs` | programs-list.html | Programs list with user's existing programs and global program templates. Users can activate programs, clone global programs, or choose custom |
 | `show_program` | programs.html | Program viewer with days, exercises, supersets, weights. Defaults to active program, optional `name` param |
 
 ## MCP Apps Widgets
@@ -376,7 +377,7 @@ All tools return `{ content: [{ type: "text", text: JSON.stringify({...}) }] }`.
 ### Testing Pattern
 Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture `toolHandler` from `server.tool()` mock, call handler directly with params. Pool queries mocked via `mockQuery` / `mockClientQuery` (for transactions).
 
-## Migrations (001-012)
+## Migrations (001-014)
 
 | # | Description |
 |---|---|
@@ -392,6 +393,8 @@ Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture
 | 010 | Exercise tenancy: `user_id` FK on exercises, global + per-user unique index |
 | 011 | Auth persistence: `auth_tokens`, `auth_codes`, `dynamic_clients` tables (replace in-memory stores) |
 | 012 | `body_measurements` table, `pg_trgm` extension + trigram indexes, `description` column on exercises |
+| 013 | `group_type` column on program_day_exercises |
+| 014 | Global programs: nullable `user_id` on programs + seed 3 global program templates (Full Body 3x, Upper/Lower 4x, PPL 6x) |
 
 ## Pending (Phase 3)
 
@@ -399,5 +402,5 @@ Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture
 - Tests for `body-measurements.ts` and `export.ts`
 - Rate limiting persistence (currently in-memory, resets on deploy)
 - Persist `STATE_SECRET` as a Cloud Run secret (currently falls back to ephemeral random)
-- Widget UIs are styled (profile, session, stats, today-plan, exercises, programs, templates, measurements, onboarding); export widget intentionally shows raw JSON
+- Widget UIs are styled (profile, session, stats, today-plan, exercises, programs, programs-list, templates, measurements); export widget intentionally shows raw JSON
 - Remove debug logging from server.ts (MCP method/resource logging) and register-widgets.ts before production

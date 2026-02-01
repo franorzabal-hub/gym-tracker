@@ -3,13 +3,12 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { widgetResponse, registerAppToolWithMeta, APP_CONTEXT } from "../helpers/tool-response.js";
-import { PROGRAM_TEMPLATES } from "../helpers/program-templates.js";
 import { getActiveProgram, getProgramDaysWithExercises } from "../helpers/program-helpers.js";
 
 export function registerDisplayTools(server: McpServer) {
   registerAppToolWithMeta(server, "show_profile", {
     title: "Show Profile",
-    description: `${APP_CONTEXT}Display the user's profile as a visual card. The widget already shows all profile fields visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps. For reading/updating profile data programmatically, use manage_profile instead.`,
+    description: `${APP_CONTEXT}Display the user's profile as a visual card with inline editing. Used both for viewing existing profiles and for new user setup — the widget handles empty/partial profiles gracefully with placeholder fields. The widget already shows all profile fields visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps. For reading/updating profile data programmatically, use manage_profile instead.`,
     inputSchema: {},
     annotations: { readOnlyHint: true },
     _meta: { ui: { resourceUri: "ui://gym-tracker/profile.html" } },
@@ -26,34 +25,80 @@ export function registerDisplayTools(server: McpServer) {
     );
   });
 
-  registerAppToolWithMeta(server, "show_onboarding", {
-    title: "Onboarding",
-    description: `${APP_CONTEXT}Display the interactive onboarding widget for new users.
-The widget handles profile setup and program selection internally — do NOT call manage_profile or manage_program yourself during onboarding.
-Call this when initialize_gym_session returns is_new_user=true.
-If the user selects "Custom program", help them build one via manage_program create action.`,
+  registerAppToolWithMeta(server, "show_programs", {
+    title: "Programs List",
+    description: `${APP_CONTEXT}Display a programs list widget showing the user's existing programs and global program templates.
+The widget shows both user programs (with activate/deactivate) and global templates (with "Use this program" to clone).
+Users can clone a global program or choose to build a custom one via chat.
+The widget already shows all information visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps.
+Call this when the user has a profile but no active program, or when they want to browse/manage their programs.
+If the user chooses "Custom program", help them build one via manage_program create action.`,
     inputSchema: {},
     annotations: { readOnlyHint: true },
-    _meta: { ui: { resourceUri: "ui://gym-tracker/onboarding.html" } },
+    _meta: { ui: { resourceUri: "ui://gym-tracker/programs-list.html" } },
   }, async () => {
     const userId = getUserId();
-    const { rows } = await pool.query(
+
+    // Fetch profile
+    const { rows: profileRows } = await pool.query(
       "SELECT data FROM user_profile WHERE user_id = $1 LIMIT 1", [userId]
     );
-    const profile = rows[0]?.data || {};
+    const profile = profileRows[0]?.data || {};
 
-    const templates = Object.entries(PROGRAM_TEMPLATES).map(([id, t]) => ({
-      id, name: t.name, description: t.description,
-      days_per_week: t.days_per_week, target_experience: t.target_experience,
-      days: t.days.map(d => ({
-        day_label: d.day_label,
-        exercises: d.exercises.map(e => ({ name: e.exercise, sets: e.sets, reps: e.reps })),
-      })),
-    }));
+    // Fetch user's programs with latest version_id
+    const { rows: programRows } = await pool.query(
+      `SELECT * FROM (
+         SELECT DISTINCT ON (p.id) p.id, p.name, p.is_active, p.description,
+                pv.id as version_id, pv.version_number
+         FROM programs p
+         JOIN program_versions pv ON pv.program_id = p.id
+         WHERE p.user_id = $1
+         ORDER BY p.id, pv.version_number DESC
+       ) sub ORDER BY is_active DESC, name`,
+      [userId]
+    );
+
+    // Fetch full exercise data for each user program
+    const programsWithDays = await Promise.all(
+      programRows.map(async (p) => ({
+        id: p.id,
+        name: p.name,
+        is_active: p.is_active,
+        description: p.description,
+        version: p.version_number,
+        days: await getProgramDaysWithExercises(p.version_id),
+      }))
+    );
+
+    // Fetch global programs (templates) with full exercise data
+    const { rows: globalRows } = await pool.query(
+      `SELECT * FROM (
+         SELECT DISTINCT ON (p.id) p.id, p.name, p.description,
+                pv.id as version_id, pv.version_number
+         FROM programs p
+         JOIN program_versions pv ON pv.program_id = p.id
+         WHERE p.user_id IS NULL
+         ORDER BY p.id, pv.version_number DESC
+       ) sub ORDER BY name`
+    );
+
+    const globalPrograms = await Promise.all(
+      globalRows.map(async (p) => {
+        const days = await getProgramDaysWithExercises(p.version_id);
+        return {
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          version: p.version_number,
+          days_per_week: days.length,
+          days,
+        };
+      })
+    );
 
     return widgetResponse(
-      `Onboarding widget displayed. Your ONLY response should be a brief one-liner like "Completá el formulario para arrancar" or similar. Do NOT explain what the app does, do NOT list features, do NOT ask questions — the widget handles everything. If user later chooses "Custom program", help them build one via manage_program create.`,
-      { profile, templates }
+      `Programs list widget displayed showing ${programsWithDays.length} user program(s) and ${globalPrograms.length} global template(s). Do NOT repeat this information — the user can see it in the widget. If user chooses "Custom program", help them build one via manage_program create.`,
+      { profile, programs: programsWithDays, globalPrograms }
     );
   });
 

@@ -315,97 +315,90 @@ describe("manage_program tool", () => {
     });
   });
 
-  describe("list_templates action", () => {
-    it("returns all available templates", async () => {
-      const result = await toolHandler({ action: "list_templates" });
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.templates).toHaveLength(3);
-      expect(parsed.templates.map((t: any) => t.id)).toEqual(
-        expect.arrayContaining(["full_body_3x", "upper_lower_4x", "ppl_6x"])
-      );
-      expect(parsed.templates[0]).toHaveProperty("name");
-      expect(parsed.templates[0]).toHaveProperty("days_per_week");
-      expect(parsed.templates[0]).toHaveProperty("description");
-      expect(parsed.templates[0]).toHaveProperty("target_experience");
-    });
-  });
-
-  describe("create_from_template action", () => {
-    it("rejects when template_id is missing", async () => {
-      const result = await toolHandler({ action: "create_from_template" });
+  describe("clone action", () => {
+    it("rejects when source_id is missing", async () => {
+      const result = await toolHandler({ action: "clone" });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain("template_id is required");
+      expect(parsed.error).toContain("source_id is required");
     });
 
-    it("rejects invalid template_id", async () => {
-      const result = await toolHandler({ action: "create_from_template", template_id: "nonexistent" });
+    it("rejects when source program not found", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] }); // source not found
+
+      const result = await toolHandler({ action: "clone", source_id: 999 });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("not found");
     });
 
     it("rejects duplicate program name", async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1 }] }); // program exists
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 100, name: "Full Body 3x", description: "3 days", version_id: 50 }] }) // source found
+        .mockResolvedValueOnce({ rows: [{ id: 1 }] }); // duplicate name
 
-      const result = await toolHandler({ action: "create_from_template", template_id: "full_body_3x" });
+      const result = await toolHandler({ action: "clone", source_id: 100 });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("already exists");
     });
 
-    it("creates program from template with default name", async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [] }); // no existing program
+    it("clones a global program with default name", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 100, name: "Full Body 3x", description: "3 days/week full body", version_id: 50 }] }) // source
+        .mockResolvedValueOnce({ rows: [] }); // no duplicate
+
+      mockGetDays.mockResolvedValueOnce([
+        { day_label: "Full Body A", weekdays: [1], exercises: [
+          { exercise_id: 12, exercise_name: "Squat", target_sets: 3, target_reps: 8, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 120, notes: null },
+          { exercise_id: 1, exercise_name: "Bench Press", target_sets: 3, target_reps: 8, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null },
+        ]},
+        { day_label: "Full Body B", weekdays: [3], exercises: [
+          { exercise_id: 17, exercise_name: "Deadlift", target_sets: 3, target_reps: 5, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 180, notes: null },
+        ]},
+      ]);
+
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({}) // deactivate others
         .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // INSERT program
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
-        // 3 days × exercises (day1: 5ex, day2: 5ex, day3: 5ex = 15 exercises)
-        // For each day: INSERT day + INSERT exercises
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 1
         .mockResolvedValueOnce({}) // ex 1
         .mockResolvedValueOnce({}) // ex 2
-        .mockResolvedValueOnce({}) // ex 3
-        .mockResolvedValueOnce({}) // ex 4
-        .mockResolvedValueOnce({}) // ex 5
         .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 2
         .mockResolvedValueOnce({}) // ex 1
-        .mockResolvedValueOnce({}) // ex 2
-        .mockResolvedValueOnce({}) // ex 3
-        .mockResolvedValueOnce({}) // ex 4
-        .mockResolvedValueOnce({}) // ex 5
-        .mockResolvedValueOnce({ rows: [{ id: 22 }] }) // INSERT day 3
-        .mockResolvedValueOnce({}) // ex 1
-        .mockResolvedValueOnce({}) // ex 2
-        .mockResolvedValueOnce({}) // ex 3
-        .mockResolvedValueOnce({}) // ex 4
-        .mockResolvedValueOnce({}) // ex 5
         .mockResolvedValueOnce({}); // COMMIT
 
-      const result = await toolHandler({ action: "create_from_template", template_id: "full_body_3x" });
+      const result = await toolHandler({ action: "clone", source_id: 100 });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.program.name).toBe("Full Body 3x");
-      expect(parsed.program.template).toBe("full_body_3x");
-      expect(parsed.days_created).toBe(3);
+      expect(parsed.program.source).toBe("Full Body 3x");
+      expect(parsed.days_created).toBe(2);
+      expect(parsed.total_exercises).toBe(3);
     });
 
     it("allows custom name override", async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [] }); // no existing program
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 100, name: "Full Body 3x", description: "3 days", version_id: 50 }] })
+        .mockResolvedValueOnce({ rows: [] }); // no duplicate
+
+      mockGetDays.mockResolvedValueOnce([
+        { day_label: "Day A", weekdays: [1], exercises: [
+          { exercise_id: 12, exercise_name: "Squat", target_sets: 3, target_reps: 8, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 120, notes: null },
+        ]},
+      ]);
+
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({}) // deactivate others
         .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // INSERT program
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 1
-        .mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}) // 5 ex
-        .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 2
-        .mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}) // 5 ex
-        .mockResolvedValueOnce({ rows: [{ id: 22 }] }) // INSERT day 3
-        .mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockResolvedValueOnce({}) // 5 ex
+        .mockResolvedValueOnce({}) // ex 1
         .mockResolvedValueOnce({}); // COMMIT
 
-      const result = await toolHandler({ action: "create_from_template", template_id: "full_body_3x", name: "My Routine" });
+      const result = await toolHandler({ action: "clone", source_id: 100, name: "My Routine" });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.program.name).toBe("My Routine");
     });

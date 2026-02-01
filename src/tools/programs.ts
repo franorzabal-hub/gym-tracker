@@ -8,7 +8,6 @@ import {
   getProgramDaysWithExercises,
   cloneVersion,
 } from "../helpers/program-helpers.js";
-import { PROGRAM_TEMPLATES, listTemplates } from "../helpers/program-templates.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
@@ -41,8 +40,7 @@ Actions:
 - "list": List all programs with their current version and active status
 - "get": Get the current version of a program by name, with all days and exercises
 - "create": Create a new program with days and exercises (auto-activates it)
-- "create_from_template": Create a program from a predefined template. Pass template_id (full_body_3x, upper_lower_4x, ppl_6x). Optionally pass name to override the default template name.
-- "list_templates": List available program templates with descriptions, days per week, and target experience level. Use this during onboarding to help users choose a program.
+- "clone": Clone an existing program (global template or another user's program) as a new user-owned program. Pass source_id (program id). Optionally pass name to override the program name. The cloned program is auto-activated. Global programs (templates) are shown by show_programs.
 - "update": Modify a program. If "days" array is provided, creates a new version with updated days + change_description. If only metadata (new_name, description) is provided without days, updates the program metadata without creating a new version.
 - "activate": Set a program as the active one (deactivates all others). Only one program can be active.
 - "delete": Deactivate a program (soft delete). Use hard_delete=true to permanently remove with all versions/days/exercises (irreversible).
@@ -59,14 +57,14 @@ Each exercise can have superset_group (integer) + group_type to link exercises:
   - "paired": active rest / related exercises done together (e.g., Deadlift + Mobility drill between sets)
   - "circuit": rotate through exercises in sequence (e.g., Dorsalera → Remo → repeat)
 Exercises with the same superset_group number in a day are grouped together. Always set group_type when using superset_group.
-For "create_from_template", pass template_id. Use list_templates to see available options.
+For "clone", pass source_id (the id of the program to clone, typically a global template).
 For "update" with days, also pass change_description explaining what changed.
 For "update" metadata only, pass new_name and/or description (no days needed).
 For "activate", pass the program name.`,
     {
-      action: z.enum(["list", "get", "create", "create_from_template", "list_templates", "update", "activate", "delete", "delete_bulk", "history"]),
+      action: z.enum(["list", "get", "create", "clone", "update", "activate", "delete", "delete_bulk", "history"]),
       name: z.string().optional(),
-      template_id: z.string().optional().describe("Template ID for create_from_template (full_body_3x, upper_lower_4x, ppl_6x)"),
+      source_id: z.number().int().optional().describe("Program ID to clone (for clone action). Typically a global template program ID from show_programs."),
       new_name: z.string().optional().describe("New name for the program (update metadata only)"),
       description: z.string().optional(),
       days: z.union([z.array(daySchema), z.string()]).optional(),
@@ -75,7 +73,7 @@ For "activate", pass the program name.`,
       names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of program names for delete_bulk"),
       include_exercises: z.boolean().optional().describe("If true, include exercise details for each day. Defaults to true"),
     },
-    async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames, include_exercises, template_id }) => {
+    async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames, include_exercises, source_id }) => {
       const userId = getUserId();
 
       // Some MCP clients serialize nested arrays as JSON strings
@@ -247,22 +245,27 @@ For "activate", pass the program name.`,
         }
       }
 
-      if (action === "list_templates") {
-        return toolResponse({ templates: listTemplates() });
-      }
-
-      if (action === "create_from_template") {
-        if (!template_id) {
-          return toolResponse({ error: "template_id is required. Use list_templates to see available options." }, true);
-        }
-        const template = PROGRAM_TEMPLATES[template_id];
-        if (!template) {
-          return toolResponse({ error: `Template "${template_id}" not found. Available: ${Object.keys(PROGRAM_TEMPLATES).join(", ")}` }, true);
+      if (action === "clone") {
+        if (!source_id) {
+          return toolResponse({ error: "source_id is required. Pass the id of the program to clone (from show_programs)." }, true);
         }
 
-        const programName = name || template.name;
+        // Fetch source program (can be global or user-owned)
+        const { rows: [source] } = await pool.query(
+          `SELECT p.id, p.name, p.description, pv.id as version_id
+           FROM programs p
+           JOIN program_versions pv ON pv.program_id = p.id
+           WHERE p.id = $1
+           ORDER BY pv.version_number DESC LIMIT 1`,
+          [source_id]
+        );
+        if (!source) {
+          return toolResponse({ error: `Program with id ${source_id} not found.` }, true);
+        }
 
-        // Check if program name already exists
+        const programName = name || source.name;
+
+        // Check if program name already exists for this user
         const existing = await pool.query(
           "SELECT id FROM programs WHERE user_id = $1 AND LOWER(name) = LOWER($2)",
           [userId, programName]
@@ -273,6 +276,9 @@ For "activate", pass the program name.`,
           }, true);
         }
 
+        // Fetch source days + exercises
+        const sourceDays = await getProgramDaysWithExercises(source.version_id);
+
         const client = await pool.connect();
         try {
           await client.query("BEGIN");
@@ -282,20 +288,17 @@ For "activate", pass the program name.`,
 
           const { rows: [prog] } = await client.query(
             `INSERT INTO programs (user_id, name, description, is_active) VALUES ($1, $2, $3, TRUE) RETURNING id`,
-            [userId, programName, template.description]
+            [userId, programName, source.description]
           );
 
           const { rows: [ver] } = await client.query(
             `INSERT INTO program_versions (program_id, version_number, change_description)
-             VALUES ($1, 1, 'Created from template: ${template_id}') RETURNING id`,
-            [prog.id]
+             VALUES ($1, 1, $2) RETURNING id`,
+            [prog.id, `Cloned from "${source.name}"`]
           );
 
-          const createdExercises = new Set<string>();
-          const existingExercises = new Set<string>();
-
-          for (let i = 0; i < template.days.length; i++) {
-            const day = template.days[i];
+          for (let i = 0; i < sourceDays.length; i++) {
+            const day = sourceDays[i];
             const { rows: [newDay] } = await client.query(
               `INSERT INTO program_days (version_id, day_label, weekdays, sort_order)
                VALUES ($1, $2, $3, $4) RETURNING id`,
@@ -304,19 +307,23 @@ For "activate", pass the program name.`,
 
             for (let j = 0; j < day.exercises.length; j++) {
               const ex = day.exercises[j];
-              const resolved = await resolveExercise(ex.exercise, undefined, undefined, undefined, undefined, client);
-
-              if (resolved.isNew) {
-                createdExercises.add(resolved.name);
-              } else {
-                existingExercises.add(resolved.name);
-              }
-
               await client.query(
                 `INSERT INTO program_day_exercises
-                   (day_id, exercise_id, target_sets, target_reps, sort_order, rest_seconds)
-                 VALUES ($1, $2, $3, $4, $5, $6)`,
-                [newDay.id, resolved.id, ex.sets, ex.reps, j, ex.rest_seconds || null]
+                   (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, group_type, rest_seconds, notes)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                [
+                  newDay.id,
+                  ex.exercise_id,
+                  ex.target_sets,
+                  ex.target_reps,
+                  ex.target_weight || null,
+                  ex.target_rpe || null,
+                  j,
+                  ex.superset_group || null,
+                  ex.group_type || null,
+                  ex.rest_seconds || null,
+                  ex.notes || null,
+                ]
               );
             }
           }
@@ -324,13 +331,9 @@ For "activate", pass the program name.`,
           await client.query("COMMIT");
 
           return toolResponse({
-              program: { id: prog.id, name: programName, version: 1, template: template_id },
-              days_created: template.days.length,
-              exercises_summary: {
-                created: Array.from(createdExercises),
-                existing: Array.from(existingExercises),
-                total: createdExercises.size + existingExercises.size,
-              },
+              program: { id: prog.id, name: programName, version: 1, source: source.name },
+              days_created: sourceDays.length,
+              total_exercises: sourceDays.reduce((sum: number, d: any) => sum + d.exercises.length, 0),
             });
         } catch (err) {
           await client.query("ROLLBACK");

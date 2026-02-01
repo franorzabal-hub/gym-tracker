@@ -15,7 +15,7 @@ const WIDGET_TOOLS: Record<string, { tool: string; args: Record<string, unknown>
   programs: { tool: "show_program", args: {} },
   templates: { tool: "manage_templates", args: { action: "list" } },
   measurements: { tool: "manage_body_measurements", args: { action: "latest" } },
-  onboarding: { tool: "show_onboarding", args: {} },
+  "programs-list": { tool: "show_programs", args: {} },
   export: { tool: "export_data", args: { format: "json", scope: "all" } },
 };
 
@@ -108,17 +108,97 @@ const sampleData: Record<string, { content: Array<{ type: string; text: string }
       measurements: [{ type: "weight_kg", value: 82, date: "2025-01-28" }],
     })}],
   },
-  onboarding: {
+  "programs-list": {
     content: [{ type: "text", text: JSON.stringify({
-      profile: {},
-      templates: [
-        { id: "full_body_3x", name: "Full Body 3x", description: "3 days/week full body routine.", days_per_week: 3, target_experience: "beginner",
-          days: [
-            { day_label: "Full Body A", exercises: [{ name: "Squat", sets: 3, reps: 8 }, { name: "Bench Press", sets: 3, reps: 8 }, { name: "Barbell Row", sets: 3, reps: 8 }] },
+      profile: { experience_level: "intermediate", training_days_per_week: 4 },
+      programs: [
+        { id: 1, name: "Upper/Lower 4x", is_active: true, description: "4 days/week upper/lower split", version: 2, days: [
+          { day_label: "Upper A", weekdays: [1], exercises: [
+            { exercise_name: "Bench Press", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: 8, superset_group: null, group_type: null, rest_seconds: 120, notes: null, muscle_group: "chest", rep_type: "reps" },
+            { exercise_name: "Barbell Row", target_sets: 4, target_reps: 8, target_weight: 70, target_rpe: 7, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "back", rep_type: "reps" },
+            { exercise_name: "Lateral Raise", target_sets: 3, target_reps: 15, target_weight: 10, target_rpe: null, superset_group: 1, group_type: "superset", rest_seconds: 60, notes: null, muscle_group: "shoulders", rep_type: "reps" },
+            { exercise_name: "Face Pull", target_sets: 3, target_reps: 15, target_weight: 15, target_rpe: null, superset_group: 1, group_type: "superset", rest_seconds: 60, notes: null, muscle_group: "shoulders", rep_type: "reps" },
           ]},
-        { id: "ppl_6x", name: "Push Pull Legs 6x", description: "6 days/week PPL split.", days_per_week: 6, target_experience: "advanced",
+          { day_label: "Lower A", weekdays: [2], exercises: [
+            { exercise_name: "Squat", target_sets: 4, target_reps: 6, target_weight: 100, target_rpe: 8, superset_group: null, group_type: null, rest_seconds: 180, notes: null, muscle_group: "legs", rep_type: "reps" },
+            { exercise_name: "Romanian Deadlift", target_sets: 3, target_reps: 10, target_weight: 80, target_rpe: 7, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "legs", rep_type: "reps" },
+            { exercise_name: "Leg Curl", target_sets: 3, target_reps: 12, target_weight: 40, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 60, notes: null, muscle_group: "legs", rep_type: "reps" },
+          ]},
+          { day_label: "Upper B", weekdays: [4], exercises: [
+            { exercise_name: "Overhead Press", target_sets: 4, target_reps: 6, target_weight: 50, target_rpe: 8, superset_group: null, group_type: null, rest_seconds: 120, notes: null, muscle_group: "shoulders", rep_type: "reps" },
+            { exercise_name: "Pull-Up", target_sets: 4, target_reps: 8, target_weight: null, target_rpe: 7, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "back", rep_type: "reps" },
+            { exercise_name: "Tricep Pushdown", target_sets: 3, target_reps: 12, target_weight: 25, target_rpe: null, superset_group: 1, group_type: "superset", rest_seconds: 60, notes: null, muscle_group: "arms", rep_type: "reps" },
+            { exercise_name: "Bicep Curl", target_sets: 3, target_reps: 12, target_weight: 15, target_rpe: null, superset_group: 1, group_type: "superset", rest_seconds: 60, notes: null, muscle_group: "arms", rep_type: "reps" },
+          ]},
+          { day_label: "Lower B", weekdays: [5], exercises: [
+            { exercise_name: "Deadlift", target_sets: 3, target_reps: 5, target_weight: 120, target_rpe: 9, superset_group: null, group_type: null, rest_seconds: 180, notes: null, muscle_group: "back", rep_type: "reps" },
+            { exercise_name: "Leg Press", target_sets: 3, target_reps: 10, target_weight: 150, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "legs", rep_type: "reps" },
+            { exercise_name: "Calf Raise", target_sets: 4, target_reps: 15, target_weight: 60, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 60, notes: null, muscle_group: "legs", rep_type: "reps" },
+          ]},
+        ]},
+      ],
+      globalPrograms: [
+        { id: 100, name: "Full Body 3x", description: "3 days/week full body routine.", version: 1, days_per_week: 3,
           days: [
-            { day_label: "Push A", exercises: [{ name: "Bench Press", sets: 4, reps: 6 }, { name: "Overhead Press", sets: 3, reps: 10 }] },
+            { day_label: "Full Body A", weekdays: [1], exercises: [
+              { exercise_name: "Squat", target_sets: 3, target_reps: 8, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 120, notes: null, muscle_group: "quads", rep_type: "reps" },
+              { exercise_name: "Bench Press", target_sets: 3, target_reps: 8, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "chest", rep_type: "reps" },
+              { exercise_name: "Barbell Row", target_sets: 3, target_reps: 8, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "back", rep_type: "reps" },
+            ]},
+            { day_label: "Full Body B", weekdays: [3], exercises: [
+              { exercise_name: "Deadlift", target_sets: 3, target_reps: 5, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 180, notes: null, muscle_group: "back", rep_type: "reps" },
+              { exercise_name: "Incline Bench Press", target_sets: 3, target_reps: 10, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "chest", rep_type: "reps" },
+            ]},
+            { day_label: "Full Body C", weekdays: [5], exercises: [
+              { exercise_name: "Leg Press", target_sets: 3, target_reps: 10, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "quads", rep_type: "reps" },
+              { exercise_name: "Bench Press", target_sets: 3, target_reps: 10, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "chest", rep_type: "reps" },
+            ]},
+          ]},
+        { id: 101, name: "Upper/Lower 4x", description: "4 days/week upper/lower split.", version: 1, days_per_week: 4,
+          days: [
+            { day_label: "Upper A", weekdays: [1], exercises: [
+              { exercise_name: "Bench Press", target_sets: 4, target_reps: 6, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 120, notes: null, muscle_group: "chest", rep_type: "reps" },
+              { exercise_name: "Barbell Row", target_sets: 4, target_reps: 8, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "back", rep_type: "reps" },
+            ]},
+            { day_label: "Lower A", weekdays: [2], exercises: [
+              { exercise_name: "Squat", target_sets: 4, target_reps: 6, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 180, notes: null, muscle_group: "quads", rep_type: "reps" },
+              { exercise_name: "Romanian Deadlift", target_sets: 3, target_reps: 10, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "hamstrings", rep_type: "reps" },
+            ]},
+            { day_label: "Upper B", weekdays: [4], exercises: [
+              { exercise_name: "Overhead Press", target_sets: 4, target_reps: 6, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 120, notes: null, muscle_group: "shoulders", rep_type: "reps" },
+              { exercise_name: "Pull-Up", target_sets: 4, target_reps: 8, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "back", rep_type: "reps" },
+            ]},
+            { day_label: "Lower B", weekdays: [5], exercises: [
+              { exercise_name: "Deadlift", target_sets: 3, target_reps: 5, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 180, notes: null, muscle_group: "back", rep_type: "reps" },
+              { exercise_name: "Squat", target_sets: 3, target_reps: 10, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 120, notes: null, muscle_group: "quads", rep_type: "reps" },
+            ]},
+          ]},
+        { id: 102, name: "Push Pull Legs 6x", description: "6 days/week PPL split.", version: 1, days_per_week: 6,
+          days: [
+            { day_label: "Push A", weekdays: [1], exercises: [
+              { exercise_name: "Bench Press", target_sets: 4, target_reps: 6, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 120, notes: null, muscle_group: "chest", rep_type: "reps" },
+              { exercise_name: "Overhead Press", target_sets: 3, target_reps: 10, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "shoulders", rep_type: "reps" },
+            ]},
+            { day_label: "Pull A", weekdays: [2], exercises: [
+              { exercise_name: "Barbell Row", target_sets: 4, target_reps: 6, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 120, notes: null, muscle_group: "back", rep_type: "reps" },
+              { exercise_name: "Pull-Up", target_sets: 3, target_reps: 8, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "back", rep_type: "reps" },
+            ]},
+            { day_label: "Legs A", weekdays: [3], exercises: [
+              { exercise_name: "Squat", target_sets: 4, target_reps: 6, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 180, notes: null, muscle_group: "quads", rep_type: "reps" },
+              { exercise_name: "Romanian Deadlift", target_sets: 3, target_reps: 10, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "hamstrings", rep_type: "reps" },
+            ]},
+            { day_label: "Push B", weekdays: [4], exercises: [
+              { exercise_name: "Overhead Press", target_sets: 4, target_reps: 6, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 120, notes: null, muscle_group: "shoulders", rep_type: "reps" },
+              { exercise_name: "Bench Press", target_sets: 3, target_reps: 10, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "chest", rep_type: "reps" },
+            ]},
+            { day_label: "Pull B", weekdays: [5], exercises: [
+              { exercise_name: "Deadlift", target_sets: 3, target_reps: 5, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 180, notes: null, muscle_group: "back", rep_type: "reps" },
+              { exercise_name: "Barbell Row", target_sets: 3, target_reps: 10, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null, muscle_group: "back", rep_type: "reps" },
+            ]},
+            { day_label: "Legs B", weekdays: [6], exercises: [
+              { exercise_name: "Deadlift", target_sets: 3, target_reps: 8, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 180, notes: null, muscle_group: "back", rep_type: "reps" },
+              { exercise_name: "Squat", target_sets: 3, target_reps: 10, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 120, notes: null, muscle_group: "quads", rep_type: "reps" },
+            ]},
           ]},
       ],
     })}],

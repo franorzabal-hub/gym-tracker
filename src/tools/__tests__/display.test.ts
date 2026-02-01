@@ -76,9 +76,10 @@ describe("show_profile display tool", () => {
   });
 });
 
-describe("show_onboarding display tool", () => {
+describe("show_programs display tool", () => {
   beforeEach(() => {
     mockQuery.mockReset();
+    mockGetProgramDaysWithExercises.mockReset();
     const server = {} as unknown as McpServer;
     registerDisplayTools(server);
   });
@@ -88,44 +89,65 @@ describe("show_onboarding display tool", () => {
     registerDisplayTools(server);
     expect(registerAppToolWithMeta).toHaveBeenCalledWith(
       server,
-      "show_onboarding",
+      "show_programs",
       expect.objectContaining({
-        title: "Onboarding",
+        title: "Programs List",
         annotations: { readOnlyHint: true },
-        _meta: { ui: { resourceUri: "ui://gym-tracker/onboarding.html" } },
+        _meta: { ui: { resourceUri: "ui://gym-tracker/programs-list.html" } },
       }),
       expect.any(Function)
     );
   });
 
-  it("returns profile data and templates with exercises", async () => {
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ data: { name: "Franco", weight_kg: 80 } }],
-    });
+  it("returns profile, programs with full days, and global programs", async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ data: { name: "Franco", experience_level: "intermediate" } }] })
+      .mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL", is_active: true, description: "Push Pull Legs", version_id: 10, version_number: 2 }] })
+      .mockResolvedValueOnce({ rows: [{ id: 100, name: "Full Body 3x", description: "3 days/week", version_id: 50, version_number: 1 }] });
 
-    const result = await toolHandlers["show_onboarding"]();
+    mockGetProgramDaysWithExercises
+      .mockResolvedValueOnce([
+        { day_label: "Push A", weekdays: [1], exercises: [{ exercise_name: "Bench Press", target_sets: 4, target_reps: 8 }] },
+      ])
+      .mockResolvedValueOnce([
+        { day_label: "Full Body A", weekdays: [1], exercises: [{ exercise_name: "Squat", target_sets: 3, target_reps: 8 }] },
+        { day_label: "Full Body B", weekdays: [3], exercises: [{ exercise_name: "Deadlift", target_sets: 3, target_reps: 5 }] },
+        { day_label: "Full Body C", weekdays: [5], exercises: [{ exercise_name: "Bench Press", target_sets: 3, target_reps: 10 }] },
+      ]);
 
-    expect(result.content[0].text).toContain("Do NOT");
-    expect(result.structuredContent).toBeDefined();
-    expect(result.structuredContent.profile).toEqual({ name: "Franco", weight_kg: 80 });
+    const result = await toolHandlers["show_programs"]();
 
-    const templates = result.structuredContent.templates;
-    expect(Array.isArray(templates)).toBe(true);
-    expect(templates.length).toBeGreaterThan(0);
-
-    const first = templates[0];
-    expect(first).toHaveProperty("id");
-    expect(first).toHaveProperty("name");
-    expect(first.days.length).toBeGreaterThan(0);
-    expect(first.days[0].exercises[0]).toHaveProperty("name");
+    expect(result.structuredContent.profile).toEqual({ name: "Franco", experience_level: "intermediate" });
+    expect(result.structuredContent.programs).toHaveLength(1);
+    expect(result.structuredContent.programs[0].name).toBe("PPL");
+    expect(result.structuredContent.programs[0].description).toBe("Push Pull Legs");
+    expect(result.structuredContent.programs[0].version).toBe(2);
+    expect(result.structuredContent.programs[0].days).toHaveLength(1);
+    expect(result.structuredContent.programs[0].days[0].exercises).toHaveLength(1);
+    expect(result.structuredContent.globalPrograms).toHaveLength(1);
+    expect(result.structuredContent.globalPrograms[0].name).toBe("Full Body 3x");
+    expect(result.structuredContent.globalPrograms[0].days_per_week).toBe(3);
+    expect(result.structuredContent.globalPrograms[0].days).toHaveLength(3);
+    expect(result.content[0].text).toContain("Do NOT repeat");
+    expect(mockGetProgramDaysWithExercises).toHaveBeenCalledWith(10);
+    expect(mockGetProgramDaysWithExercises).toHaveBeenCalledWith(50);
   });
 
-  it("returns empty profile when no data", async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] });
+  it("returns empty programs when user has none", async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: 100, name: "Full Body 3x", description: "3 days", version_id: 50, version_number: 1 }] });
 
-    const result = await toolHandlers["show_onboarding"]();
+    mockGetProgramDaysWithExercises.mockResolvedValueOnce([
+      { day_label: "Day A", weekdays: [1], exercises: [] },
+    ]);
+
+    const result = await toolHandlers["show_programs"]();
+
     expect(result.structuredContent.profile).toEqual({});
-    expect(result.structuredContent.templates.length).toBeGreaterThan(0);
+    expect(result.structuredContent.programs).toHaveLength(0);
+    expect(result.structuredContent.globalPrograms).toHaveLength(1);
   });
 });
 
