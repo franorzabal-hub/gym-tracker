@@ -165,7 +165,7 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 | `show_profile` | profile.html | User profile card |
 | `show_programs` | programs-list.html | Programs list with user's existing programs and global program templates. Users can activate programs, clone global programs, or choose custom |
 | `show_program` | programs.html | Program viewer with days, exercises, supersets, weights. Defaults to active program, optional `name` param |
-| `show_workout` | workout.html | Interactive workout session editor. Shows active session with inline-editable sets (reps, weight, RPE, type). Add/remove exercises and sets. |
+| `show_workout` | workout.html | Interactive workout session editor. Optional `session_id` to view a specific (possibly ended) session in read-only mode. Without it, shows active session with inline-editable sets (reps, weight, RPE, type). Add/remove exercises and sets. |
 
 ## MCP Apps Widgets
 

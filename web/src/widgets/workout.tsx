@@ -24,6 +24,7 @@ interface ExerciseData {
 interface SessionData {
   session_id: number;
   started_at: string;
+  ended_at?: string | null;
   duration_minutes: number;
   program_day: string | null;
   tags: string[];
@@ -37,6 +38,7 @@ interface ExerciseSuggestion {
 
 interface ToolData {
   session: SessionData | null;
+  readonly?: boolean;
   exerciseCatalog?: ExerciseSuggestion[];
 }
 
@@ -74,6 +76,7 @@ function EditableNumber({
   fontSize = 13,
   color,
   allowNull,
+  readonly,
 }: {
   value: number | null;
   onChange: (v: number | null) => void;
@@ -85,6 +88,7 @@ function EditableNumber({
   fontSize?: number;
   color?: string;
   allowNull?: boolean;
+  readonly?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [local, setLocal] = useState(value?.toString() ?? "");
@@ -103,6 +107,14 @@ function EditableNumber({
       onChange(null);
     }
   };
+
+  if (readonly) {
+    return (
+      <span style={{ fontWeight, fontSize, color: value != null ? color || "var(--text)" : "var(--text-secondary)" }}>
+        {value != null ? value : placeholder}
+      </span>
+    );
+  }
 
   if (editing) {
     return (
@@ -294,7 +306,7 @@ function ExerciseNameInput({
 
 const SET_TYPES = ["working", "warmup", "drop", "failure"] as const;
 
-function SetTypeBadge({ type, onChange }: { type: string; onChange: (t: string) => void }) {
+function SetTypeBadge({ type, onChange, readonly }: { type: string; onChange: (t: string) => void; readonly?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -319,12 +331,12 @@ function SetTypeBadge({ type, onChange }: { type: string; onChange: (t: string) 
   return (
     <div ref={ref} style={{ position: "relative", display: "inline-flex" }}>
       <span
-        onClick={() => setOpen(!open)}
+        onClick={readonly ? undefined : () => setOpen(!open)}
         style={{
           fontSize: 10,
           fontWeight: 600,
           color: colorMap[type] || "var(--text-secondary)",
-          cursor: "pointer",
+          cursor: readonly ? "default" : "pointer",
           opacity: 0.7,
           userSelect: "none",
         }}
@@ -332,7 +344,7 @@ function SetTypeBadge({ type, onChange }: { type: string; onChange: (t: string) 
       >
         {label}
       </span>
-      {open && (
+      {open && !readonly && (
         <div
           style={{
             position: "absolute",
@@ -378,11 +390,13 @@ function SetRow({
   onUpdate,
   onDelete,
   exerciseName,
+  readonly,
 }: {
   set: SetData;
   onUpdate: (updates: Partial<SetData>) => void;
   onDelete: () => void;
   exerciseName: string;
+  readonly?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
 
@@ -402,6 +416,7 @@ function SetRow({
           placeholder="—"
           min={0}
           width={36}
+          readonly={readonly}
         />
       </td>
       <td style={{ textAlign: "center" }}>
@@ -413,6 +428,7 @@ function SetRow({
           step={0.5}
           width={44}
           allowNull
+          readonly={readonly}
         />
       </td>
       <td style={{ textAlign: "center" }}>
@@ -424,26 +440,29 @@ function SetRow({
           width={28}
           allowNull
           color={set.rpe != null ? (set.rpe >= 9 ? "var(--danger)" : set.rpe >= 8 ? "var(--warning)" : "var(--success)") : undefined}
+          readonly={readonly}
         />
       </td>
       <td style={{ textAlign: "center" }}>
-        <SetTypeBadge type={set.set_type || "working"} onChange={(t) => onUpdate({ set_type: t })} />
+        <SetTypeBadge type={set.set_type || "working"} onChange={(t) => onUpdate({ set_type: t })} readonly={readonly} />
       </td>
-      <td style={{ width: 24, textAlign: "center" }}>
-        <span
-          onClick={onDelete}
-          style={{
-            cursor: "pointer",
-            fontSize: 13,
-            color: "var(--text-secondary)",
-            opacity: hovered ? 0.8 : 0,
-            transition: "opacity 0.15s",
-          }}
-          title="Remove set"
-        >
-          ×
-        </span>
-      </td>
+      {!readonly && (
+        <td style={{ width: 24, textAlign: "center" }}>
+          <span
+            onClick={onDelete}
+            style={{
+              cursor: "pointer",
+              fontSize: 13,
+              color: "var(--text-secondary)",
+              opacity: hovered ? 0.8 : 0,
+              transition: "opacity 0.15s",
+            }}
+            title="Remove set"
+          >
+            ×
+          </span>
+        </td>
+      )}
     </tr>
   );
 }
@@ -454,10 +473,12 @@ function ExerciseCard({
   exercise,
   onRefresh,
   catalog,
+  readonly,
 }: {
   exercise: ExerciseData;
   onRefresh: () => void;
   catalog: ExerciseSuggestion[];
+  readonly?: boolean;
 }) {
   const { callTool, loading } = useCallTool();
   const [hovered, setHovered] = useState(false);
@@ -538,19 +559,21 @@ function ExerciseCard({
             </span>
           )}
         </div>
-        <span
-          onClick={deleteExercise}
-          style={{
-            cursor: "pointer",
-            fontSize: 14,
-            color: "var(--text-secondary)",
-            opacity: hovered ? 0.6 : 0,
-            transition: "opacity 0.15s",
-          }}
-          title="Remove exercise"
-        >
-          ×
-        </span>
+        {!readonly && (
+          <span
+            onClick={deleteExercise}
+            style={{
+              cursor: "pointer",
+              fontSize: 14,
+              color: "var(--text-secondary)",
+              opacity: hovered ? 0.6 : 0,
+              transition: "opacity 0.15s",
+            }}
+            title="Remove exercise"
+          >
+            ×
+          </span>
+        )}
       </div>
 
       {/* Sets table */}
@@ -563,7 +586,7 @@ function ExerciseCard({
               <th style={{ textAlign: "center", padding: "2px 0", fontWeight: 500 }}>Kg</th>
               <th style={{ textAlign: "center", padding: "2px 0", fontWeight: 500 }}>RPE</th>
               <th style={{ textAlign: "center", padding: "2px 0", fontWeight: 500 }}>Type</th>
-              <th style={{ width: 24 }} />
+              {!readonly && <th style={{ width: 24 }} />}
             </tr>
           </thead>
           <tbody>
@@ -574,6 +597,7 @@ function ExerciseCard({
                 onUpdate={(updates) => updateSet(set.set_number, updates)}
                 onDelete={() => deleteSet(set.set_number)}
                 exerciseName={exercise.name}
+                readonly={readonly}
               />
             ))}
           </tbody>
@@ -581,22 +605,24 @@ function ExerciseCard({
       )}
 
       {/* Add set */}
-      <div style={{ marginTop: 4 }}>
-        <span
-          onClick={addSet}
-          style={{
-            fontSize: 12,
-            color: "var(--text-secondary)",
-            cursor: loading ? "default" : "pointer",
-            opacity: loading ? 0.4 : 0.6,
-            transition: "opacity 0.15s",
-          }}
-          onMouseEnter={(e) => { if (!loading) e.currentTarget.style.opacity = "1"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.6"; }}
-        >
-          + Add set
-        </span>
-      </div>
+      {!readonly && (
+        <div style={{ marginTop: 4 }}>
+          <span
+            onClick={addSet}
+            style={{
+              fontSize: 12,
+              color: "var(--text-secondary)",
+              cursor: loading ? "default" : "pointer",
+              opacity: loading ? 0.4 : 0.6,
+              transition: "opacity 0.15s",
+            }}
+            onMouseEnter={(e) => { if (!loading) e.currentTarget.style.opacity = "1"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.6"; }}
+          >
+            + Add set
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -717,6 +743,7 @@ function WorkoutWidget() {
     addingExercise={addingExercise}
     setAddingExercise={setAddingExercise}
     handleAddExercise={handleAddExercise}
+    readonly={data?.readonly}
   />;
 }
 
@@ -728,6 +755,7 @@ function ActiveWorkout({
   addingExercise,
   setAddingExercise,
   handleAddExercise,
+  readonly,
 }: {
   session: SessionData;
   catalog: ExerciseSuggestion[];
@@ -736,8 +764,10 @@ function ActiveWorkout({
   addingExercise: boolean;
   setAddingExercise: (v: boolean) => void;
   handleAddExercise: (name: string) => void;
+  readonly?: boolean;
 }) {
-  const minutes = useLiveTimer(session.started_at);
+  const liveMinutes = useLiveTimer(session.started_at);
+  const minutes = readonly ? session.duration_minutes : liveMinutes;
   const totalSets = session.exercises.reduce((sum, e) => sum + e.sets.length, 0);
   const totalVolume = session.exercises.reduce(
     (sum, e) => sum + e.sets.reduce((s, set) => s + (set.weight || 0) * (set.reps || 0), 0),
@@ -750,16 +780,21 @@ function ActiveWorkout({
       <div style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontWeight: 600, fontSize: 17 }}>Active Workout</span>
+            <span style={{ fontWeight: 600, fontSize: 17 }}>{readonly ? "Workout" : "Active Workout"}</span>
             {session.program_day && (
               <span className="badge badge-primary">{session.program_day}</span>
             )}
+            {readonly && (
+              <span className="badge" style={{ background: "var(--bg-secondary)", color: "var(--text-secondary)", fontSize: 10 }}>
+                Completed
+              </span>
+            )}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {refreshing && (
+            {!readonly && refreshing && (
               <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>Refreshing...</span>
             )}
-            <span style={{ fontWeight: 600, fontSize: 15, color: "var(--primary)" }}>
+            <span style={{ fontWeight: 600, fontSize: 15, color: readonly ? "var(--text-secondary)" : "var(--primary)" }}>
               {formatDuration(minutes)}
             </span>
           </div>
@@ -767,6 +802,9 @@ function ActiveWorkout({
 
         {/* Summary stats */}
         <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 12, color: "var(--text-secondary)" }}>
+          {readonly && session.ended_at && (
+            <span>{new Date(session.started_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
+          )}
           <span>{session.exercises.length} exercise{session.exercises.length !== 1 ? "s" : ""}</span>
           <span>{totalSets} set{totalSets !== 1 ? "s" : ""}</span>
           {totalVolume > 0 && <span>{Math.round(totalVolume).toLocaleString()} kg vol</span>}
@@ -792,38 +830,41 @@ function ActiveWorkout({
             exercise={ex}
             onRefresh={refreshSession}
             catalog={catalog}
+            readonly={readonly}
           />
         ))}
       </div>
 
       {/* Add exercise */}
-      <div style={{ marginTop: 8 }}>
-        {addingExercise ? (
-          <AddExerciseForm
-            catalog={catalog}
-            onAdd={handleAddExercise}
-            onCancel={() => setAddingExercise(false)}
-          />
-        ) : (
-          <span
-            onClick={() => setAddingExercise(true)}
-            style={{
-              fontSize: 13,
-              color: "var(--text-secondary)",
-              cursor: "pointer",
-              opacity: 0.7,
-              transition: "opacity 0.15s",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.7"; }}
-          >
-            + Add exercise
-          </span>
-        )}
-      </div>
+      {!readonly && (
+        <div style={{ marginTop: 8 }}>
+          {addingExercise ? (
+            <AddExerciseForm
+              catalog={catalog}
+              onAdd={handleAddExercise}
+              onCancel={() => setAddingExercise(false)}
+            />
+          ) : (
+            <span
+              onClick={() => setAddingExercise(true)}
+              style={{
+                fontSize: 13,
+                color: "var(--text-secondary)",
+                cursor: "pointer",
+                opacity: 0.7,
+                transition: "opacity 0.15s",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.7"; }}
+            >
+              + Add exercise
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { widgetResponse, registerAppToolWithMeta, APP_CONTEXT } from "../helpers/tool-response.js";
@@ -6,30 +7,49 @@ import { widgetResponse, registerAppToolWithMeta, APP_CONTEXT } from "../helpers
 export function registerWorkoutTool(server: McpServer) {
   registerAppToolWithMeta(server, "show_workout", {
     title: "Active Workout",
-    description: `${APP_CONTEXT}Display an interactive workout session widget. Shows the active session with exercises and sets — all editable inline (add/remove exercises, add/remove/edit sets, change reps/weight/RPE).
-The widget handles mutations via log_workout and edit_log calls. If no session is active, shows a "no active session" message.
+    description: `${APP_CONTEXT}Display an interactive workout session widget. Shows a session with exercises and sets — all editable inline (add/remove exercises, add/remove/edit sets, change reps/weight/RPE).
+If session_id is provided, shows that specific session (read-only if ended). Otherwise shows the active session.
+The widget handles mutations via log_workout and edit_log calls. If no session is active and no session_id given, shows a "no active session" message.
 The widget already shows all information visually — do NOT repeat exercises or set details in your response. Just confirm it's displayed or offer next steps.`,
-    inputSchema: {},
+    inputSchema: {
+      session_id: z.number().optional().describe("Optional session ID to view a specific (possibly ended) session in read-only mode"),
+    },
     annotations: {},
     _meta: { ui: { resourceUri: "ui://gym-tracker/workout.html" } },
-  }, async () => {
+  }, async ({ session_id }: { session_id?: number }) => {
     const userId = getUserId();
 
-    // Get active session
-    const { rows } = await pool.query(
-      "SELECT id, started_at, program_day_id, tags FROM sessions WHERE user_id = $1 AND ended_at IS NULL AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
-      [userId]
-    );
+    let rows;
+    if (session_id != null) {
+      // Fetch specific session by ID (may be ended)
+      const result = await pool.query(
+        "SELECT id, started_at, ended_at, program_day_id, tags FROM sessions WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL LIMIT 1",
+        [session_id, userId]
+      );
+      rows = result.rows;
+    } else {
+      // Get active session (existing behavior)
+      const result = await pool.query(
+        "SELECT id, started_at, ended_at, program_day_id, tags FROM sessions WHERE user_id = $1 AND ended_at IS NULL AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
+        [userId]
+      );
+      rows = result.rows;
+    }
 
     if (rows.length === 0) {
       return widgetResponse(
-        "No active workout session. The widget shows an empty state. Suggest starting a session.",
+        session_id != null
+          ? "Session not found or not owned by user. The widget shows an empty state."
+          : "No active workout session. The widget shows an empty state. Suggest starting a session.",
         { session: null }
       );
     }
 
     const session = rows[0];
-    const durationMinutes = Math.round((Date.now() - new Date(session.started_at).getTime()) / 60000);
+    const isEnded = session.ended_at != null;
+    const durationMinutes = isEnded
+      ? Math.round((new Date(session.ended_at).getTime() - new Date(session.started_at).getTime()) / 60000)
+      : Math.round((Date.now() - new Date(session.started_at).getTime()) / 60000);
 
     // Get program day label
     let programDay: string | undefined;
@@ -67,12 +87,14 @@ The widget already shows all information visually — do NOT repeat exercises or
     const exerciseCount = exerciseDetails.length;
     const totalSets = exerciseDetails.reduce((sum: number, e: any) => sum + (Array.isArray(e.sets) ? e.sets.length : 0), 0);
 
+    const readonlyLabel = isEnded ? " (read-only, session ended)" : "";
     return widgetResponse(
-      `Workout widget displayed showing active session (${durationMinutes} min, ${exerciseCount} exercises, ${totalSets} sets${programDay ? `, ${programDay}` : ""}). The widget supports inline editing — do NOT repeat this information.`,
+      `Workout widget displayed showing ${isEnded ? "past" : "active"} session (${durationMinutes} min, ${exerciseCount} exercises, ${totalSets} sets${programDay ? `, ${programDay}` : ""})${readonlyLabel}. The widget ${isEnded ? "is read-only" : "supports inline editing"} — do NOT repeat this information.`,
       {
         session: {
           session_id: session.id,
           started_at: session.started_at,
+          ended_at: session.ended_at || null,
           duration_minutes: durationMinutes,
           program_day: programDay,
           tags: session.tags || [],
@@ -82,6 +104,7 @@ The widget already shows all information visually — do NOT repeat exercises or
             sets: e.sets,
           })),
         },
+        ...(isEnded ? { readonly: true } : {}),
         exerciseCatalog: exerciseRows.map((r: any) => ({ name: r.name, muscle_group: r.muscle_group })),
       }
     );
