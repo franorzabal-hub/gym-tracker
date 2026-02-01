@@ -22,6 +22,7 @@ const WIDGETS: Array<{ name: string; uri: string; file: string; description: str
   { name: "profile-widget", uri: "ui://gym-tracker/profile.html", file: "profile.html", description: "User profile data" },
   { name: "export-widget", uri: "ui://gym-tracker/export.html", file: "export.html", description: "Data export viewer" },
   { name: "programs-list-widget", uri: "ui://gym-tracker/programs-list.html", file: "programs-list.html", description: "Programs list with templates for program selection" },
+  { name: "dashboard-widget", uri: "ui://gym-tracker/dashboard.html", file: "dashboard.html", description: "Training dashboard with KPIs and charts" },
 ];
 
 /**

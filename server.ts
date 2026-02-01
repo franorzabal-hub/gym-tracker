@@ -21,6 +21,7 @@ import { registerTodayPlanTool } from "./src/tools/today-plan.js";
 import { registerBodyMeasurementsTool } from "./src/tools/body-measurements.js";
 import { registerExportTool } from "./src/tools/export.js";
 import { registerDisplayTools } from "./src/tools/display.js";
+import { registerDashboardTool } from "./src/tools/dashboard.js";
 import { registerWidgetResources } from "./src/resources/register-widgets.js";
 
 import oauthRoutes from "./src/auth/oauth-routes.js";
@@ -88,6 +89,7 @@ When the user asks to SEE their profile, call show_profile (NOT manage_profile).
   registerBodyMeasurementsTool(server);
   registerExportTool(server);
   registerDisplayTools(server);
+  registerDashboardTool(server);
   registerWidgetResources(server);
 
   return server;
@@ -99,6 +101,10 @@ app.all("/mcp", async (req, res) => {
   console.log(`[MCP] ${req.method} /mcp — ${JSON.stringify(method)}`);
   if (req.body?.method === "resources/read" || req.body?.method === "resources/list") {
     console.log(`[MCP] Resource request params:`, JSON.stringify(req.body.params));
+  }
+  // DEBUG: log tool call params for manage_program
+  if (req.body?.method === "tools/call" && req.body?.params?.name === "manage_program") {
+    console.log(`[DEBUG manage_program] params:`, JSON.stringify(req.body.params.arguments, null, 2));
   }
   try {
     let userId: number;
@@ -133,7 +139,7 @@ app.all("/mcp", async (req, res) => {
       });
       return;
     }
-    console.error("MCP endpoint error:", err);
+    console.error("MCP endpoint error:", err instanceof Error ? err.stack : err);
     if (!res.headersSent) {
       res.status(500).json({ error: "internal_error", message: "An unexpected error occurred" });
     }
