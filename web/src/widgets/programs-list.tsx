@@ -72,8 +72,9 @@ function ProgramsListWidget() {
   const { callTool, loading } = useCallTool();
   const [activeIdx, setActiveIdx] = useState(0);
   const [activatingName, setActivatingName] = useState<string | null>(null);
+  const [localPrograms, setLocalPrograms] = useState<UserProgram[] | null>(null);
 
-  const programs = data?.programs ?? [];
+  const programs = localPrograms ?? data?.programs ?? [];
   const catalog = data?.exerciseCatalog ?? [];
 
   const goTo = useCallback((idx: number) => {
@@ -96,12 +97,20 @@ function ProgramsListWidget() {
 
   const handleActivate = async (programName: string) => {
     setActivatingName(programName);
-    await callTool("manage_program", { action: "activate", name: programName });
+    const result = await callTool("manage_program", { action: "activate", name: programName });
     setActivatingName(null);
+    if (result && !result.error) {
+      setLocalPrograms(programs.map((p) => ({ ...p, is_active: p.name === programName })));
+    }
   };
 
   const handleDelete = async (programName: string) => {
-    await callTool("manage_program", { action: "delete", name: programName });
+    const result = await callTool("manage_program", { action: "delete", name: programName });
+    if (result && !result.error) {
+      const remaining = programs.filter((p) => p.name !== programName);
+      setLocalPrograms(remaining);
+      if (activeIdx >= remaining.length) setActiveIdx(Math.max(0, remaining.length - 1));
+    }
   };
 
   return (
