@@ -16,17 +16,17 @@ const dayExerciseSchema = z.object({
   exercise: z.string(),
   sets: z.number().int().min(1).default(3),
   reps: z.number().int().min(1).default(10),
-  weight: z.number().optional(),
-  rpe: z.number().min(1).max(10).optional(),
-  superset_group: z.number().int().optional(),
-  group_type: z.enum(["superset", "paired", "circuit"]).optional().describe("Type of exercise grouping. 'superset' = back-to-back no rest, 'paired' = active rest / related exercises, 'circuit' = rotate through exercises. Required when superset_group is set."),
-  rest_seconds: z.number().int().optional(),
-  notes: z.string().optional(),
+  weight: z.number().nullable().optional(),
+  rpe: z.number().min(1).max(10).nullable().optional(),
+  superset_group: z.number().int().nullable().optional(),
+  group_type: z.enum(["superset", "paired", "circuit"]).nullable().optional().describe("Type of exercise grouping. 'superset' = back-to-back no rest, 'paired' = active rest / related exercises, 'circuit' = rotate through exercises. Required when superset_group is set."),
+  rest_seconds: z.number().int().nullable().optional(),
+  notes: z.string().nullable().optional(),
 });
 
 const daySchema = z.object({
   day_label: z.string(),
-  weekdays: z.array(z.number().int().min(1).max(7)).optional(),
+  weekdays: z.array(z.number().int().min(1).max(7)).nullable().optional(),
   exercises: z.array(dayExerciseSchema),
 });
 
