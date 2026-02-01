@@ -44,22 +44,27 @@ const WEEKDAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "S�
 const SS_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
 
 // Consistent left padding for the content rail
-const RAIL_PX = 14;
+const RAIL_PX = 18;
 
-function WeekdayPills({ days, viewingWeekdays }: { days: Day[]; viewingWeekdays?: number[] }) {
-  const activeDays = new Set<number>();
-  days.forEach(d => d.weekdays?.forEach(w => activeDays.add(w)));
+function WeekdayPills({ days, viewingWeekdays, onWeekdayClick }: { days: Day[]; viewingWeekdays?: number[]; onWeekdayClick?: (dayIdx: number) => void }) {
+  // Map each weekday number → first day index that uses it
+  const weekdayToDayIdx = new Map<number, number>();
+  days.forEach((d, idx) => d.weekdays?.forEach(w => {
+    if (!weekdayToDayIdx.has(w)) weekdayToDayIdx.set(w, idx);
+  }));
   const viewingSet = new Set(viewingWeekdays || []);
 
   return (
     <div style={{ display: "flex", gap: 3 }}>
       {WEEKDAY_LABELS.map((label, i) => {
         const dayNum = i + 1;
-        const active = activeDays.has(dayNum);
+        const active = weekdayToDayIdx.has(dayNum);
         const viewing = viewingSet.has(dayNum);
+        const clickable = active && onWeekdayClick;
         return (
           <div
             key={i}
+            onClick={clickable ? () => onWeekdayClick(weekdayToDayIdx.get(dayNum)!) : undefined}
             style={{
               width: 22,
               height: 22,
@@ -73,6 +78,8 @@ function WeekdayPills({ days, viewingWeekdays }: { days: Day[]; viewingWeekdays?
               color: active ? "white" : "var(--text-secondary)",
               border: active ? "none" : "1px solid var(--border)",
               boxShadow: viewing ? "0 0 0 2px var(--bg), 0 0 0 4px var(--primary)" : "none",
+              cursor: clickable ? "pointer" : "default",
+              transition: "transform 0.1s",
             }}
           >
             {label}
@@ -251,7 +258,7 @@ function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Exercise[
   return (
     <div style={{
       borderLeft: borderStyle,
-      borderBottomLeftRadius: isGrouped ? 6 : 0,
+      borderBottomLeftRadius: isGrouped ? 8 : 0,
       paddingLeft: RAIL_PX,
       marginBottom: 4,
     }}>
@@ -330,12 +337,19 @@ function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Exercise[
                 📈 {progression}
               </span>
             )}
-            {/* Remaining notes — prefix duration-like notes with ⏳ */}
-            {noteText && (
-              <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 1, opacity: 0.7 }}>
-                {/^\d+\s*seg/i.test(noteText) ? `⏳ ${noteText}` : noteText}
-              </div>
-            )}
+            {/* Remaining notes — skip if it just repeats the seconds already shown in the rep scheme */}
+            {noteText && (() => {
+              // If rep_type is seconds/time-based, filter out notes that just restate the duration
+              if (ex.rep_type === "seconds" && /^\d+\s*seg/i.test(noteText)) {
+                const noteSecs = parseInt(noteText, 10);
+                if (noteSecs === ex.target_reps) return null;
+              }
+              return (
+                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 1, opacity: 0.7 }}>
+                  {/^\d+\s*seg/i.test(noteText) ? `⏳ ${noteText}` : noteText}
+                </div>
+              );
+            })()}
           </div>
         );
       })}
@@ -434,15 +448,8 @@ function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: boolean }
   );
 }
 
-function DayCarousel({ days, onDayChange }: { days: Day[]; onDayChange?: (idx: number) => void }) {
-  const [activeIdx, setActiveIdx] = useState(0);
+function DayCarousel({ days, activeIdx, goTo }: { days: Day[]; activeIdx: number; goTo: (idx: number) => void }) {
   const touchRef = useRef<{ startX: number; startY: number } | null>(null);
-
-  const goTo = useCallback((idx: number) => {
-    const clamped = Math.max(0, Math.min(idx, days.length - 1));
-    setActiveIdx(clamped);
-    onDayChange?.(clamped);
-  }, [days.length, onDayChange]);
 
   const onTouchStart = useCallback((e: React.TouchEvent) => {
     touchRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY };
@@ -458,85 +465,25 @@ function DayCarousel({ days, onDayChange }: { days: Day[]; onDayChange?: (idx: n
     }
   }, [activeIdx, goTo]);
 
-  const navBtnStyle: React.CSSProperties = {
-    background: "none",
-    border: "none",
-    color: "var(--primary)",
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: "pointer",
-    padding: "4px 8px",
-    fontFamily: "var(--font)",
-  };
-
-  const navBtnDisabled: React.CSSProperties = {
-    ...navBtnStyle,
-    color: "var(--text-secondary)",
-    opacity: 0.3,
-    cursor: "default",
-  };
-
   return (
-    <div>
-      <div
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-      >
-        <DayCard day={days[activeIdx]} alwaysExpanded />
-      </div>
-
-      {/* Bottom navigation bar */}
-      {days.length > 1 && (
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 12,
-          marginTop: 12,
-          paddingTop: 10,
-          borderTop: "1px solid var(--border)",
-        }}>
-          <button
-            style={activeIdx > 0 ? navBtnStyle : navBtnDisabled}
-            onClick={activeIdx > 0 ? () => goTo(activeIdx - 1) : undefined}
-          >
-            ‹
-          </button>
-
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            {days.map((_, i) => (
-              <button
-                key={i}
-                onClick={() => goTo(i)}
-                style={{
-                  width: activeIdx === i ? 20 : 8,
-                  height: 8,
-                  borderRadius: 4,
-                  border: "none",
-                  background: activeIdx === i ? "var(--primary)" : "var(--border)",
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                  padding: 0,
-                }}
-              />
-            ))}
-          </div>
-
-          <button
-            style={activeIdx < days.length - 1 ? navBtnStyle : navBtnDisabled}
-            onClick={activeIdx < days.length - 1 ? () => goTo(activeIdx + 1) : undefined}
-          >
-            ›
-          </button>
-        </div>
-      )}
+    <div
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
+      <DayCard day={days[activeIdx]} alwaysExpanded />
     </div>
   );
 }
 
+
 function ProgramsWidget() {
   const data = useToolOutput<{ program: Program }>();
   const [viewingIdx, setViewingIdx] = useState(0);
+
+  const goTo = useCallback((idx: number) => {
+    if (!data?.program) return;
+    setViewingIdx(Math.max(0, Math.min(idx, data.program.days.length - 1)));
+  }, [data]);
 
   if (!data) return <div className="loading">Loading...</div>;
 
@@ -561,13 +508,15 @@ function ProgramsWidget() {
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-          <WeekdayPills days={p.days} viewingWeekdays={viewingWeekdays} />
+          <WeekdayPills days={p.days} viewingWeekdays={viewingWeekdays} onWeekdayClick={goTo} />
         </div>
       </div>
 
       {p.days.length === 1
         ? <DayCard day={p.days[0]} alwaysExpanded />
-        : <DayCarousel days={p.days} onDayChange={setViewingIdx} />
+        : (
+          <DayCarousel days={p.days} activeIdx={viewingIdx} goTo={goTo} />
+        )
       }
     </div>
   );
