@@ -1899,6 +1899,7 @@ function EditableDayCarousel({
   onDayChange,
   onDayDelete,
   catalog,
+  fillHeight,
 }: {
   days: EditableDay[];
   activeIdx: number;
@@ -1906,6 +1907,7 @@ function EditableDayCarousel({
   onDayChange: (dayIdx: number, updated: EditableDay) => void;
   onDayDelete: (dayIdx: number) => void;
   catalog: ExerciseSuggestion[];
+  fillHeight?: boolean;
 }) {
   const touchRef = useRef<{ startX: number; startY: number } | null>(null);
 
@@ -1933,7 +1935,7 @@ function EditableDayCarousel({
         dayIdx={activeIdx}
         onChange={(updated) => onDayChange(activeIdx, updated)}
         onDelete={() => onDayDelete(activeIdx)}
-        alwaysExpanded
+        alwaysExpanded={!fillHeight}
         catalog={catalog}
       />
     </div>
@@ -1947,11 +1949,13 @@ export function ProgramEditor({
   exerciseCatalog,
   initialDayIdx,
   badge,
+  fillHeight,
 }: {
   program: Program;
   exerciseCatalog?: ExerciseSuggestion[];
   initialDayIdx?: number;
   badge?: React.ReactNode;
+  fillHeight?: boolean;
 }) {
   const [programName, setProgramName] = useState(program.name);
   const [description, setDescription] = useState<string | null>(program.description);
@@ -2023,9 +2027,12 @@ export function ProgramEditor({
   const totalExercises = days.reduce((sum, d) => sum + d.exercises.length, 0);
 
   return (
-    <div style={{ maxWidth: 600 }}>
+    <div style={{
+      maxWidth: 600,
+      ...(fillHeight ? { display: "flex", flexDirection: "column" as const, flex: 1, minHeight: 0 } : {}),
+    }}>
       {/* Program header */}
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 12, flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ flex: 1 }}>
             <InvisibleInput
@@ -2061,25 +2068,28 @@ export function ProgramEditor({
         </div>
       </div>
 
-      {days.length === 1 ? (
-        <EditableDayCard
-          day={days[0]}
-          dayIdx={0}
-          onChange={(updated) => handleDayChange(0, updated)}
-          onDelete={() => handleDayDelete(0)}
-          alwaysExpanded
-          catalog={catalog}
-        />
-      ) : (
-        <EditableDayCarousel
-          days={days}
-          activeIdx={viewingIdx}
-          goTo={goTo}
-          onDayChange={handleDayChange}
-          onDayDelete={handleDayDelete}
-          catalog={catalog}
-        />
-      )}
+      <div style={fillHeight ? { flex: 1, minHeight: 0, overflowY: "auto" } : undefined}>
+        {days.length === 1 ? (
+          <EditableDayCard
+            day={days[0]}
+            dayIdx={0}
+            onChange={(updated) => handleDayChange(0, updated)}
+            onDelete={() => handleDayDelete(0)}
+            alwaysExpanded={!fillHeight}
+            catalog={catalog}
+          />
+        ) : (
+          <EditableDayCarousel
+            days={days}
+            activeIdx={viewingIdx}
+            goTo={goTo}
+            onDayChange={handleDayChange}
+            onDayDelete={handleDayDelete}
+            catalog={catalog}
+            fillHeight={fillHeight}
+          />
+        )}
+      </div>
     </div>
   );
 }

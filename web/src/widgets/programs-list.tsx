@@ -106,20 +106,25 @@ function ProgramsListWidget() {
   ) : null;
 
   return (
-    <div style={{ maxWidth: 600 }}>
-      <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+    <div style={{ maxWidth: 600, display: "flex", flexDirection: "column", height: "85vh" }}>
+      <div
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
+      >
         <ProgramEditor
           key={currentProgram.id}
           program={currentProgram}
           exerciseCatalog={catalog}
           badge={activeBadge}
+          fillHeight
         />
 
         {/* Activate button for inactive programs */}
         {!currentProgram.is_active && (
           <button
             className="btn"
-            style={{ width: "100%", justifyContent: "center", marginTop: 12 }}
+            style={{ width: "100%", justifyContent: "center", marginTop: 12, flexShrink: 0 }}
             disabled={loading && activatingName === currentProgram.name}
             onClick={() => handleActivate(currentProgram.name)}
           >
