@@ -625,7 +625,9 @@ export function SectionCard({ section, ssGroupColors, startNumber }: {
         </span>
       </div>
       {expanded && (
-        <ExerciseBlockList blocks={blocks} ssGroupColors={ssGroupColors} startNumber={startNumber} />
+        <div style={{ paddingLeft: sp[5] }}>
+          <ExerciseBlockList blocks={blocks} ssGroupColors={ssGroupColors} startNumber={startNumber} />
+        </div>
       )}
     </div>
   );
