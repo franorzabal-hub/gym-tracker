@@ -41,17 +41,24 @@ const WIDGET_TOOLS: Record<string, { tool: string; args: Record<string, unknown>
 // Sample data fallback when server is not running
 const sampleData: Record<string, { content?: Array<{ type: string; text: string }>; structuredContent?: any }> = {
   profile: {
-    content: [{ type: "text", text: JSON.stringify({
+    structuredContent: {
       profile: {
         name: "Francisco", gym: "SmartFit", age: 28, weight_kg: 82,
         height_cm: 178, training_days_per_week: 5,
         experience_level: "intermediate",
+        available_days: ["monday", "tuesday", "wednesday", "thursday", "friday"],
         goals: ["hypertrophy", "strength"],
         injuries: ["lower back"],
         preferred_units: "metric",
         supplements: "creatine, whey protein",
+        sex: "male",
       },
-    })}],
+      pendingChanges: {
+        gym: "Iron Paradise",
+        weight_kg: 85,
+        goals: ["hypertrophy", "endurance"],
+      },
+    },
   },
   session: {
     content: [{ type: "text", text: JSON.stringify({

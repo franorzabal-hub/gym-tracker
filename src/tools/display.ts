@@ -10,24 +10,34 @@ import { getUserCurrentDate } from "../helpers/date-helpers.js";
 export function registerDisplayTools(server: McpServer) {
   registerAppToolWithMeta(server, "show_profile", {
     title: "Show Profile",
-    description: `${APP_CONTEXT}Display the user's profile as a visual card with inline editing. Used both for viewing existing profiles and for new user setup — the widget handles empty/partial profiles gracefully with placeholder fields. The widget already shows all profile fields visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps. For reading/updating profile data programmatically, use manage_profile instead.`,
-    inputSchema: {},
-    annotations: { readOnlyHint: true },
+    description: `${APP_CONTEXT}Display the user's profile as a read-only card. The widget shows all profile fields visually — do NOT repeat the data in your response.
+To propose changes, pass pending_changes with the fields to update. The widget shows a visual diff (old → new) and a "Confirm" button. The user reviews and confirms in the widget — do NOT apply changes yourself.
+Examples: user says "peso 85kg" → call show_profile({ pending_changes: { weight_kg: 85 } }). User says "cambié de gym a Iron Paradise y mi goal ahora es endurance" → call show_profile({ pending_changes: { gym: "Iron Paradise", goals: ["endurance"] } }).
+Without pending_changes: read-only view. With pending_changes: diff view + confirm button. Wait for the user to confirm before proceeding.`,
+    inputSchema: {
+      pending_changes: z.record(z.any()).optional()
+        .describe("Fields to propose changing. Widget shows visual diff with confirm button. Omit for read-only view."),
+    },
+    annotations: { readOnlyHint: false },
     _meta: {
       ui: { resourceUri: "ui://gym-tracker/profile.html" },
       "openai/toolInvocation/invoking": "Loading profile...",
       "openai/toolInvocation/invoked": "Profile loaded",
     },
-  }, async () => {
+  }, async ({ pending_changes }: { pending_changes?: Record<string, any> }) => {
     const userId = getUserId();
     const { rows } = await pool.query(
       "SELECT data FROM user_profile WHERE user_id = $1 LIMIT 1", [userId]
     );
     const profile = rows[0]?.data || {};
+    const hasPending = pending_changes && Object.keys(pending_changes).length > 0;
     const fields = Object.keys(profile).filter(k => profile[k] != null).join(", ") || "none";
+    const llmNote = hasPending
+      ? `Profile widget displayed with proposed changes. Wait for the user to confirm or reject in the widget. Do NOT repeat the data.`
+      : `Profile widget displayed to user showing: ${fields}. Do NOT repeat this information in your response — the user can already see it. Just offer next steps or ask if they want to change anything.`;
     return widgetResponse(
-      `Profile widget displayed to user showing: ${fields}. Do NOT repeat this information in your response — the user can already see it. Just offer next steps or ask if they want to change anything.`,
-      { profile }
+      llmNote,
+      { profile, ...(hasPending ? { pendingChanges: pending_changes } : {}) }
     );
   });
 

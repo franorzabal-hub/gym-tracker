@@ -50,7 +50,8 @@ describe("show_profile display tool", () => {
       "show_profile",
       expect.objectContaining({
         title: "Show Profile",
-        annotations: { readOnlyHint: true },
+        annotations: { readOnlyHint: false },
+        inputSchema: expect.objectContaining({ pending_changes: expect.anything() }),
         _meta: expect.objectContaining({ ui: { resourceUri: "ui://gym-tracker/profile.html" } }),
       }),
       expect.any(Function)
@@ -62,16 +63,38 @@ describe("show_profile display tool", () => {
       rows: [{ data: { name: "Franco", weight_kg: 80 } }],
     });
 
-    const result = await toolHandlers["show_profile"]();
+    const result = await toolHandlers["show_profile"]({});
     expect(result.structuredContent.profile).toEqual({ name: "Franco", weight_kg: 80 });
+    expect(result.structuredContent.pendingChanges).toBeUndefined();
     expect(result.content[0].text).toContain("Do NOT repeat");
   });
 
   it("returns empty profile when no data", async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
-    const result = await toolHandlers["show_profile"]();
+    const result = await toolHandlers["show_profile"]({});
     expect(result.structuredContent.profile).toEqual({});
+    expect(result.content[0].text).toContain("Do NOT repeat");
+  });
+
+  it("includes pendingChanges when pending_changes provided", async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ data: { name: "Franco", weight_kg: 80, gym: "SmartFit" } }],
+    });
+
+    const result = await toolHandlers["show_profile"]({ pending_changes: { weight_kg: 85, gym: "Iron Paradise" } });
+    expect(result.structuredContent.profile).toEqual({ name: "Franco", weight_kg: 80, gym: "SmartFit" });
+    expect(result.structuredContent.pendingChanges).toEqual({ weight_kg: 85, gym: "Iron Paradise" });
+    expect(result.content[0].text).toContain("proposed changes");
+  });
+
+  it("omits pendingChanges when pending_changes is empty object", async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ data: { name: "Franco" } }],
+    });
+
+    const result = await toolHandlers["show_profile"]({ pending_changes: {} });
+    expect(result.structuredContent.pendingChanges).toBeUndefined();
     expect(result.content[0].text).toContain("Do NOT repeat");
   });
 });

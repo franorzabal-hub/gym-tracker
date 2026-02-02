@@ -1,206 +1,244 @@
 import { createRoot } from "react-dom/client";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { useToolOutput, useCallTool } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
 import "../styles.css";
 
-const GOALS = ["hypertrophy", "strength", "endurance", "weight_loss", "health", "mobility"];
 const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
 const DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 const EMPTY_INJURY = /^(nada|ninguna|ninguno|none|no|n\/a|-|—)$/i;
 
-const iconStyle: React.CSSProperties = { filter: "grayscale(100%)", opacity: 0.7 };
-
-const EXP_OPTIONS = [
-  { value: "beginner", label: "Beginner" },
-  { value: "intermediate", label: "Intermediate" },
-  { value: "advanced", label: "Advanced" },
-];
-
-// ── Auto-save hook ──
-
-function useAutoSave() {
-  const { callTool } = useCallTool();
-  const [savingField, setSavingField] = useState<string | null>(null);
-  const [savedField, setSavedField] = useState<string | null>(null);
-  const [errorField, setErrorField] = useState<string | null>(null);
-
-  const save = useCallback(async (field: string, value: any) => {
-    setSavingField(field);
-    setErrorField(null);
-    const data: Record<string, any> = {};
-    data[field] = value;
-    const result = await callTool("manage_profile", { action: "update", data });
-    setSavingField(null);
-    if (result) {
-      setSavedField(field);
-      setTimeout(() => setSavedField(prev => prev === field ? null : prev), 800);
-    } else {
-      setErrorField(field);
-      setTimeout(() => setErrorField(prev => prev === field ? null : prev), 2000);
-    }
-  }, [callTool]);
-
-  return { save, savingField, savedField, errorField };
+interface ProfileData {
+  profile: Record<string, any>;
+  pendingChanges?: Record<string, any>;
 }
 
-// ── Invisible text input ──
+// ── Helpers ──
 
-function InvisibleInput({ value, onChange, onBlur, placeholder, fontSize = 18, fontWeight = 600, style }: {
-  value: string; onChange: (v: string) => void; onBlur: () => void;
-  placeholder: string; fontSize?: number; fontWeight?: number; style?: React.CSSProperties;
-}) {
-  return (
-    <input
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      onBlur={onBlur}
-      placeholder={placeholder}
-      style={{
-        fontSize,
-        fontWeight,
-        fontFamily: "var(--font)",
-        border: "none",
-        background: "transparent",
-        color: "var(--text)",
-        outline: "none",
-        padding: 0,
-        width: "100%",
-        borderBottom: "1.5px solid transparent",
-        transition: "border-color 0.15s",
-        ...style,
-      }}
-      onFocus={e => { (e.target as HTMLInputElement).style.borderBottomColor = "var(--primary)"; }}
-      onBlurCapture={e => { (e.target as HTMLInputElement).style.borderBottomColor = "transparent"; }}
-    />
-  );
+function parseArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    return value.split(",").map(s => s.trim()).filter(Boolean);
+  }
+  return [];
 }
 
-// ── Inline metric block ──
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
-function EditableMetric({ value, label, unit, onSave, placeholder, min, max, step, saving, saved, error: hasError }: {
-  value: string; label: string; unit?: string;
-  onSave: (v: string) => void; placeholder: string;
-  min?: number; max?: number; step?: number;
-  saving?: boolean; saved?: boolean; error?: boolean;
-}) {
-  const [localValue, setLocalValue] = useState(value);
-  const [editing, setEditing] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const isEmpty = !localValue;
+function formatFieldLabel(s: string): string {
+  return capitalize(s.replace(/_/g, " "));
+}
 
-  // Sync from parent when not editing
-  useEffect(() => {
-    if (!editing) setLocalValue(value);
-  }, [value, editing]);
+// ── Diff helpers ──
 
-  const handleBlur = () => {
-    setEditing(false);
-    if (localValue !== value) {
-      onSave(localValue);
-    }
-  };
+function arraysEqual(a: string[], b: string[]): boolean {
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  return sa.length === sb.length && sa.every((v, i) => v === sb[i]);
+}
 
-  const handleClick = () => {
-    setEditing(true);
-    setTimeout(() => inputRef.current?.focus(), 0);
-  };
+function hasFieldChange(
+  profile: Record<string, any>,
+  pending: Record<string, any>,
+  field: string,
+): boolean {
+  if (!(field in pending)) return false;
+  const curr = profile[field];
+  const next = pending[field];
+  if (Array.isArray(next) || Array.isArray(curr)) {
+    return !arraysEqual(parseArray(curr), parseArray(next));
+  }
+  return String(curr ?? "") !== String(next ?? "");
+}
 
+// ── Skeleton ──
+
+function SkeletonCard() {
   return (
-    <div
-      onClick={handleClick}
-      style={{
-        textAlign: "center",
-        flex: 1,
-        minWidth: 60,
-        cursor: "pointer",
-        opacity: saving ? 0.5 : 1,
-        transition: "opacity 0.15s",
-      }}
-    >
-      {editing ? (
-        <input
-          ref={inputRef}
-          type="number"
-          value={localValue}
-          onChange={e => setLocalValue(e.target.value)}
-          onBlur={handleBlur}
-          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-          placeholder={placeholder}
-          min={min} max={max} step={step}
-          style={{
-            width: "100%",
-            textAlign: "center",
-            fontSize: 22,
-            fontWeight: 700,
-            fontFamily: "var(--font)",
-            border: "none",
-            borderBottom: "1.5px solid var(--primary)",
-            background: "transparent",
-            color: "var(--text)",
-            outline: "none",
-            padding: 0,
-            MozAppearance: "textfield",
-          }}
-        />
-      ) : (
-        <div style={{
-          fontSize: 22,
-          fontWeight: 700,
-          lineHeight: 1.2,
-          color: isEmpty ? "var(--text-secondary)" : "var(--text)",
-          borderBottom: isEmpty ? "1.5px dashed var(--border)" : "1.5px solid transparent",
-          display: "inline-block",
-          minWidth: 30,
-        }}>
-          {isEmpty ? "—" : localValue}
-          {saved && <span style={{ fontSize: 12, marginLeft: 2, color: "var(--success)" }}>✓</span>}
-          {hasError && <span style={{ fontSize: 12, marginLeft: 2, color: "var(--danger)" }}>!</span>}
+    <div className="profile-card">
+      <div className="profile-header">
+        <div className="skeleton" style={{ width: 48, height: 48, borderRadius: "50%" }} />
+        <div style={{ flex: 1 }}>
+          <div className="skeleton" style={{ width: 120, height: 18, marginBottom: 6 }} />
+          <div className="skeleton" style={{ width: 180, height: 13 }} />
         </div>
-      )}
-      <div style={{
-        fontSize: 11,
-        color: "var(--text-secondary)",
-        textTransform: "uppercase",
-        letterSpacing: "0.5px",
-        marginTop: 2,
-      }}>
-        {unit ? `${label} (${unit})` : label}
+      </div>
+      <div className="profile-section profile-metrics">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} style={{ textAlign: "center", flex: 1 }}>
+            <div className="skeleton" style={{ width: 36, height: 22, margin: "0 auto 4px" }} />
+            <div className="skeleton" style={{ width: 48, height: 11, margin: "0 auto" }} />
+          </div>
+        ))}
+      </div>
+      <div className="profile-section">
+        <div className="skeleton" style={{ width: 100, height: 11, marginBottom: 8 }} />
+        <div style={{ display: "flex", gap: 6 }}>
+          {[1, 2, 3, 4, 5, 6, 7].map(i => (
+            <div key={i} className="skeleton" style={{ width: 28, height: 28, borderRadius: "50%" }} />
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-// ── Weekday toggles ──
+// ── DiffValue: scalar diff (old → new) ──
 
-function WeekdayToggles({ selected, onToggle }: { selected: string[]; onToggle: (day: string) => void }) {
+function DiffValue({ current, pending, format }: {
+  current: any;
+  pending: any;
+  format?: (v: any) => string;
+}) {
+  const fmt = format || ((v: any) => String(v ?? "—"));
+  const hasOld = current != null && current !== "";
   return (
-    <div style={{ display: "flex", gap: 6 }}>
-      {WEEKDAY_LABELS.map((label, i) => {
-        const dayName = DAYS_OF_WEEK[i];
-        const active = selected.includes(dayName);
+    <span>
+      {hasOld && <span className="diff-old">{fmt(current)}</span>}
+      {hasOld && " "}
+      <span className="diff-new">{fmt(pending)}</span>
+    </span>
+  );
+}
+
+// ── DiffChips: array diff ──
+
+function DiffChips({ current, pending, variant = "primary" }: {
+  current: string[];
+  pending: string[];
+  variant?: string;
+}) {
+  const currentSet = new Set(current.map(s => s.toLowerCase()));
+  const pendingSet = new Set(pending.map(s => s.toLowerCase()));
+
+  const unchanged = current.filter(s => pendingSet.has(s.toLowerCase()));
+  const removed = current.filter(s => !pendingSet.has(s.toLowerCase()));
+  const added = pending.filter(s => !currentSet.has(s.toLowerCase()));
+
+  return (
+    <div className="profile-chips">
+      {unchanged.map(s => (
+        <span key={s} className={`badge badge-${variant}`}>{formatFieldLabel(s)}</span>
+      ))}
+      {removed.map(s => (
+        <span key={`rm-${s}`} className="badge diff-chip-removed">{formatFieldLabel(s)}</span>
+      ))}
+      {added.map(s => (
+        <span key={`add-${s}`} className="badge diff-chip-added">+{formatFieldLabel(s)}</span>
+      ))}
+    </div>
+  );
+}
+
+// ── ConfirmBar ──
+
+function ConfirmBar({ onConfirm, confirming, confirmed }: {
+  onConfirm: () => void;
+  confirming: boolean;
+  confirmed: boolean;
+}) {
+  return (
+    <div className="profile-confirm-bar">
+      {confirmed ? (
+        <span className="profile-confirm-flash">Updated</span>
+      ) : (
+        <button
+          className="btn btn-primary"
+          onClick={onConfirm}
+          disabled={confirming}
+          role="button"
+          aria-label="Confirm profile changes"
+        >
+          {confirming ? "Saving..." : "Confirm Changes"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── ProfileHeader ──
+
+function ProfileHeader({ profile, pending }: { profile: Record<string, any>; pending?: Record<string, any> }) {
+  const name = profile.name || "—";
+  const exp = profile.experience_level;
+  const days = profile.available_days?.length ?? profile.training_days_per_week ?? 0;
+  const gym = profile.gym;
+
+  const hasPending = !!pending;
+  const gymChanged = hasPending && hasFieldChange(profile, pending!, "gym");
+  const expChanged = hasPending && hasFieldChange(profile, pending!, "experience_level");
+
+  const displayExp = expChanged ? pending!.experience_level : exp;
+  const displayGym = gymChanged ? null : gym; // handled inline with diff
+
+  const subtitleParts: React.ReactNode[] = [];
+
+  if (displayExp || exp) {
+    if (expChanged) {
+      subtitleParts.push(
+        <span key="exp"><DiffValue current={exp ? capitalize(exp) : null} pending={capitalize(displayExp)} /></span>
+      );
+    } else if (exp) {
+      subtitleParts.push(<span key="exp">{capitalize(exp)}</span>);
+    }
+  }
+
+  subtitleParts.push(<span key="days">{days}x/week</span>);
+
+  if (gymChanged) {
+    subtitleParts.push(
+      <span key="gym"><DiffValue current={gym ? gym.toUpperCase() : null} pending={pending!.gym.toUpperCase()} /></span>
+    );
+  } else if (displayGym) {
+    subtitleParts.push(<span key="gym">{displayGym.toUpperCase()}</span>);
+  }
+
+  return (
+    <div className="profile-header">
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div className="profile-name">{name}</div>
+        <div className="profile-subtitle">
+          {subtitleParts.map((part, i) => (
+            <span key={i}>
+              {i > 0 && <span className="profile-sep"> · </span>}
+              {part}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── MetricsRow ──
+
+function MetricsRow({ profile, pending }: { profile: Record<string, any>; pending?: Record<string, any> }) {
+  const metrics = [
+    { key: "age", label: "AGE", unit: "", format: (v: any) => String(v) },
+    { key: "weight_kg", label: "WEIGHT", unit: "kg", format: (v: any) => String(v) },
+    { key: "height_cm", label: "HEIGHT", unit: "cm", format: (v: any) => String(v) },
+    { key: "sex", label: "SEX", unit: "", format: (v: any) => v === "male" ? "Male" : v === "female" ? "Female" : String(v) },
+  ];
+
+  return (
+    <div className="profile-section profile-metrics">
+      {metrics.map(m => {
+        const current = profile[m.key];
+        const changed = pending && hasFieldChange(profile, pending, m.key);
         return (
-          <div
-            key={i}
-            onClick={() => onToggle(dayName)}
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 12,
-              fontWeight: 600,
-              background: active ? "light-dark(#dbeafe, #172554)" : "transparent",
-              color: active ? "light-dark(#1e40af, #60a5fa)" : "var(--text-secondary)",
-              border: active ? "1.5px solid light-dark(#93c5fd, #1e3a5f)" : "1.5px solid var(--border)",
-              cursor: "pointer",
-              transition: "all 0.15s",
-              opacity: active ? 1 : 0.4,
-            }}
-          >
-            {label}
+          <div key={m.key} className="profile-metric">
+            <div className="profile-metric-value">
+              {changed ? (
+                <DiffValue current={current} pending={pending![m.key]} format={m.format} />
+              ) : (
+                current != null ? m.format(current) : "—"
+              )}
+            </div>
+            <div className="profile-metric-label">
+              {m.unit ? `${m.label} (${m.unit})` : m.label}
+            </div>
           </div>
         );
       })}
@@ -208,178 +246,75 @@ function WeekdayToggles({ selected, onToggle }: { selected: string[]; onToggle: 
   );
 }
 
-// ── Chip list with add ──
+// ── DayDots ──
 
-function EditableChips({ items, onAdd, onRemove, addLabel, variant = "primary" }: {
+function DayDots({ profile, pending }: { profile: Record<string, any>; pending?: Record<string, any> }) {
+  const currentDays: string[] = profile.available_days || [];
+  const changed = pending && hasFieldChange(profile, pending, "available_days");
+  const pendingDays: string[] = changed ? (pending!.available_days || []) : currentDays;
+
+  const currentSet = new Set(currentDays);
+  const pendingSet = new Set(pendingDays);
+
+  return (
+    <div className="profile-section">
+      <div className="profile-section-label">TRAINING DAYS</div>
+      <div className="profile-day-dots">
+        {WEEKDAY_LABELS.map((label, i) => {
+          const dayName = DAYS_OF_WEEK[i];
+          const wasCurrent = currentSet.has(dayName);
+          const isPending = pendingSet.has(dayName);
+
+          let cls = "profile-day-dot";
+          if (changed) {
+            if (isPending && wasCurrent) cls += " active";
+            else if (isPending && !wasCurrent) cls += " diff-added";
+            else if (!isPending && wasCurrent) cls += " diff-removed";
+          } else {
+            if (wasCurrent) cls += " active";
+          }
+
+          return <div key={i} className={cls}>{label}</div>;
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── ChipList ──
+
+function ChipList({ label, items, variant = "primary" }: {
+  label: string;
   items: string[];
-  onAdd: (item: string) => void;
-  onRemove: (item: string) => void;
-  addLabel: string;
-  variant?: "primary" | "success" | "warning";
+  variant?: string;
 }) {
-  const [adding, setAdding] = useState(false);
-  const [newValue, setNewValue] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleAdd = () => {
-    const trimmed = newValue.trim();
-    if (trimmed && !items.includes(trimmed.toLowerCase())) {
-      onAdd(trimmed.toLowerCase());
-    }
-    setNewValue("");
-    setAdding(false);
-  };
-
+  if (items.length === 0) return null;
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
-      {items.map((item, i) => (
-        <span
-          key={i}
-          className={`badge badge-${variant}`}
-          style={{ textTransform: "capitalize", cursor: "pointer", position: "relative", paddingRight: 20 }}
-          onClick={() => onRemove(item)}
-        >
-          {item.replace("_", " ")}
-          <span style={{
-            position: "absolute",
-            right: 5,
-            top: "50%",
-            transform: "translateY(-50%)",
-            fontSize: 10,
-            opacity: 0.6,
-          }}>×</span>
-        </span>
-      ))}
-      {adding ? (
-        <input
-          ref={inputRef}
-          autoFocus
-          value={newValue}
-          onChange={e => setNewValue(e.target.value)}
-          onBlur={handleAdd}
-          onKeyDown={e => { if (e.key === "Enter") handleAdd(); if (e.key === "Escape") { setNewValue(""); setAdding(false); } }}
-          placeholder="type..."
-          style={{
-            fontSize: 12,
-            fontFamily: "var(--font)",
-            border: "1px solid var(--primary)",
-            borderRadius: 12,
-            padding: "2px 10px",
-            background: "transparent",
-            color: "var(--text)",
-            outline: "none",
-            width: 80,
-          }}
-        />
-      ) : (
-        <span
-          onClick={() => setAdding(true)}
-          style={{
-            display: "inline-block",
-            padding: "2px 10px",
-            borderRadius: 12,
-            fontSize: 12,
-            fontWeight: 500,
-            border: "1.5px dashed var(--border)",
-            color: "var(--text-secondary)",
-            cursor: "pointer",
-            transition: "border-color 0.15s",
-          }}
-          onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--primary)")}
-          onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}
-        >
-          + {addLabel}
-        </span>
-      )}
+    <div className="profile-section">
+      <div className="profile-section-label">{label}</div>
+      <div className="profile-chips">
+        {items.map(s => (
+          <span key={s} className={`badge badge-${variant}`}>{formatFieldLabel(s)}</span>
+        ))}
+      </div>
     </div>
   );
 }
 
-// ── Toggleable goal chips ──
+// ── ChipListWithDiff ──
 
-function GoalChips({ goals, onToggle, onAdd }: {
-  goals: string[];
-  onToggle: (g: string) => void;
-  onAdd: (g: string) => void;
+function ChipListWithDiff({ label, current, pending, variant = "primary" }: {
+  label: string;
+  current: string[];
+  pending: string[];
+  variant?: string;
 }) {
-  const [adding, setAdding] = useState(false);
-  const [newValue, setNewValue] = useState("");
-
-  const handleAdd = () => {
-    const trimmed = newValue.trim();
-    if (trimmed && !GOALS.includes(trimmed.toLowerCase()) && !goals.includes(trimmed.toLowerCase())) {
-      onAdd(trimmed.toLowerCase());
-    }
-    setNewValue("");
-    setAdding(false);
-  };
-
+  // Show section if there's anything to display
+  if (current.length === 0 && pending.length === 0) return null;
   return (
-    <div className="chip-group">
-      {GOALS.map(g => (
-        <button
-          key={g}
-          className={`chip${goals.includes(g) ? " chip-active" : ""}`}
-          onClick={() => onToggle(g)}
-        >
-          {g.replace("_", " ")}
-        </button>
-      ))}
-      {/* Custom goals not in the predefined list */}
-      {goals.filter(g => !GOALS.includes(g)).map(g => (
-        <button key={g} className="chip chip-active" onClick={() => onToggle(g)}>
-          {g.replace("_", " ")}
-        </button>
-      ))}
-      {adding ? (
-        <input
-          autoFocus
-          value={newValue}
-          onChange={e => setNewValue(e.target.value)}
-          onBlur={handleAdd}
-          onKeyDown={e => { if (e.key === "Enter") handleAdd(); if (e.key === "Escape") { setNewValue(""); setAdding(false); } }}
-          placeholder="custom goal..."
-          className="chip"
-          style={{ width: 100, outline: "none", borderColor: "var(--primary)" }}
-        />
-      ) : (
-        <button
-          className="chip"
-          onClick={() => setAdding(true)}
-          style={{ borderStyle: "dashed" }}
-        >
-          + Add
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ── Section wrapper ──
-
-function Section({ icon, label, children }: { icon: string; label?: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 20 }}>
-      {label && (
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          marginBottom: 8,
-        }}>
-          <span style={{ fontSize: 13 }}>{icon}</span>
-          <span style={{
-            fontSize: 11,
-            fontWeight: 600,
-            textTransform: "uppercase",
-            color: "var(--text-secondary)",
-            letterSpacing: "0.5px",
-          }}>
-            {label}
-          </span>
-        </div>
-      )}
-      {children}
+    <div className="profile-section">
+      <div className="profile-section-label">{label}</div>
+      <DiffChips current={current} pending={pending} variant={variant} />
     </div>
   );
 }
@@ -387,329 +322,66 @@ function Section({ icon, label, children }: { icon: string; label?: string; chil
 // ── Main widget ──
 
 function ProfileWidget() {
-  const data = useToolOutput<{ profile: Record<string, any> }>();
-  const { save, savingField, savedField, errorField } = useAutoSave();
+  const data = useToolOutput<ProfileData>();
+  const { callTool } = useCallTool();
+  const [confirming, setConfirming] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [localProfile, setLocalProfile] = useState<Record<string, any> | null>(null);
 
-  const [name, setName] = useState("");
-  const [gym, setGym] = useState("");
-  const [age, setAge] = useState("");
-  const [weightKg, setWeightKg] = useState("");
-  const [heightCm, setHeightCm] = useState("");
-  const [sex, setSex] = useState("");
-  const [experienceLevel, setExperienceLevel] = useState("");
-  const [goals, setGoals] = useState<string[]>([]);
-  const [availableDays, setAvailableDays] = useState<string[]>([]);
-  const [supplements, setSupplements] = useState<string[]>([]);
-  const [injuries, setInjuries] = useState<string[]>([]);
-  const [initialized, setInitialized] = useState(false);
-  const [editingExp, setEditingExp] = useState(false);
-  const [editingGym, setEditingGym] = useState(false);
-  const gymInputRef = useRef<HTMLInputElement>(null);
-
-  // Initialize from tool output once
-  useEffect(() => {
-    if (data && !initialized) {
-      const p = data.profile || {};
-      setName(p.name || "");
-      setGym(p.gym || "");
-      setAge(p.age?.toString() || "");
-      setWeightKg(p.weight_kg?.toString() || "");
-      setHeightCm(p.height_cm?.toString() || "");
-      setSex(p.sex || "");
-      setExperienceLevel(p.experience_level || "");
-      setGoals(p.goals || []);
-      setAvailableDays(p.available_days || []);
-      // Parse supplements
-      if (p.supplements) {
-        if (typeof p.supplements === "string") {
-          setSupplements(p.supplements.split(",").map((s: string) => s.trim()).filter(Boolean));
-        } else if (Array.isArray(p.supplements)) {
-          setSupplements(p.supplements);
-        }
-      }
-      // Parse injuries
-      const rawInjuries = (p.injuries || []).filter((inj: string) => !EMPTY_INJURY.test(inj.trim()));
-      setInjuries(rawInjuries);
-      setInitialized(true);
+  const handleConfirm = useCallback(async () => {
+    if (!data?.pendingChanges) return;
+    setConfirming(true);
+    const result = await callTool("manage_profile", { action: "update", data: data.pendingChanges });
+    setConfirming(false);
+    if (result) {
+      // Merge pending into local profile state
+      setLocalProfile(prev => ({ ...(prev || data.profile), ...data.pendingChanges }));
+      setConfirmed(true);
+      setTimeout(() => setConfirmed(false), 2000);
     }
-  }, [data, initialized]);
+  }, [data, callTool]);
 
-  if (!data) return <div className="loading">Loading...</div>;
+  if (!data) return <SkeletonCard />;
 
-  // ── Save handlers ──
+  const profile = localProfile || data.profile || {};
+  const pending = confirmed ? undefined : data.pendingChanges;
+  const hasPending = !!pending && Object.keys(pending).length > 0;
 
-  const handleNameBlur = () => {
-    if (name.trim() && name !== (data.profile?.name || "")) {
-      save("name", name.trim());
-    }
-  };
+  // Parse array fields
+  const goals = parseArray(profile.goals);
+  const supplements = parseArray(profile.supplements);
+  const injuries = parseArray(profile.injuries).filter(s => !EMPTY_INJURY.test(s.trim()));
 
-  const handleGymBlur = () => {
-    if (gym !== (data.profile?.gym || "")) {
-      save("gym", gym.trim());
-    }
-  };
-
-  const handleMetricSave = (field: string, rawValue: string) => {
-    const num = parseFloat(rawValue);
-    if (!isNaN(num) && num > 0) {
-      save(field, num);
-    }
-  };
-
-  const handleSexChange = (v: string) => {
-    setSex(v);
-    save("sex", v);
-  };
-
-  const handleExperienceChange = (v: string) => {
-    setExperienceLevel(v);
-    save("experience_level", v);
-  };
-
-  const handleDayToggle = (day: string) => {
-    const next = availableDays.includes(day)
-      ? availableDays.filter(d => d !== day)
-      : [...availableDays, day];
-    setAvailableDays(next);
-    save("available_days", next);
-  };
-
-  const handleGoalToggle = (g: string) => {
-    const next = goals.includes(g) ? goals.filter(x => x !== g) : [...goals, g];
-    setGoals(next);
-    save("goals", next);
-  };
-
-  const handleGoalAdd = (g: string) => {
-    const next = [...goals, g];
-    setGoals(next);
-    save("goals", next);
-  };
-
-  const handleSupplementAdd = (s: string) => {
-    const next = [...supplements, s];
-    setSupplements(next);
-    save("supplements", next.join(", "));
-  };
-
-  const handleSupplementRemove = (s: string) => {
-    const next = supplements.filter(x => x !== s);
-    setSupplements(next);
-    save("supplements", next.length ? next.join(", ") : "");
-  };
-
-  const handleInjuryAdd = (inj: string) => {
-    const next = [...injuries, inj];
-    setInjuries(next);
-    save("injuries", next);
-  };
-
-  const handleInjuryRemove = (inj: string) => {
-    const next = injuries.filter(x => x !== inj);
-    setInjuries(next);
-    save("injuries", next.length ? next : []);
-  };
-
-  const handleExpClick = () => setEditingExp(true);
-  const handleExpSelect = (v: string) => {
-    handleExperienceChange(v);
-    setEditingExp(false);
-  };
-  const handleGymClick = () => {
-    setEditingGym(true);
-    setTimeout(() => gymInputRef.current?.focus(), 0);
-  };
-  const handleGymInlineBlur = () => {
-    setEditingGym(false);
-    handleGymBlur();
-  };
-
-  // Build subtitle segments
-  const hasAnySubtitle = experienceLevel || availableDays.length || gym;
-
-  const subtitleSep = <span style={{ opacity: 0.4, margin: "0 1px" }}> · </span>;
+  const pendingGoals = hasPending && hasFieldChange(profile, pending!, "goals") ? parseArray(pending!.goals) : null;
+  const pendingSupplements = hasPending && hasFieldChange(profile, pending!, "supplements") ? parseArray(pending!.supplements) : null;
+  const pendingInjuries = hasPending && hasFieldChange(profile, pending!, "injuries") ? parseArray(pending!.injuries).filter(s => !EMPTY_INJURY.test(s.trim())) : null;
 
   return (
-    <div style={{ maxWidth: 600, padding: "0 8px", paddingBottom: 4 }}>
-      {/* ── Header: avatar + name + interactive subtitle ── */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        paddingBottom: 12,
-        marginBottom: 16,
-      }}>
-        <div style={{
-          width: 48, height: 48, borderRadius: "50%",
-          background: "var(--primary)", color: "white",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 20, fontWeight: 700, flexShrink: 0,
-        }}>
-          {(name || "?")[0]?.toUpperCase()}
-        </div>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <InvisibleInput
-            value={name}
-            onChange={setName}
-            onBlur={handleNameBlur}
-            placeholder="Your name"
-            fontSize={18}
-            fontWeight={600}
-          />
-          <div style={{ fontSize: 13, color: "light-dark(#4b6fa8, #7ba3d4)", marginTop: 2, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0 }}>
-            {/* Experience — clickable, opens inline selector */}
-            {editingExp ? (
-              <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-                {EXP_OPTIONS.map(o => (
-                  <span
-                    key={o.value}
-                    onClick={() => handleExpSelect(o.value)}
-                    style={{
-                      cursor: "pointer",
-                      padding: "1px 6px",
-                      borderRadius: 8,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      background: experienceLevel === o.value ? "light-dark(#dbeafe, #172554)" : "transparent",
-                      color: experienceLevel === o.value ? "light-dark(#1e40af, #60a5fa)" : "var(--text-secondary)",
-                      border: experienceLevel === o.value ? "1px solid light-dark(#93c5fd, #1e3a5f)" : "1px solid var(--border)",
-                    }}
-                  >
-                    {o.label}
-                  </span>
-                ))}
-              </span>
-            ) : (
-              <span onClick={handleExpClick} style={{ cursor: "pointer" }}>
-                <span style={iconStyle}>📈</span> {experienceLevel ? experienceLevel.charAt(0).toUpperCase() + experienceLevel.slice(1) : "Level"}
-              </span>
-            )}
+    <div className="profile-card">
+      <ProfileHeader profile={profile} pending={hasPending ? pending : undefined} />
+      <MetricsRow profile={profile} pending={hasPending ? pending : undefined} />
+      <DayDots profile={profile} pending={hasPending ? pending : undefined} />
 
-            {subtitleSep}
+      {pendingGoals ? (
+        <ChipListWithDiff label="GOALS" current={goals} pending={pendingGoals} variant="primary" />
+      ) : (
+        <ChipList label="GOALS" items={goals} variant="primary" />
+      )}
 
-            {/* Days count — read-only info */}
-            <span style={{ color: "var(--text-secondary)" }}><span style={iconStyle}>🗓️</span> {availableDays.length || 0}x/week</span>
+      {pendingSupplements ? (
+        <ChipListWithDiff label="SUPPLEMENTS" current={supplements} pending={pendingSupplements} variant="primary" />
+      ) : (
+        <ChipList label="SUPPLEMENTS" items={supplements} variant="primary" />
+      )}
 
-            {subtitleSep}
+      {pendingInjuries ? (
+        <ChipListWithDiff label="INJURIES" current={injuries} pending={pendingInjuries} variant="warning" />
+      ) : injuries.length > 0 ? (
+        <ChipList label="INJURIES" items={injuries} variant="warning" />
+      ) : null}
 
-            {/* Gym — clickable, opens inline input */}
-            {editingGym ? (
-              <span style={{ display: "inline-flex", alignItems: "center" }}>
-                <span style={iconStyle}>📍</span>{" "}
-                <input
-                  ref={gymInputRef}
-                  value={gym}
-                  onChange={e => setGym(e.target.value)}
-                  onBlur={handleGymInlineBlur}
-                  onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                  placeholder="Gym name"
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    fontFamily: "var(--font)",
-                    border: "none",
-                    borderBottom: "1.5px solid var(--primary)",
-                    background: "transparent",
-                    color: "var(--text)",
-                    outline: "none",
-                    padding: 0,
-                    width: 80,
-                    textTransform: "uppercase",
-                  }}
-                />
-              </span>
-            ) : (
-              <span onClick={handleGymClick} style={{ cursor: "pointer" }}>
-                <span style={iconStyle}>📍</span> {gym ? gym.trim().toUpperCase() : "Gym"}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Metrics row ── */}
-      <div style={{
-        display: "flex",
-        justifyContent: "center",
-        gap: 8,
-        marginBottom: 20,
-        padding: "8px 0",
-      }}>
-        <EditableMetric
-          value={age} label="age" placeholder="25" min={10} max={100}
-          onSave={v => handleMetricSave("age", v)}
-          saving={savingField === "age"} saved={savedField === "age"} error={errorField === "age"}
-        />
-        <EditableMetric
-          value={weightKg} label="weight" unit="kg" placeholder="75" min={20} max={300} step={0.1}
-          onSave={v => handleMetricSave("weight_kg", v)}
-          saving={savingField === "weight_kg"} saved={savedField === "weight_kg"} error={errorField === "weight_kg"}
-        />
-        <EditableMetric
-          value={heightCm} label="height" unit="cm" placeholder="175" min={100} max={250}
-          onSave={v => handleMetricSave("height_cm", v)}
-          saving={savingField === "height_cm"} saved={savedField === "height_cm"} error={errorField === "height_cm"}
-        />
-        <div
-          onClick={() => handleSexChange(sex === "male" ? "female" : "male")}
-          style={{ textAlign: "center", flex: 1, minWidth: 60, cursor: "pointer" }}
-        >
-          <div style={{
-            fontSize: 22,
-            fontWeight: 700,
-            lineHeight: 1.2,
-            color: sex ? "var(--text)" : "var(--text-secondary)",
-            borderBottom: sex ? "1.5px solid transparent" : "1.5px dashed var(--border)",
-            display: "inline-block",
-            minWidth: 30,
-          }}>
-            {sex === "male" ? "♂" : sex === "female" ? "♀" : "—"}
-          </div>
-          <div style={{
-            fontSize: 11,
-            color: "var(--text-secondary)",
-            textTransform: "uppercase",
-            letterSpacing: "0.5px",
-            marginTop: 2,
-          }}>
-            sex
-          </div>
-        </div>
-      </div>
-
-      {/* ── Available days ── */}
-      <Section icon="📅" label="Training days">
-        <WeekdayToggles selected={availableDays} onToggle={handleDayToggle} />
-      </Section>
-
-      {/* ── Goals ── */}
-      <Section icon="🎯" label="Goals">
-        <GoalChips goals={goals} onToggle={handleGoalToggle} onAdd={handleGoalAdd} />
-      </Section>
-
-      {/* ── Supplements ── */}
-      <Section icon="💊" label="Supplements">
-        <EditableChips
-          items={supplements}
-          onAdd={handleSupplementAdd}
-          onRemove={handleSupplementRemove}
-          addLabel="Add"
-          variant="primary"
-        />
-      </Section>
-
-      {/* ── Injuries (hidden when empty, no ghost add button — less useful to prompt) ── */}
-      {injuries.length > 0 && (
-        <Section icon="⚠️" label="Injuries">
-          <EditableChips
-            items={injuries}
-            onAdd={handleInjuryAdd}
-            onRemove={handleInjuryRemove}
-            addLabel="Add"
-            variant="warning"
-          />
-        </Section>
+      {hasPending && (
+        <ConfirmBar onConfirm={handleConfirm} confirming={confirming} confirmed={confirmed} />
       )}
     </div>
   );
