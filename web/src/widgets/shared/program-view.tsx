@@ -437,6 +437,7 @@ function ExerciseRow({ ex, exNum, note, showExerciseRest, isSecondary, typeLabel
 
 export function ExerciseBlock({ exercises, ssColor, groupType, startIndex }: { exercises: Exercise[]; ssColor: string | null; groupType: string | null; startIndex: number }) {
   const isGrouped = exercises.length > 1;
+  const [expanded, setExpanded] = useState(true);
   const type = groupType || "superset";
   const groupLabel = isGrouped ? exercises[0].group_label : null;
   const groupNotes = isGrouped ? exercises[0].group_notes : null;
@@ -459,21 +460,53 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex }: { e
     labelColor = ssColor || "var(--text-secondary)";
   }
 
+  // Solo exercises are never collapsible
+  if (!isGrouped) {
+    return (
+      <div style={{
+        borderLeft: borderStyle,
+        paddingLeft: RAIL_PX,
+        marginBottom: sp[2],
+      }}>
+        {exercises.map((ex, i) => {
+          const note = cleanNotes(ex.notes, isGrouped, ex.muscle_group, ex.rep_type);
+          const showExerciseRest = ex.rest_seconds != null;
+          const isSecondary = (ex as any).exercise_type === "warmup" || (ex as any).exercise_type === "mobility" || (ex as any).exercise_type === "cardio";
+          const typeLabel = EXERCISE_TYPE_LABELS[(ex as any).exercise_type || ""] || null;
+          const hasMetaLine = ex.target_rpe != null || showExerciseRest;
+          const hasPerSet = ex.target_reps_per_set != null || ex.target_weight_per_set != null;
+          return (
+            <ExerciseRow key={i} ex={ex} exNum={startIndex + i} note={note} showExerciseRest={showExerciseRest}
+              isSecondary={isSecondary} typeLabel={typeLabel} hasMetaLine={hasMetaLine} hasPerSet={hasPerSet} isLast={i >= exercises.length - 1} />
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <div style={{
       borderLeft: borderStyle,
-      borderBottomLeftRadius: isGrouped ? radius.md : 0,
+      borderBottomLeftRadius: radius.md,
       paddingLeft: RAIL_PX,
       marginBottom: sp[2],
     }}>
-      {/* Header: type chip + label + tooltip */}
-      {isGrouped && (
-        <div style={{
-          marginBottom: sp[3],
+      {/* Header: type chip + label + exercise count — clickable to collapse */}
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          cursor: "pointer",
           display: "flex",
           alignItems: "center",
-          gap: sp[3],
-        }}>
+          justifyContent: "space-between",
+          marginBottom: expanded ? sp[3] : 0,
+          userSelect: "none",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
+          <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
+            {expanded ? "▼" : "▶"}
+          </span>
           <span style={{
             fontSize: font.xs,
             fontWeight: weight.semibold,
@@ -494,14 +527,17 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex }: { e
           )}
           <NoteTooltip text={(GROUP_LABELS[type] || GROUP_LABELS.superset).pattern} />
         </div>
-      )}
+        <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
+          {exercises.length} ej.
+        </span>
+      </div>
       {/* Exercises */}
-      {exercises.map((ex, i) => {
+      {expanded && exercises.map((ex, i) => {
         const note = cleanNotes(ex.notes, isGrouped, ex.muscle_group, ex.rep_type);
-        const showExerciseRest = !isGrouped && ex.rest_seconds != null;
+        const showExerciseRest = false;
         const isSecondary = (ex as any).exercise_type === "warmup" || (ex as any).exercise_type === "mobility" || (ex as any).exercise_type === "cardio";
         const typeLabel = EXERCISE_TYPE_LABELS[(ex as any).exercise_type || ""] || null;
-        const hasMetaLine = ex.target_rpe != null || showExerciseRest;
+        const hasMetaLine = ex.target_rpe != null;
         const exNum = startIndex + i;
         const hasPerSet = ex.target_reps_per_set != null || ex.target_weight_per_set != null;
         return (
@@ -520,7 +556,7 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex }: { e
         );
       })}
       {/* Footer: group rest + notes */}
-      {isGrouped && (groupRestSeconds != null || groupNotes) && (
+      {expanded && (groupRestSeconds != null || groupNotes) && (
         <div style={{ marginTop: sp[3], fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.medium, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: sp[3] }}>
           {groupRestSeconds != null && (
             <span>⏱ {formatRestSeconds(groupRestSeconds)}</span>
