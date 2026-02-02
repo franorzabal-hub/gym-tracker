@@ -68,8 +68,8 @@ describe("get_today_plan tool", () => {
     // Exercises for today
     mockQuery.mockResolvedValueOnce({
       rows: [
-        { name: "Bench Press", rep_type: "reps", exercise_type: "strength", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: 8, rest_seconds: 120, notes: null, superset_group: null },
-        { name: "Incline DB Press", rep_type: "reps", exercise_type: "strength", target_sets: 3, target_reps: 10, target_weight: 30, target_rpe: 7, rest_seconds: 90, notes: null, superset_group: null },
+        { name: "Bench Press", rep_type: "reps", exercise_type: "strength", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: 8, rest_seconds: 120, notes: null, group_id: null, group_type: null, group_label: null, group_notes: null, group_rest_seconds: null },
+        { name: "Incline DB Press", rep_type: "reps", exercise_type: "strength", target_sets: 3, target_reps: 10, target_weight: 30, target_rpe: 7, rest_seconds: 90, notes: null, group_id: null, group_type: null, group_label: null, group_notes: null, group_rest_seconds: null },
       ],
     });
 
@@ -104,7 +104,7 @@ describe("get_today_plan tool", () => {
 
     // Exercises
     mockQuery.mockResolvedValueOnce({
-      rows: [{ name: "Squat", rep_type: "reps", exercise_type: "strength", target_sets: 5, target_reps: 5, target_weight: 100, target_rpe: 9, rest_seconds: 180, notes: null, superset_group: null }],
+      rows: [{ name: "Squat", rep_type: "reps", exercise_type: "strength", target_sets: 5, target_reps: 5, target_weight: 100, target_rpe: 9, rest_seconds: 180, notes: null, group_id: null, group_type: null, group_label: null, group_notes: null, group_rest_seconds: null }],
     });
 
     // No previous session

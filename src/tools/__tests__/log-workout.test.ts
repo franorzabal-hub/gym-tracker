@@ -31,6 +31,10 @@ vi.mock("../../helpers/program-helpers.js", () => ({
   inferTodayDay: vi.fn(),
 }));
 
+vi.mock("../../helpers/group-helpers.js", () => ({
+  cloneGroups: vi.fn().mockResolvedValue(new Map()),
+}));
+
 vi.mock("../../context/user-context.js", () => ({
   getUserId: vi.fn().mockReturnValue(1),
 }));
@@ -251,7 +255,7 @@ describe("log_workout tool", () => {
       // Get day exercises
       mockQuery.mockResolvedValueOnce({
         rows: [
-          { exercise_id: 1, exercise_name: "Bench Press", exercise_type: "strength", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: null, sort_order: 0, superset_group: null, rest_seconds: null },
+          { exercise_id: 1, exercise_name: "Bench Press", exercise_type: "strength", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: null, sort_order: 0, group_id: null, rest_seconds: null },
         ],
       });
 
@@ -287,7 +291,7 @@ describe("log_workout tool", () => {
       // Get day exercises
       mockQuery.mockResolvedValueOnce({
         rows: [
-          { exercise_id: 1, exercise_name: "Bench Press", exercise_type: "strength", target_sets: 2, target_reps: 10, target_weight: 60, target_rpe: null, sort_order: 0, superset_group: null, rest_seconds: null },
+          { exercise_id: 1, exercise_name: "Bench Press", exercise_type: "strength", target_sets: 2, target_reps: 10, target_weight: 60, target_rpe: null, sort_order: 0, group_id: null, rest_seconds: null },
         ],
       });
 
@@ -315,8 +319,8 @@ describe("log_workout tool", () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 5, day_label: "Push", weekdays: [1] }] });
       mockQuery.mockResolvedValueOnce({
         rows: [
-          { exercise_id: 1, exercise_name: "Bench Press", exercise_type: "strength", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: null, sort_order: 0, superset_group: null, rest_seconds: null },
-          { exercise_id: 2, exercise_name: "Overhead Press", exercise_type: "strength", target_sets: 3, target_reps: 10, target_weight: 50, target_rpe: null, sort_order: 1, superset_group: null, rest_seconds: null },
+          { exercise_id: 1, exercise_name: "Bench Press", exercise_type: "strength", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: null, sort_order: 0, group_id: null, rest_seconds: null },
+          { exercise_id: 2, exercise_name: "Overhead Press", exercise_type: "strength", target_sets: 3, target_reps: 10, target_weight: 50, target_rpe: null, sort_order: 1, group_id: null, rest_seconds: null },
         ],
       });
 
@@ -348,7 +352,7 @@ describe("log_workout tool", () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 5, day_label: "Push", weekdays: [1] }] });
       mockQuery.mockResolvedValueOnce({
         rows: [
-          { exercise_id: 1, exercise_name: "Bench Press", exercise_type: "strength", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: null, sort_order: 0, superset_group: null, rest_seconds: null },
+          { exercise_id: 1, exercise_name: "Bench Press", exercise_type: "strength", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: null, sort_order: 0, group_id: null, rest_seconds: null },
         ],
       });
 

@@ -120,27 +120,28 @@ Optionally add or update tags on the session.`,
         return toolResponse(summaryData);
       }
 
-      // Get exercises grouped by superset
+      // Get exercises grouped by exercise groups
       const { rows: exerciseDetails } = await pool.query(
-        `SELECT e.name, se.superset_group,
+        `SELECT e.name, se.group_id, seg.group_type, seg.label as group_label,
            COALESCE(json_agg(json_build_object(
              'set_id', st.id, 'set_number', st.set_number, 'reps', st.reps, 'weight', st.weight, 'rpe', st.rpe, 'set_type', st.set_type
            ) ORDER BY st.set_number) FILTER (WHERE st.id IS NOT NULL), '[]') as sets
          FROM session_exercises se
          JOIN exercises e ON e.id = se.exercise_id
          LEFT JOIN sets st ON st.session_exercise_id = se.id
+         LEFT JOIN session_exercise_groups seg ON seg.id = se.group_id
          WHERE se.session_id = $1
-         GROUP BY se.id, e.name, se.superset_group, se.sort_order
+         GROUP BY se.id, e.name, se.group_id, seg.group_type, seg.label, se.sort_order
          ORDER BY se.sort_order`,
         [sessionId]
       );
 
-      // Group exercises by superset_group for display
-      const supersets: Record<number, string[]> = {};
+      // Group exercises by group_id for display
+      const groups: Record<number, { type: string; label: string | null; exercises: string[] }> = {};
       for (const ex of exerciseDetails) {
-        if (ex.superset_group != null) {
-          if (!supersets[ex.superset_group]) supersets[ex.superset_group] = [];
-          supersets[ex.superset_group].push(ex.name);
+        if (ex.group_id != null) {
+          if (!groups[ex.group_id]) groups[ex.group_id] = { type: ex.group_type, label: ex.group_label, exercises: [] };
+          groups[ex.group_id].exercises.push(ex.name);
         }
       }
 
@@ -221,8 +222,8 @@ Optionally add or update tags on the session.`,
         exercises_count: Number(summary.exercises_count),
         total_sets: Number(summary.total_sets),
         total_volume_kg: Math.round(Number(summary.total_volume_kg)),
-        exercises: exerciseDetails.map((e: any) => ({ name: e.name, superset_group: e.superset_group, sets: e.sets })),
-        supersets: Object.keys(supersets).length > 0 ? supersets : undefined,
+        exercises: exerciseDetails.map((e: any) => ({ name: e.name, group_id: e.group_id, group_type: e.group_type, group_label: e.group_label, sets: e.sets })),
+        groups: Object.keys(groups).length > 0 ? groups : undefined,
         comparison: comparison || undefined,
       };
       return toolResponse(endData);
@@ -263,15 +264,16 @@ Optionally add or update tags on the session.`,
 
       // Get exercises + sets
       const { rows: exerciseDetails } = await pool.query(
-        `SELECT e.name, se.superset_group,
+        `SELECT e.name, se.group_id, seg.group_type, seg.label as group_label,
            COALESCE(json_agg(json_build_object(
              'set_id', st.id, 'set_number', st.set_number, 'reps', st.reps, 'weight', st.weight, 'rpe', st.rpe, 'set_type', st.set_type
            ) ORDER BY st.set_number) FILTER (WHERE st.id IS NOT NULL), '[]') as sets
          FROM session_exercises se
          JOIN exercises e ON e.id = se.exercise_id
          LEFT JOIN sets st ON st.session_exercise_id = se.id
+         LEFT JOIN session_exercise_groups seg ON seg.id = se.group_id
          WHERE se.session_id = $1
-         GROUP BY se.id, e.name, se.superset_group, se.sort_order
+         GROUP BY se.id, e.name, se.group_id, seg.group_type, seg.label, se.sort_order
          ORDER BY se.sort_order`,
         [session.id]
       );
@@ -283,7 +285,7 @@ Optionally add or update tags on the session.`,
         duration_minutes: durationMinutes,
         program_day: programDay,
         tags: session.tags || [],
-        exercises: exerciseDetails.map((e: any) => ({ name: e.name, superset_group: e.superset_group, sets: e.sets })),
+        exercises: exerciseDetails.map((e: any) => ({ name: e.name, group_id: e.group_id, group_type: e.group_type, group_label: e.group_label, sets: e.sets })),
       };
       return toolResponse(activeData);
     })

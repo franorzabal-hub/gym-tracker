@@ -80,11 +80,11 @@ describe("getProgramDaysWithExercises", () => {
       rows: [
         {
           id: 1, day_label: "Push", weekdays: [1, 4], sort_order: 0,
-          exercises: [{ id: 10, exercise_name: "Bench Press", exercise_id: 1, target_sets: 4, target_reps: 8, target_weight: null, target_rpe: null, sort_order: 0, superset_group: null, notes: null }],
+          exercises: [{ id: 10, exercise_name: "Bench Press", exercise_id: 1, target_sets: 4, target_reps: 8, target_weight: null, target_rpe: null, sort_order: 0, group_id: null, group_type: null, group_label: null, group_notes: null, group_rest_seconds: null, notes: null }],
         },
         {
           id: 2, day_label: "Pull", weekdays: [2, 5], sort_order: 1,
-          exercises: [{ id: 20, exercise_name: "Barbell Row", exercise_id: 5, target_sets: 4, target_reps: 8, target_weight: null, target_rpe: null, sort_order: 0, superset_group: null, notes: null }],
+          exercises: [{ id: 20, exercise_name: "Barbell Row", exercise_id: 5, target_sets: 4, target_reps: 8, target_weight: null, target_rpe: null, sort_order: 0, group_id: null, group_type: null, group_label: null, group_notes: null, group_rest_seconds: null, notes: null }],
         },
       ],
     });
@@ -143,14 +143,15 @@ describe("cloneVersion", () => {
   it("creates a new version with incremented number", async () => {
     mockClientQuery
       .mockResolvedValueOnce({}) // BEGIN
-      .mockResolvedValueOnce({ rows: [{ version_number: 2 }] })
-      .mockResolvedValueOnce({ rows: [{ id: 50 }] })
-      .mockResolvedValueOnce({
+      .mockResolvedValueOnce({ rows: [{ version_number: 2 }] }) // SELECT version_number
+      .mockResolvedValueOnce({ rows: [{ id: 50 }] }) // INSERT program_versions
+      .mockResolvedValueOnce({ // SELECT days
         rows: [{ id: 10, day_label: "Push", weekdays: [1], sort_order: 0 }],
       })
-      .mockResolvedValueOnce({ rows: [{ id: 20 }] })
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({});
+      .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT program_days
+      .mockResolvedValueOnce({ rows: [] }) // cloneGroups: SELECT groups (none)
+      .mockResolvedValueOnce({ rows: [] }) // SELECT exercises (none)
+      .mockResolvedValueOnce({}); // COMMIT
 
     const result = await cloneVersion(1, 5, "Added lateral raises");
     expect(result).toEqual({ newVersionId: 50, versionNumber: 3 });

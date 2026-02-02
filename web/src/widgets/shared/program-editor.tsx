@@ -35,8 +35,11 @@ export interface EditableExercise {
   reps: number;
   weight: number | null;
   rpe: number | null;
-  superset_group: number | null;
+  group_id: number | null;
   group_type: "superset" | "paired" | "circuit" | null;
+  group_label: string | null;
+  group_notes: string | null;
+  group_rest_seconds: number | null;
   rest_seconds: number | null;
   notes: string | null;
 }
@@ -65,7 +68,10 @@ export interface ExerciseSuggestion {
 interface Block {
   id: string;
   groupType: "superset" | "paired" | "circuit" | null;
-  supersetGroup: number | null;
+  groupId: number | null;
+  groupLabel: string | null;
+  groupNotes: string | null;
+  groupRestSeconds: number | null;
   exercises: EditableExercise[];
 }
 
@@ -75,24 +81,30 @@ function exercisesToBlocks(exercises: EditableExercise[]): Block[] {
   let blockIdx = 0;
   while (i < exercises.length) {
     const ex = exercises[i];
-    if (ex.superset_group != null) {
-      const group = ex.superset_group;
+    if (ex.group_id != null) {
+      const gid = ex.group_id;
       const blockExercises: EditableExercise[] = [];
-      while (i < exercises.length && exercises[i].superset_group === group) {
+      while (i < exercises.length && exercises[i].group_id === gid) {
         blockExercises.push(exercises[i]);
         i++;
       }
       blocks.push({
         id: `block-${blockIdx}`,
         groupType: blockExercises[0].group_type,
-        supersetGroup: group,
+        groupId: gid,
+        groupLabel: blockExercises[0].group_label,
+        groupNotes: blockExercises[0].group_notes,
+        groupRestSeconds: blockExercises[0].group_rest_seconds,
         exercises: blockExercises,
       });
     } else {
       blocks.push({
         id: `block-${blockIdx}`,
         groupType: null,
-        supersetGroup: null,
+        groupId: null,
+        groupLabel: null,
+        groupNotes: null,
+        groupRestSeconds: null,
         exercises: [ex],
       });
       i++;
@@ -110,8 +122,11 @@ function blocksToExercises(blocks: Block[]): EditableExercise[] {
       for (const ex of block.exercises) {
         exercises.push({
           ...ex,
-          superset_group: groupNum,
+          group_id: groupNum,
           group_type: block.groupType,
+          group_label: block.groupLabel,
+          group_notes: block.groupNotes,
+          group_rest_seconds: block.groupRestSeconds,
         });
       }
       groupNum++;
@@ -119,8 +134,11 @@ function blocksToExercises(blocks: Block[]): EditableExercise[] {
       for (const ex of block.exercises) {
         exercises.push({
           ...ex,
-          superset_group: null,
+          group_id: null,
           group_type: null,
+          group_label: null,
+          group_notes: null,
+          group_rest_seconds: null,
         });
       }
     }
@@ -391,24 +409,42 @@ export function useProgramAutoSave(programId: number | null) {
 
       timerRef.current = setTimeout(async () => {
         setStatus("saving");
-        // Filter out exercises with empty names
-        const cleanDays = days.map((d) => ({
-          day_label: d.day_label,
-          weekdays: d.weekdays,
-          exercises: d.exercises
-            .filter((ex) => ex.exercise.trim() !== "")
-            .map((ex) => ({
-              exercise: ex.exercise,
-              sets: ex.sets,
-              reps: ex.reps,
-              weight: ex.weight,
-              rpe: ex.rpe,
-              superset_group: ex.superset_group,
-              group_type: ex.group_type,
-              rest_seconds: ex.rest_seconds,
-              notes: ex.notes,
-            })),
-        }));
+        // Convert block model to nested format: solo exercises + groups
+        const cleanDays = days.map((d) => {
+          const blocks = exercisesToBlocks(d.exercises.filter((ex) => ex.exercise.trim() !== ""));
+          const items: any[] = [];
+          for (const block of blocks) {
+            if (block.groupType && block.exercises.length >= 2) {
+              items.push({
+                group_type: block.groupType,
+                label: block.groupLabel,
+                notes: block.groupNotes,
+                rest_seconds: block.groupRestSeconds,
+                exercises: block.exercises.map((ex) => ({
+                  exercise: ex.exercise,
+                  sets: ex.sets,
+                  reps: ex.reps,
+                  weight: ex.weight,
+                  rpe: ex.rpe,
+                  notes: ex.notes,
+                })),
+              });
+            } else {
+              for (const ex of block.exercises) {
+                items.push({
+                  exercise: ex.exercise,
+                  sets: ex.sets,
+                  reps: ex.reps,
+                  weight: ex.weight,
+                  rpe: ex.rpe,
+                  rest_seconds: ex.rest_seconds,
+                  notes: ex.notes,
+                });
+              }
+            }
+          }
+          return { day_label: d.day_label, weekdays: d.weekdays, exercises: items };
+        });
 
         const result = await callTool("manage_program", {
           action: "patch",
@@ -453,8 +489,11 @@ export function toEditableDay(day: Day): EditableDay {
       reps: ex.target_reps,
       weight: ex.target_weight,
       rpe: ex.target_rpe,
-      superset_group: ex.superset_group,
+      group_id: ex.group_id,
       group_type: ex.group_type,
+      group_label: ex.group_label,
+      group_notes: ex.group_notes,
+      group_rest_seconds: ex.group_rest_seconds,
       rest_seconds: ex.rest_seconds,
       notes: ex.notes,
     })),
@@ -1346,7 +1385,7 @@ function EditableDayCard({
         const newExs = b.exercises.filter((_, i) => i !== exIdx);
         if (newExs.length === 0) return null;
         if (newExs.length === 1) {
-          return { ...b, exercises: newExs, groupType: null, supersetGroup: null } as Block;
+          return { ...b, exercises: newExs, groupType: null, groupId: null, groupLabel: null, groupNotes: null, groupRestSeconds: null } as Block;
         }
         return { ...b, exercises: newExs };
       })
@@ -1361,8 +1400,11 @@ function EditableDayCard({
       reps: 10,
       weight: null,
       rpe: null,
-      superset_group: null,
+      group_id: null,
       group_type: null,
+      group_label: null,
+      group_notes: null,
+      group_rest_seconds: null,
       rest_seconds: 60,
       notes: null,
     };
@@ -1372,7 +1414,7 @@ function EditableDayCard({
   };
 
   const nextGroupNum = useMemo(() => {
-    const used = day.exercises.map((e) => e.superset_group).filter((g): g is number => g != null);
+    const used = day.exercises.map((e) => e.group_id).filter((g): g is number => g != null);
     return used.length > 0 ? Math.max(...used) + 1 : 1;
   }, [day.exercises]);
 
@@ -1384,9 +1426,12 @@ function EditableDayCard({
       reps: 10,
       weight: null,
       rpe: null,
-      superset_group: groupNum,
+      group_id: groupNum,
       group_type: type,
-      rest_seconds: 60,
+      group_label: null,
+      group_notes: null,
+      group_rest_seconds: null,
+      rest_seconds: null,
       notes: null,
     };
     const newExercises = [...day.exercises, ex1];
@@ -1407,7 +1452,7 @@ function EditableDayCard({
     }
     const newBlocks = blocks.map((b, bi) => {
       if (bi !== blockIdx) return b;
-      return { ...b, groupType: null, supersetGroup: null } as Block;
+      return { ...b, groupType: null, groupId: null, groupLabel: null, groupNotes: null, groupRestSeconds: null } as Block;
     });
     commitBlocks(newBlocks);
   };
@@ -1415,7 +1460,7 @@ function EditableDayCard({
   const groupExercise = (blockIdx: number, type: "superset" | "paired" | "circuit") => {
     const newBlocks = blocks.map((b, bi) => {
       if (bi !== blockIdx) return b;
-      return { ...b, groupType: type, supersetGroup: nextGroupNum } as Block;
+      return { ...b, groupType: type, groupId: nextGroupNum, groupLabel: null, groupNotes: null, groupRestSeconds: null } as Block;
     });
     commitBlocks(newBlocks);
   };
@@ -1434,14 +1479,20 @@ function EditableDayCard({
             ...block,
             exercises: remaining,
             groupType: keepGroup ? block.groupType : null,
-            supersetGroup: keepGroup ? block.supersetGroup : null,
+            groupId: keepGroup ? block.groupId : null,
+            groupLabel: keepGroup ? block.groupLabel : null,
+            groupNotes: keepGroup ? block.groupNotes : null,
+            groupRestSeconds: keepGroup ? block.groupRestSeconds : null,
           });
         }
         newBlocks.push({
           id: `block-ungrouped-${Date.now()}`,
           groupType: null,
-          supersetGroup: null,
-          exercises: [{ ...movedEx, superset_group: null, group_type: null }],
+          groupId: null,
+          groupLabel: null,
+          groupNotes: null,
+          groupRestSeconds: null,
+          exercises: [{ ...movedEx, group_id: null, group_type: null, group_label: null, group_notes: null, group_rest_seconds: null }],
         });
       } else {
         newBlocks.push(blocks[i]);
@@ -1594,9 +1645,12 @@ function EditableDayCard({
                         reps: 10,
                         weight: null,
                         rpe: null,
-                        superset_group: block.supersetGroup,
+                        group_id: block.groupId,
                         group_type: block.groupType,
-                        rest_seconds: 60,
+                        group_label: block.groupLabel,
+                        group_notes: block.groupNotes,
+                        group_rest_seconds: block.groupRestSeconds,
+                        rest_seconds: null,
                         notes: null,
                       };
                       const newBlocks = blocks.map((b, bi) => {

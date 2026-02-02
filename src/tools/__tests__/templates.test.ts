@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockQuery, mockClientQuery, mockRelease, mockConnect } = vi.hoisted(() => {
+const { mockQuery, mockClientQuery, mockRelease, mockConnect, mockCloneGroups } = vi.hoisted(() => {
   const mockClientQuery = vi.fn();
   const mockRelease = vi.fn();
   return {
@@ -11,11 +11,16 @@ const { mockQuery, mockClientQuery, mockRelease, mockConnect } = vi.hoisted(() =
       query: mockClientQuery,
       release: mockRelease,
     })),
+    mockCloneGroups: vi.fn().mockResolvedValue(new Map()),
   };
 });
 
 vi.mock("../../db/connection.js", () => ({
   default: { query: mockQuery, connect: mockConnect },
+}));
+
+vi.mock("../../helpers/group-helpers.js", () => ({
+  cloneGroups: mockCloneGroups,
 }));
 
 vi.mock("../../context/user-context.js", () => ({
@@ -32,6 +37,8 @@ describe("manage_templates tool", () => {
     mockQuery.mockReset();
     mockClientQuery.mockReset();
     mockRelease.mockReset();
+    mockCloneGroups.mockReset();
+    mockCloneGroups.mockResolvedValue(new Map());
 
     const server = {
       registerTool: vi.fn((_name: string, _config: any, handler: Function) => {
@@ -67,7 +74,7 @@ describe("manage_templates tool", () => {
       // Get session exercises
       mockQuery.mockResolvedValueOnce({
         rows: [
-          { exercise_id: 1, sort_order: 0, superset_group: null, rest_seconds: null, notes: null, set_count: "4", common_reps: 8, max_weight: 80, max_rpe: 8 },
+          { exercise_id: 1, sort_order: 0, group_id: null, rest_seconds: null, notes: null, set_count: "4", common_reps: 8, max_weight: 80, max_rpe: 8 },
         ],
       });
 
@@ -88,7 +95,7 @@ describe("manage_templates tool", () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 5 }] });
       mockQuery.mockResolvedValueOnce({
         rows: [
-          { exercise_id: 1, sort_order: 0, superset_group: null, rest_seconds: null, notes: null, set_count: "4", common_reps: 8, max_weight: 80, max_rpe: 8 },
+          { exercise_id: 1, sort_order: 0, group_id: null, rest_seconds: null, notes: null, set_count: "4", common_reps: 8, max_weight: 80, max_rpe: 8 },
         ],
       });
 
@@ -123,7 +130,7 @@ describe("manage_templates tool", () => {
       // Get template exercises
       mockQuery.mockResolvedValueOnce({
         rows: [
-          { exercise_id: 1, exercise_name: "Bench Press", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: 8, sort_order: 0, superset_group: null, rest_seconds: 120 },
+          { exercise_id: 1, exercise_name: "Bench Press", target_sets: 4, target_reps: 8, target_weight: 80, target_rpe: 8, sort_order: 0, group_id: null, rest_seconds: 120 },
         ],
       });
 

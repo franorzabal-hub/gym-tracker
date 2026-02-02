@@ -9,8 +9,11 @@ export interface Exercise {
   target_reps: number;
   target_weight: number | null;
   target_rpe: number | null;
-  superset_group: number | null;
+  group_id: number | null;
   group_type: "superset" | "paired" | "circuit" | null;
+  group_label: string | null;
+  group_notes: string | null;
+  group_rest_seconds: number | null;
   rest_seconds: number | null;
   notes: string | null;
   muscle_group: string | null;
@@ -82,16 +85,16 @@ export function RpeBadge({ rpe }: { rpe: number }) {
   );
 }
 
-/** Group exercises into blocks: supersets share a block, solo exercises are individual blocks */
+/** Group exercises into blocks: grouped exercises share a block, solo exercises are individual blocks */
 export function groupIntoBlocks(exercises: Exercise[]): Exercise[][] {
   const blocks: Exercise[][] = [];
   let i = 0;
   while (i < exercises.length) {
     const ex = exercises[i];
-    if (ex.superset_group != null) {
-      const group = ex.superset_group;
+    if (ex.group_id != null) {
+      const gid = ex.group_id;
       const block: Exercise[] = [];
-      while (i < exercises.length && exercises[i].superset_group === group) {
+      while (i < exercises.length && exercises[i].group_id === gid) {
         block.push(exercises[i]);
         i++;
       }
@@ -178,9 +181,21 @@ export function parseNoteReps(note: string | null): { repScheme: string | null; 
   };
 }
 
+function formatRestSeconds(seconds: number): string {
+  if (seconds >= 60) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return s ? `${m}′${s}″` : `${m}′`;
+  }
+  return `${seconds}″`;
+}
+
 export function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Exercise[]; ssColor: string | null; groupType: string | null }) {
   const isGrouped = exercises.length > 1;
   const type = groupType || "superset";
+  const groupLabel = isGrouped ? exercises[0].group_label : null;
+  const groupNotes = isGrouped ? exercises[0].group_notes : null;
+  const groupRestSeconds = isGrouped ? exercises[0].group_rest_seconds : null;
 
   let borderStyle: string;
   let labelColor: string;
@@ -206,6 +221,7 @@ export function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Ex
       paddingLeft: RAIL_PX,
       marginBottom: sp[2],
     }}>
+      {/* Header: icon + type + label */}
       {isGrouped && (
         <div style={{
           fontSize: font.xs,
@@ -221,11 +237,19 @@ export function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Ex
         }}>
           <span style={{ fontSize: font.base }}>{(GROUP_LABELS[type] || GROUP_LABELS.superset).icon}</span>
           {(GROUP_LABELS[type] || GROUP_LABELS.superset).label}
+          {groupLabel && (
+            <span style={{ textTransform: "none", fontWeight: weight.medium, opacity: opacity.medium, letterSpacing: "0px" }}>
+              — {groupLabel}
+            </span>
+          )}
         </div>
       )}
+      {/* Exercises */}
       {exercises.map((ex, i) => {
         const note = cleanNotes(ex.notes, isGrouped, ex.muscle_group);
         const { repScheme, progression, rest: noteText } = parseNoteReps(note);
+        // Solo exercise shows its own rest_seconds; grouped exercises don't (rest is on the group footer)
+        const showExerciseRest = !isGrouped && ex.rest_seconds != null;
         return (
           <div key={i} style={{
             marginBottom: i < exercises.length - 1 ? sp[4] : 0,
@@ -251,11 +275,11 @@ export function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Ex
                   </>
                 )}
                 {ex.target_rpe != null && <><span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span><RpeBadge rpe={ex.target_rpe} /></>}
-                {ex.rest_seconds != null && (
+                {showExerciseRest && (
                   <>
                     <span style={{ opacity: 0.25, margin: `0 ${sp[1.5]}px` }}>|</span>
                     <span style={{ opacity: opacity.medium, fontSize: font.sm }}>
-                      ⏱ {ex.rest_seconds >= 60 ? `${Math.floor(ex.rest_seconds / 60)}′${ex.rest_seconds % 60 ? `${ex.rest_seconds % 60}″` : ""}` : `${ex.rest_seconds}″`}
+                      ⏱ {formatRestSeconds(ex.rest_seconds!)}
                     </span>
                   </>
                 )}
@@ -292,6 +316,19 @@ export function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Ex
           </div>
         );
       })}
+      {/* Footer: group rest + notes */}
+      {isGrouped && (groupRestSeconds != null || groupNotes) && (
+        <div style={{ marginTop: sp[3], fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.medium }}>
+          {groupRestSeconds != null && (
+            <span>⏱ {formatRestSeconds(groupRestSeconds)} entre rondas</span>
+          )}
+          {groupNotes && (
+            <div style={{ marginTop: groupRestSeconds != null ? sp[1] : 0, fontStyle: "italic" }}>
+              {groupNotes}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -305,8 +342,8 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
   const ssGroupColors = new Map<number, string>();
   let colorIdx = 0;
   day.exercises.forEach(ex => {
-    if (ex.superset_group != null && !ssGroupColors.has(ex.superset_group)) {
-      ssGroupColors.set(ex.superset_group, SS_COLORS[colorIdx % SS_COLORS.length]);
+    if (ex.group_id != null && !ssGroupColors.has(ex.group_id)) {
+      ssGroupColors.set(ex.group_id, SS_COLORS[colorIdx % SS_COLORS.length]);
       colorIdx++;
     }
   });
@@ -357,8 +394,8 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
       {expanded && (
         <div>
           {blocks.map((block, i) => {
-            const ssGroup = block[0].superset_group;
-            const color = ssGroup != null ? ssGroupColors.get(ssGroup) || null : null;
+            const gid = block[0].group_id;
+            const color = gid != null ? ssGroupColors.get(gid) || null : null;
             const groupType = block[0].group_type;
             return (
               <div key={i}>

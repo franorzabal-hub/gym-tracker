@@ -4,6 +4,7 @@ import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
+import { cloneGroups } from "../helpers/group-helpers.js";
 
 export function registerTemplatesTool(server: McpServer) {
   server.registerTool("manage_templates", {
@@ -49,13 +50,16 @@ Actions:
                  'target_reps', ste.target_reps,
                  'target_weight', ste.target_weight,
                  'target_rpe', ste.target_rpe,
-                 'superset_group', ste.superset_group,
+                 'group_id', ste.group_id,
+                 'group_type', teg.group_type,
+                 'group_label', teg.label,
                  'rest_seconds', ste.rest_seconds
                ) ORDER BY ste.sort_order
              ) FILTER (WHERE ste.id IS NOT NULL), '[]') as exercises
            FROM session_templates st
            LEFT JOIN session_template_exercises ste ON ste.template_id = st.id
            LEFT JOIN exercises e ON e.id = ste.exercise_id
+           LEFT JOIN template_exercise_groups teg ON teg.id = ste.group_id
            WHERE st.user_id = $1
            GROUP BY st.id
            ORDER BY st.name
@@ -87,7 +91,7 @@ Actions:
 
         // Get session exercises with their best set data
         const { rows: sessionExercises } = await pool.query(
-          `SELECT se.exercise_id, se.sort_order, se.superset_group, se.rest_seconds, se.notes,
+          `SELECT se.exercise_id, se.sort_order, se.group_id, se.rest_seconds, se.notes,
              COUNT(st.id) as set_count,
              MODE() WITHIN GROUP (ORDER BY st.reps) as common_reps,
              MAX(st.weight) as max_weight,
@@ -114,10 +118,18 @@ Actions:
             [userId, name, sid]
           );
 
+          // Clone groups from session to template
+          const groupMap = await cloneGroups(
+            "session_exercise_groups", "template_exercise_groups",
+            "session_id", "template_id",
+            sid, tmpl.id,
+            client
+          );
+
           for (const se of sessionExercises) {
             await client.query(
               `INSERT INTO session_template_exercises
-                 (template_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, rest_seconds, notes)
+                 (template_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
               [
                 tmpl.id,
@@ -127,7 +139,7 @@ Actions:
                 se.max_weight || null,
                 se.max_rpe || null,
                 se.sort_order,
-                se.superset_group || null,
+                se.group_id ? (groupMap.get(se.group_id) ?? null) : null,
                 se.rest_seconds || null,
                 se.notes || null,
               ]
@@ -196,12 +208,20 @@ Actions:
             [userId, startedAt]
           );
 
+          // Clone groups from template to session
+          const groupMap = await cloneGroups(
+            "template_exercise_groups", "session_exercise_groups",
+            "template_id", "session_id",
+            templates[0].id, session.id,
+            startClient
+          );
+
           // Pre-populate session_exercises
           for (const te of templateExercises) {
             await startClient.query(
-              `INSERT INTO session_exercises (session_id, exercise_id, sort_order, superset_group, rest_seconds, notes)
+              `INSERT INTO session_exercises (session_id, exercise_id, sort_order, group_id, rest_seconds, notes)
                VALUES ($1, $2, $3, $4, $5, $6)`,
-              [session.id, te.exercise_id, te.sort_order, te.superset_group || null, te.rest_seconds || null, te.notes || null]
+              [session.id, te.exercise_id, te.sort_order, te.group_id ? (groupMap.get(te.group_id) ?? null) : null, te.rest_seconds || null, te.notes || null]
             );
           }
 
@@ -218,7 +238,7 @@ Actions:
               target_weight: te.target_weight,
               target_rpe: te.target_rpe,
               rest_seconds: te.rest_seconds,
-              superset_group: te.superset_group,
+              group_id: te.group_id,
             })),
           });
         } catch (err) {

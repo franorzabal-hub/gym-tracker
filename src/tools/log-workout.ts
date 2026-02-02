@@ -11,6 +11,7 @@ import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 import { logSingleExercise, exerciseEntrySchema, type ExerciseEntry } from "../helpers/log-exercise-helper.js";
+import { cloneGroups } from "../helpers/group-helpers.js";
 
 const overrideSchema = z.object({
   exercise: z.string(),
@@ -48,7 +49,6 @@ Parameters:
 - set_type: "warmup", "working" (default), "drop", or "failure"
 - exercise_notes: notes for the exercise
 - rest_seconds: rest time in seconds
-- superset_group: integer to group exercises into supersets
 - muscle_group: muscle group for auto-created exercises
 - equipment: equipment type for auto-created exercises
 - set_notes: notes per set (string for all, or array per set)
@@ -81,7 +81,6 @@ Parameters:
       set_type: z.enum(["warmup", "working", "drop", "failure"]).default("working"),
       exercise_notes: z.string().optional().describe("Notes for the exercise (avoids collision with session notes)"),
       rest_seconds: z.number().int().optional(),
-      superset_group: z.number().int().optional(),
       muscle_group: z.string().optional(),
       equipment: z.string().optional(),
       set_notes: z.union([z.string(), z.array(z.string())]).optional(),
@@ -153,7 +152,7 @@ Parameters:
         // If we have a program day and it was requested (explicit or session-only), get its exercises
         if (dayInfo && hasProgramDay) {
           const { rows } = await pool.query(
-            `SELECT pde.*, e.name as exercise_name, e.id as exercise_id, e.exercise_type
+            `SELECT pde.*, e.name as exercise_name, e.id as exercise_id, e.exercise_type, pde.group_id
              FROM program_day_exercises pde
              JOIN exercises e ON e.id = pde.exercise_id
              WHERE pde.day_id = $1 ORDER BY pde.sort_order`,
@@ -244,6 +243,14 @@ Parameters:
           overrideMap.set(resolved.name.toLowerCase(), o);
         }
 
+        // Clone exercise groups from program day to session
+        const groupMap = await cloneGroups(
+          "program_exercise_groups", "session_exercise_groups",
+          "day_id", "session_id",
+          dayInfo.id, sessionId,
+          client
+        );
+
         for (const dex of dayExercises) {
           if (
             skipSet.has(dex.exercise_name.toLowerCase()) ||
@@ -258,11 +265,12 @@ Parameters:
           const weight = override?.weight ?? dex.target_weight;
           const rpe = override?.rpe ?? dex.target_rpe;
 
-          // Create session_exercise
+          // Create session_exercise with remapped group_id
+          const sessionGroupId = dex.group_id ? (groupMap.get(dex.group_id) ?? null) : null;
           const { rows: [se] } = await client.query(
-            `INSERT INTO session_exercises (session_id, exercise_id, sort_order, superset_group, rest_seconds)
+            `INSERT INTO session_exercises (session_id, exercise_id, sort_order, group_id, rest_seconds)
              VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-            [sessionId, dex.exercise_id, dex.sort_order, dex.superset_group, dex.rest_seconds || null]
+            [sessionId, dex.exercise_id, dex.sort_order, sessionGroupId, dex.rest_seconds || null]
           );
 
           // Insert sets
@@ -326,7 +334,6 @@ Parameters:
           set_type: params.set_type,
           notes: params.exercise_notes,
           rest_seconds: params.rest_seconds,
-          superset_group: params.superset_group,
           muscle_group: params.muscle_group,
           equipment: params.equipment,
           set_notes: params.set_notes,

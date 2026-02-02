@@ -28,7 +28,11 @@ interface SetData {
 
 interface ExerciseData {
   name: string;
-  superset_group: number | null;
+  group_id: number | null;
+  group_type?: string | null;
+  group_label?: string | null;
+  group_notes?: string | null;
+  group_rest_seconds?: number | null;
   muscle_group?: string | null;
   exercise_type?: string | null;
   rep_type?: string | null;
@@ -90,24 +94,49 @@ function weightRange(sets: SetData[]): string {
   return min === max ? `${min}kg` : `${min}-${max}kg`;
 }
 
-function groupExercises(exercises: ExerciseData[]): { exercises: ExerciseData[]; supersetGroup: number | null }[] {
-  const groups: { exercises: ExerciseData[]; supersetGroup: number | null }[] = [];
+interface ExerciseGroup {
+  exercises: ExerciseData[];
+  groupId: number | null;
+  groupType: string | null;
+  groupLabel: string | null;
+  groupNotes: string | null;
+  groupRestSeconds: number | null;
+}
+
+function groupExercises(exercises: ExerciseData[]): ExerciseGroup[] {
+  const groups: ExerciseGroup[] = [];
   let currentGroup: ExerciseData[] = [];
-  let currentSupersetGroup: number | null = null;
+  let currentGroupId: number | null = null;
 
   for (const ex of exercises) {
-    if (ex.superset_group != null && ex.superset_group === currentSupersetGroup) {
+    if (ex.group_id != null && ex.group_id === currentGroupId) {
       currentGroup.push(ex);
     } else {
       if (currentGroup.length > 0) {
-        groups.push({ exercises: currentGroup, supersetGroup: currentSupersetGroup });
+        const first = currentGroup[0];
+        groups.push({
+          exercises: currentGroup,
+          groupId: currentGroupId,
+          groupType: first.group_type || null,
+          groupLabel: first.group_label || null,
+          groupNotes: first.group_notes || null,
+          groupRestSeconds: first.group_rest_seconds || null,
+        });
       }
       currentGroup = [ex];
-      currentSupersetGroup = ex.superset_group;
+      currentGroupId = ex.group_id;
     }
   }
   if (currentGroup.length > 0) {
-    groups.push({ exercises: currentGroup, supersetGroup: currentSupersetGroup });
+    const first = currentGroup[0];
+    groups.push({
+      exercises: currentGroup,
+      groupId: currentGroupId,
+      groupType: first.group_type || null,
+      groupLabel: first.group_label || null,
+      groupNotes: first.group_notes || null,
+      groupRestSeconds: first.group_rest_seconds || null,
+    });
   }
   return groups;
 }
@@ -328,21 +357,56 @@ function ExerciseAccordionRow({ exercise, expanded, onToggle }: {
   );
 }
 
-// ── Superset group wrapper ──
+// ── Group wrapper (superset / paired / circuit) ──
 
-function SupersetWrapper({ children }: { children: React.ReactNode }) {
+const GROUP_STYLES: Record<string, { icon: string; label: string; border: string }> = {
+  superset: { icon: "\u26A1", label: "Superset", border: "3px solid var(--primary)" },
+  paired:   { icon: "\uD83D\uDD17", label: "Paired",   border: "3px dashed var(--primary)" },
+  circuit:  { icon: "\uD83D\uDD04", label: "Circuit",  border: "3px double var(--primary)" },
+};
+
+function formatRestSeconds(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return s > 0 ? `${m}\u2032${s.toString().padStart(2, "0")}\u2033` : `${m}\u2032`;
+}
+
+function GroupWrapper({ groupType, groupLabel, groupNotes, groupRestSeconds, children }: {
+  groupType: string | null;
+  groupLabel: string | null;
+  groupNotes: string | null;
+  groupRestSeconds: number | null;
+  children: React.ReactNode;
+}) {
+  const style = GROUP_STYLES[groupType || "superset"] || GROUP_STYLES.superset;
   return (
     <div style={{
-      borderLeft: "3px solid var(--primary)",
+      borderLeft: style.border,
       paddingLeft: sp[4],
       marginLeft: sp[1],
     }}>
-      <div style={{ fontSize: font.xs, fontWeight: weight.semibold, color: "var(--primary)", marginBottom: sp[1], textTransform: "uppercase", letterSpacing: "0.5px" }}>
-        Superset
+      <div style={{ fontSize: font.xs, fontWeight: weight.semibold, color: "var(--primary)", marginBottom: sp[1], textTransform: "uppercase", letterSpacing: "0.5px", display: "flex", alignItems: "center", gap: sp[2] }}>
+        <span>{style.icon}</span>
+        <span>{style.label}</span>
+        {groupLabel && <span style={{ textTransform: "none", fontWeight: weight.medium, opacity: opacity.high }}>{"\u2014"} {groupLabel}</span>}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: sp[2] }}>
         {children}
       </div>
+      {(groupRestSeconds || groupNotes) && (
+        <div style={{ marginTop: sp[2], fontSize: font.xs, color: "var(--text-secondary)" }}>
+          {groupRestSeconds != null && groupRestSeconds > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: sp[1] }}>
+              <span>{"\u23F1"}</span>
+              <span>{formatRestSeconds(groupRestSeconds)} entre rondas</span>
+            </div>
+          )}
+          {groupNotes && (
+            <div style={{ fontStyle: "italic", marginTop: sp[1], opacity: opacity.high }}>{groupNotes}</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -356,7 +420,7 @@ function WorkoutWidget() {
 
   if (!data.session) {
     return (
-      <div className="empty" style={{ padding: sp[16] }}>
+      <div className="empty" style={{ padding: `${sp[16]}px ${sp[8]}px` }}>
         <div style={{ fontSize: font["2xl"], fontWeight: weight.medium, marginBottom: sp[4] }}>No workouts yet</div>
         <div style={{ fontSize: font.md, color: "var(--text-secondary)" }}>
           Start your first session to begin tracking your exercises here.
@@ -395,7 +459,7 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
   const exerciseGroups = useMemo(() => groupExercises(session.exercises), [session.exercises]);
 
   return (
-    <div style={{ maxWidth: maxWidth.widget }}>
+    <div style={{ maxWidth: maxWidth.widget, padding: `0 ${sp[8]}px ${sp[2]}px` }}>
       {/* Header */}
       <div style={{ marginBottom: sp[5] }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -451,9 +515,15 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
       {/* Exercise accordion */}
       <div style={{ display: "flex", flexDirection: "column", gap: sp[2] }}>
         {exerciseGroups.map((group, gi) => {
-          if (group.supersetGroup != null && group.exercises.length > 1) {
+          if (group.groupId != null && group.exercises.length > 1) {
             return (
-              <SupersetWrapper key={`ss-${gi}`}>
+              <GroupWrapper
+                key={`g-${gi}`}
+                groupType={group.groupType}
+                groupLabel={group.groupLabel}
+                groupNotes={group.groupNotes}
+                groupRestSeconds={group.groupRestSeconds}
+              >
                 {group.exercises.map((ex) => (
                   <ExerciseAccordionRow
                     key={ex.name}
@@ -462,7 +532,7 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
                     onToggle={() => toggleExercise(ex.name)}
                   />
                 ))}
-              </SupersetWrapper>
+              </GroupWrapper>
             );
           }
           return group.exercises.map((ex) => (

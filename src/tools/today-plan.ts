@@ -44,9 +44,11 @@ Uses the active program + user's timezone to infer which day it is. Returns rest
       const { rows: exercises } = await pool.query(
         `SELECT e.name, e.rep_type, e.exercise_type,
            pde.target_sets, pde.target_reps, pde.target_weight, pde.target_rpe,
-           pde.rest_seconds, pde.notes, pde.superset_group
+           pde.rest_seconds, pde.notes, pde.group_id,
+           peg.group_type, peg.label as group_label, peg.notes as group_notes, peg.rest_seconds as group_rest_seconds
          FROM program_day_exercises pde
          JOIN exercises e ON e.id = pde.exercise_id
+         LEFT JOIN program_exercise_groups peg ON peg.id = pde.group_id
          WHERE pde.day_id = $1 ORDER BY pde.sort_order`,
         [todayDay.id]
       );

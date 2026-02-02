@@ -78,7 +78,7 @@ describe("show_workout display tool", () => {
       // Exercise details
       .mockResolvedValueOnce({
         rows: [{
-          name: "Bench Press", superset_group: null, muscle_group: "chest",
+          name: "Bench Press", group_id: null, group_type: null, group_label: null, group_notes: null, group_rest_seconds: null, muscle_group: "chest",
           exercise_type: "strength", rep_type: "reps",
           sets: [{ set_id: 1, set_number: 1, reps: 10, weight: 80, rpe: 7, set_type: "working", logged_at: startedAt }],
         }],

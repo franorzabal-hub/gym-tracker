@@ -56,7 +56,7 @@ describe("session tools", () => {
         })
         .mockResolvedValueOnce({
           rows: [
-            { name: "Bench Press", superset_group: null, sets: [{ set_number: 1, reps: 8, weight: 80, rpe: 8, set_type: "working" }] },
+            { name: "Bench Press", group_id: null, group_type: null, group_label: null, sets: [{ set_number: 1, reps: 8, weight: 80, rpe: 8, set_type: "working" }] },
           ],
         })
         .mockResolvedValueOnce({ rows: [{ program_day_id: null }] }); // comparison query
@@ -90,7 +90,7 @@ describe("session tools", () => {
         .mockResolvedValueOnce({ rows: [{ day_label: "Push" }] }) // program day lookup
         .mockResolvedValueOnce({
           rows: [
-            { name: "Bench Press", superset_group: null, sets: [{ set_id: 1, set_number: 1, reps: 8, weight: 80, rpe: null, set_type: "working" }] },
+            { name: "Bench Press", group_id: null, group_type: null, group_label: null, sets: [{ set_id: 1, set_number: 1, reps: 8, weight: 80, rpe: null, set_type: "working" }] },
           ],
         });
 

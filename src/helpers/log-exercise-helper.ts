@@ -16,7 +16,7 @@ export const exerciseEntrySchema = z.object({
     .default("working"),
   notes: z.string().optional(),
   rest_seconds: z.number().int().optional(),
-  superset_group: z.number().int().optional(),
+  group_id: z.number().int().optional(),
   muscle_group: z.string().optional(),
   equipment: z.string().optional(),
   set_notes: z.union([z.string(), z.array(z.string())]).optional(),
@@ -28,7 +28,7 @@ export const exerciseEntrySchema = z.object({
 export type ExerciseEntry = z.infer<typeof exerciseEntrySchema>;
 
 export async function logSingleExercise(sessionId: number, entry: ExerciseEntry, client?: PoolClient) {
-  const { exercise, sets, reps, weight, rpe, set_type, notes, rest_seconds, superset_group, muscle_group, equipment, set_notes, drop_percent, rep_type, exercise_type } = entry;
+  const { exercise, sets, reps, weight, rpe, set_type, notes, rest_seconds, group_id, muscle_group, equipment, set_notes, drop_percent, rep_type, exercise_type } = entry;
   const q = client || pool;
 
   // Resolve exercise (pass metadata for auto-create or fill)
@@ -55,7 +55,7 @@ export async function logSingleExercise(sessionId: number, entry: ExerciseEntry,
     se = { id: existingRows[0].id };
     startSetNumber = parseInt(existingRows[0].max_set_number, 10) || 0;
 
-    // Update notes/rest_seconds/superset_group if currently null and new values provided
+    // Update notes/rest_seconds/group_id if currently null and new values provided
     const updates: string[] = [];
     const updateValues: unknown[] = [];
     let paramIdx = 1;
@@ -70,9 +70,9 @@ export async function logSingleExercise(sessionId: number, entry: ExerciseEntry,
       updateValues.push(rest_seconds);
       paramIdx++;
     }
-    if (superset_group != null) {
-      updates.push(`superset_group = COALESCE(superset_group, $${paramIdx})`);
-      updateValues.push(superset_group);
+    if (group_id != null) {
+      updates.push(`group_id = COALESCE(group_id, $${paramIdx})`);
+      updateValues.push(group_id);
       paramIdx++;
     }
 
@@ -86,10 +86,10 @@ export async function logSingleExercise(sessionId: number, entry: ExerciseEntry,
   } else {
     // Create new session_exercise
     const { rows: [newSe] } = await q.query(
-      `INSERT INTO session_exercises (session_id, exercise_id, sort_order, notes, rest_seconds, superset_group)
+      `INSERT INTO session_exercises (session_id, exercise_id, sort_order, notes, rest_seconds, group_id)
        VALUES ($1, $2, COALESCE((SELECT MAX(sort_order) + 1 FROM session_exercises WHERE session_id = $1), 0), $3, $4, $5)
        RETURNING id`,
-      [sessionId, resolved.id, notes || null, rest_seconds ?? null, superset_group ?? null]
+      [sessionId, resolved.id, notes || null, rest_seconds ?? null, group_id ?? null]
     );
     se = newSe;
     startSetNumber = 0;

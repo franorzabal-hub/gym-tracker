@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockQuery, mockClientQuery, mockClient } = vi.hoisted(() => {
+const { mockQuery, mockClientQuery, mockClient, mockInsertGroup, mockCloneGroups } = vi.hoisted(() => {
   const mockClientQuery = vi.fn();
   const mockClient = { query: mockClientQuery, release: vi.fn() };
+  let groupIdCounter = 100;
   return {
     mockQuery: vi.fn(),
     mockClientQuery,
     mockClient,
+    mockInsertGroup: vi.fn().mockImplementation(() => Promise.resolve(groupIdCounter++)),
+    mockCloneGroups: vi.fn().mockResolvedValue(new Map()),
   };
 });
 
@@ -26,6 +29,11 @@ vi.mock("../../helpers/program-helpers.js", () => ({
   getLatestVersion: vi.fn(),
   getProgramDaysWithExercises: vi.fn(),
   cloneVersion: vi.fn(),
+}));
+
+vi.mock("../../helpers/group-helpers.js", () => ({
+  insertGroup: mockInsertGroup,
+  cloneGroups: mockCloneGroups,
 }));
 
 vi.mock("../../context/user-context.js", () => ({
@@ -54,6 +62,11 @@ describe("manage_program tool", () => {
     mockGetDays.mockReset();
     mockResolveExercise.mockReset();
     mockResolveExercise.mockResolvedValue({ id: 1, name: "Bench Press", isNew: false });
+    mockInsertGroup.mockReset();
+    let gid = 100;
+    mockInsertGroup.mockImplementation(() => Promise.resolve(gid++));
+    mockCloneGroups.mockReset();
+    mockCloneGroups.mockResolvedValue(new Map());
 
     const server = {
       registerTool: vi.fn((_name: string, _config: any, handler: Function) => {
@@ -361,12 +374,12 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({ rows: [] }); // no duplicate
 
       mockGetDays.mockResolvedValueOnce([
-        { day_label: "Full Body A", weekdays: [1], exercises: [
-          { exercise_id: 12, exercise_name: "Squat", target_sets: 3, target_reps: 8, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 120, notes: null },
-          { exercise_id: 1, exercise_name: "Bench Press", target_sets: 3, target_reps: 8, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 90, notes: null },
+        { id: 10, day_label: "Full Body A", weekdays: [1], exercises: [
+          { exercise_id: 12, exercise_name: "Squat", target_sets: 3, target_reps: 8, target_weight: null, target_rpe: null, group_id: null, group_type: null, rest_seconds: 120, notes: null },
+          { exercise_id: 1, exercise_name: "Bench Press", target_sets: 3, target_reps: 8, target_weight: null, target_rpe: null, group_id: null, group_type: null, rest_seconds: 90, notes: null },
         ]},
-        { day_label: "Full Body B", weekdays: [3], exercises: [
-          { exercise_id: 17, exercise_name: "Deadlift", target_sets: 3, target_reps: 5, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 180, notes: null },
+        { id: 11, day_label: "Full Body B", weekdays: [3], exercises: [
+          { exercise_id: 17, exercise_name: "Deadlift", target_sets: 3, target_reps: 5, target_weight: null, target_rpe: null, group_id: null, group_type: null, rest_seconds: 180, notes: null },
         ]},
       ]);
 
@@ -396,8 +409,8 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({ rows: [] }); // no duplicate
 
       mockGetDays.mockResolvedValueOnce([
-        { day_label: "Day A", weekdays: [1], exercises: [
-          { exercise_id: 12, exercise_name: "Squat", target_sets: 3, target_reps: 8, target_weight: null, target_rpe: null, superset_group: null, group_type: null, rest_seconds: 120, notes: null },
+        { id: 10, day_label: "Day A", weekdays: [1], exercises: [
+          { exercise_id: 12, exercise_name: "Squat", target_sets: 3, target_reps: 8, target_weight: null, target_rpe: null, group_id: null, group_type: null, rest_seconds: 120, notes: null },
         ]},
       ]);
 
@@ -527,21 +540,18 @@ describe("manage_program tool", () => {
           day_label: "Push",
           exercises: [{
             exercise: "Bench Press", sets: 3, reps: 10,
-            weight: null, rpe: null, superset_group: null,
-            group_type: null, rest_seconds: null, notes: null,
+            weight: null, rpe: null, rest_seconds: null, notes: null,
           }],
         }],
       });
 
       // INSERT exercise is the 4th call (index 3)
       const insertArgs = mockClientQuery.mock.calls[3][1];
-      // weight=null, rpe=null, superset_group=null, group_type=null, rest_seconds=null, notes=null
       expect(insertArgs[4]).toBeNull(); // weight
       expect(insertArgs[5]).toBeNull(); // rpe
-      expect(insertArgs[7]).toBeNull(); // superset_group
-      expect(insertArgs[8]).toBeNull(); // group_type
-      expect(insertArgs[9]).toBeNull(); // rest_seconds
-      expect(insertArgs[10]).toBeNull(); // notes
+      expect(insertArgs[7]).toBeNull(); // group_id (solo exercise)
+      expect(insertArgs[8]).toBeNull(); // rest_seconds
+      expect(insertArgs[9]).toBeNull(); // notes
     });
 
     it("stores null for weekdays: null on days", async () => {
@@ -597,15 +607,15 @@ describe("manage_program tool", () => {
       const ex1Args = mockClientQuery.mock.calls[3][1];
       expect(ex1Args[4]).toBe(80);   // weight
       expect(ex1Args[5]).toBeNull();  // rpe (null)
-      expect(ex1Args[9]).toBe(120);   // rest_seconds
-      expect(ex1Args[10]).toBeNull(); // notes (null)
+      expect(ex1Args[8]).toBe(120);   // rest_seconds
+      expect(ex1Args[9]).toBeNull(); // notes (null)
 
       // Exercise 2 (index 4)
       const ex2Args = mockClientQuery.mock.calls[4][1];
       expect(ex2Args[4]).toBeNull();            // weight (null)
       expect(ex2Args[5]).toBe(8);               // rpe
-      expect(ex2Args[9]).toBeNull();            // rest_seconds (null)
-      expect(ex2Args[10]).toBe("slow eccentric"); // notes
+      expect(ex2Args[8]).toBeNull();            // rest_seconds (null)
+      expect(ex2Args[9]).toBe("slow eccentric"); // notes
     });
 
     // --- Metadata updates ---
@@ -856,7 +866,7 @@ describe("manage_program tool", () => {
 
     // --- Exercise operations ---
 
-    it("stores all optional exercise fields when populated", async () => {
+    it("stores all optional exercise fields when populated (solo exercise)", async () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
@@ -872,73 +882,17 @@ describe("manage_program tool", () => {
           day_label: "Push",
           exercises: [{
             exercise: "Bench Press", sets: 4, reps: 8,
-            weight: 100, rpe: 8, superset_group: 1,
-            group_type: "paired", rest_seconds: 90, notes: "slow tempo",
+            weight: 100, rpe: 8, rest_seconds: 90, notes: "slow tempo",
           }],
         }],
       });
 
       const insertArgs = mockClientQuery.mock.calls[3][1];
-      expect(insertArgs[4]).toBe(100);       // weight
-      expect(insertArgs[5]).toBe(8);         // rpe
-      expect(insertArgs[7]).toBe(1);         // superset_group
-      expect(insertArgs[8]).toBe("paired");  // group_type
-      expect(insertArgs[9]).toBe(90);        // rest_seconds
-      expect(insertArgs[10]).toBe("slow tempo"); // notes
-    });
-
-    it("defaults group_type to 'superset' when superset_group set but no group_type", async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
-      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
-      mockClientQuery
-        .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE
-        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
-        .mockResolvedValueOnce({}) // INSERT exercise
-        .mockResolvedValueOnce({}); // COMMIT
-
-      await toolHandler({
-        action: "patch", program_id: 1,
-        days: [{
-          day_label: "Push",
-          exercises: [{
-            exercise: "Bench Press", sets: 3, reps: 10,
-            superset_group: 1,
-            // group_type not provided
-          }],
-        }],
-      });
-
-      const insertArgs = mockClientQuery.mock.calls[3][1];
-      expect(insertArgs[7]).toBe(1);           // superset_group
-      expect(insertArgs[8]).toBe("superset");  // group_type defaults to "superset"
-    });
-
-    it("stores group_type as null when no superset_group", async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
-      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
-      mockClientQuery
-        .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE
-        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
-        .mockResolvedValueOnce({}) // INSERT exercise
-        .mockResolvedValueOnce({}); // COMMIT
-
-      await toolHandler({
-        action: "patch", program_id: 1,
-        days: [{
-          day_label: "Push",
-          exercises: [{
-            exercise: "Bench Press", sets: 3, reps: 10,
-            // no superset_group
-            group_type: "circuit", // should be ignored
-          }],
-        }],
-      });
-
-      const insertArgs = mockClientQuery.mock.calls[3][1];
-      expect(insertArgs[7]).toBeNull(); // superset_group null
-      expect(insertArgs[8]).toBeNull(); // group_type null (because no superset_group)
+      expect(insertArgs[4]).toBe(100);          // weight
+      expect(insertArgs[5]).toBe(8);            // rpe
+      expect(insertArgs[7]).toBeNull();         // group_id (solo)
+      expect(insertArgs[8]).toBe(90);           // rest_seconds
+      expect(insertArgs[9]).toBe("slow tempo"); // notes
     });
 
     it("passes transaction client to resolveExercise", async () => {
@@ -964,9 +918,9 @@ describe("manage_program tool", () => {
       );
     });
 
-    // --- Superset/group scenarios ---
+    // --- Group scenarios (nested format) ---
 
-    it("groups multiple exercises with same superset_group", async () => {
+    it("creates a group with multiple exercises using nested format", async () => {
       mockResolveExercise
         .mockResolvedValueOnce({ id: 1, name: "Cable Fly", isNew: false })
         .mockResolvedValueOnce({ id: 2, name: "Lateral Raise", isNew: false });
@@ -977,75 +931,9 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({}) // DELETE
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        // insertGroup is mocked (returns 100), then 2 INSERT exercises
         .mockResolvedValueOnce({}) // INSERT ex 1
         .mockResolvedValueOnce({}) // INSERT ex 2
-        .mockResolvedValueOnce({}); // COMMIT
-
-      await toolHandler({
-        action: "patch", program_id: 1,
-        days: [{
-          day_label: "Push",
-          exercises: [
-            { exercise: "Cable Fly", sets: 3, reps: 12, superset_group: 1, group_type: "superset" },
-            { exercise: "Lateral Raise", sets: 3, reps: 15, superset_group: 1, group_type: "superset" },
-          ],
-        }],
-      });
-
-      const ex1Args = mockClientQuery.mock.calls[3][1];
-      const ex2Args = mockClientQuery.mock.calls[4][1];
-      expect(ex1Args[7]).toBe(1); // same superset_group
-      expect(ex2Args[7]).toBe(1);
-      expect(ex1Args[8]).toBe("superset");
-      expect(ex2Args[8]).toBe("superset");
-    });
-
-    it("handles mixed group types in same day", async () => {
-      mockResolveExercise
-        .mockResolvedValueOnce({ id: 1, name: "A", isNew: false })
-        .mockResolvedValueOnce({ id: 2, name: "B", isNew: false })
-        .mockResolvedValueOnce({ id: 3, name: "C", isNew: false })
-        .mockResolvedValueOnce({ id: 4, name: "D", isNew: false });
-
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
-      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
-      mockClientQuery
-        .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE
-        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
-        .mockResolvedValueOnce({}) // INSERT ex 1
-        .mockResolvedValueOnce({}) // INSERT ex 2
-        .mockResolvedValueOnce({}) // INSERT ex 3
-        .mockResolvedValueOnce({}) // INSERT ex 4
-        .mockResolvedValueOnce({}); // COMMIT
-
-      await toolHandler({
-        action: "patch", program_id: 1,
-        days: [{
-          day_label: "Full",
-          exercises: [
-            { exercise: "A", sets: 3, reps: 10, superset_group: 1, group_type: "superset" },
-            { exercise: "B", sets: 3, reps: 10, superset_group: 1, group_type: "superset" },
-            { exercise: "C", sets: 3, reps: 10, superset_group: 2, group_type: "paired" },
-            { exercise: "D", sets: 3, reps: 10, superset_group: 3, group_type: "circuit" },
-          ],
-        }],
-      });
-
-      expect(mockClientQuery.mock.calls[3][1][8]).toBe("superset");
-      expect(mockClientQuery.mock.calls[4][1][8]).toBe("superset");
-      expect(mockClientQuery.mock.calls[5][1][8]).toBe("paired");
-      expect(mockClientQuery.mock.calls[6][1][8]).toBe("circuit");
-    });
-
-    it("nullifies group_type when superset_group not set even if group_type provided", async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
-      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
-      mockClientQuery
-        .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE
-        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
-        .mockResolvedValueOnce({}) // INSERT exercise
         .mockResolvedValueOnce({}); // COMMIT
 
       await toolHandler({
@@ -1053,16 +941,87 @@ describe("manage_program tool", () => {
         days: [{
           day_label: "Push",
           exercises: [{
-            exercise: "Bench Press", sets: 3, reps: 10,
-            group_type: "paired",
-            // superset_group not set
+            group_type: "superset",
+            label: "Chest + Shoulders",
+            rest_seconds: 90,
+            exercises: [
+              { exercise: "Cable Fly", sets: 3, reps: 12 },
+              { exercise: "Lateral Raise", sets: 3, reps: 15 },
+            ],
           }],
         }],
       });
 
-      const insertArgs = mockClientQuery.mock.calls[3][1];
-      expect(insertArgs[7]).toBeNull(); // superset_group
-      expect(insertArgs[8]).toBeNull(); // group_type forced to null
+      // insertGroup should have been called with superset type
+      expect(mockInsertGroup).toHaveBeenCalledTimes(1);
+      expect(mockInsertGroup.mock.calls[0][3].group_type).toBe("superset");
+      expect(mockInsertGroup.mock.calls[0][3].label).toBe("Chest + Shoulders");
+
+      // Both exercises should have the same group_id (100 from mock)
+      const ex1Args = mockClientQuery.mock.calls[3][1];
+      const ex2Args = mockClientQuery.mock.calls[4][1];
+      expect(ex1Args[7]).toBe(100); // group_id
+      expect(ex2Args[7]).toBe(100); // same group_id
+      // Grouped exercises have null rest_seconds
+      expect(ex1Args[8]).toBeNull();
+      expect(ex2Args[8]).toBeNull();
+    });
+
+    it("handles mixed solo exercises and groups in same day", async () => {
+      mockResolveExercise
+        .mockResolvedValueOnce({ id: 1, name: "Bench Press", isNew: false })
+        .mockResolvedValueOnce({ id: 2, name: "A", isNew: false })
+        .mockResolvedValueOnce({ id: 3, name: "B", isNew: false })
+        .mockResolvedValueOnce({ id: 4, name: "Tricep Pushdown", isNew: false });
+
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT solo ex (Bench)
+        // insertGroup mocked (returns 100)
+        .mockResolvedValueOnce({}) // INSERT grouped ex A
+        .mockResolvedValueOnce({}) // INSERT grouped ex B
+        .mockResolvedValueOnce({}) // INSERT solo ex (Tricep)
+        .mockResolvedValueOnce({}); // COMMIT
+
+      await toolHandler({
+        action: "patch", program_id: 1,
+        days: [{
+          day_label: "Push",
+          exercises: [
+            { exercise: "Bench Press", sets: 4, reps: 8, rest_seconds: 180 },
+            {
+              group_type: "superset",
+              rest_seconds: 90,
+              exercises: [
+                { exercise: "A", sets: 3, reps: 12 },
+                { exercise: "B", sets: 3, reps: 15 },
+              ],
+            },
+            { exercise: "Tricep Pushdown", sets: 3, reps: 12, rest_seconds: 60 },
+          ],
+        }],
+      });
+
+      // Solo Bench: group_id null, rest_seconds 180
+      const benchArgs = mockClientQuery.mock.calls[3][1];
+      expect(benchArgs[7]).toBeNull();
+      expect(benchArgs[8]).toBe(180);
+
+      // Grouped exercises: group_id 100, rest_seconds null
+      const exAArgs = mockClientQuery.mock.calls[4][1];
+      const exBArgs = mockClientQuery.mock.calls[5][1];
+      expect(exAArgs[7]).toBe(100);
+      expect(exAArgs[8]).toBeNull();
+      expect(exBArgs[7]).toBe(100);
+
+      // Solo Tricep: group_id null, rest_seconds 60
+      const tricepArgs = mockClientQuery.mock.calls[6][1];
+      expect(tricepArgs[7]).toBeNull();
+      expect(tricepArgs[8]).toBe(60);
     });
 
     // --- Combined operations (widget auto-save pattern) ---

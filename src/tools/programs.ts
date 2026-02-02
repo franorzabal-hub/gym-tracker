@@ -11,24 +11,97 @@ import {
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
+import { insertGroup } from "../helpers/group-helpers.js";
+import { cloneGroups } from "../helpers/group-helpers.js";
 
-const dayExerciseSchema = z.object({
+const soloExerciseSchema = z.object({
   exercise: z.string(),
   sets: z.number().int().min(1).default(3),
   reps: z.number().int().min(1).default(10),
   weight: z.number().nullable().optional(),
   rpe: z.number().min(1).max(10).nullable().optional(),
-  superset_group: z.number().int().nullable().optional(),
-  group_type: z.enum(["superset", "paired", "circuit"]).nullable().optional().describe("Type of exercise grouping. 'superset' = back-to-back no rest, 'paired' = active rest / related exercises, 'circuit' = rotate through exercises. Required when superset_group is set."),
   rest_seconds: z.number().int().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
 
+const groupSchema = z.object({
+  group_type: z.enum(["superset", "paired", "circuit"]),
+  label: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  rest_seconds: z.number().int().nullable().optional(),
+  exercises: z.array(soloExerciseSchema).min(2),
+});
+
+const dayItemSchema = z.union([soloExerciseSchema, groupSchema]);
+
 const daySchema = z.object({
   day_label: z.string(),
   weekdays: z.array(z.number().int().min(1).max(7)).nullable().optional(),
-  exercises: z.array(dayExerciseSchema),
+  exercises: z.array(dayItemSchema),
 });
+
+type DayItem = z.infer<typeof dayItemSchema>;
+
+function isGroupItem(item: DayItem): item is z.infer<typeof groupSchema> {
+  return "group_type" in item && "exercises" in item && Array.isArray((item as any).exercises);
+}
+
+/**
+ * Insert a day's exercises (mix of solo and groups) into program_day_exercises.
+ * Returns { created, existing } exercise name sets.
+ */
+async function insertDayItems(
+  dayId: number,
+  items: DayItem[],
+  client: import("pg").PoolClient
+): Promise<{ created: Set<string>; existing: Set<string> }> {
+  const createdExercises = new Set<string>();
+  const existingExercises = new Set<string>();
+  let sortOrder = 0;
+
+  for (const item of items) {
+    if (isGroupItem(item)) {
+      // Insert group row
+      const groupId = await insertGroup(
+        "program_exercise_groups", "day_id", dayId,
+        { group_type: item.group_type, label: item.label, notes: item.notes, rest_seconds: item.rest_seconds },
+        sortOrder, client
+      );
+
+      // Insert each exercise in the group
+      for (const ex of item.exercises) {
+        const resolved = await resolveExercise(ex.exercise, undefined, undefined, undefined, undefined, client);
+        if (resolved.isNew) createdExercises.add(resolved.name);
+        else existingExercises.add(resolved.name);
+
+        await client.query(
+          `INSERT INTO program_day_exercises
+             (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [dayId, resolved.id, ex.sets, ex.reps, ex.weight || null, ex.rpe || null,
+           sortOrder, groupId, null, ex.notes || null]
+        );
+        sortOrder++;
+      }
+    } else {
+      // Solo exercise
+      const resolved = await resolveExercise(item.exercise, undefined, undefined, undefined, undefined, client);
+      if (resolved.isNew) createdExercises.add(resolved.name);
+      else existingExercises.add(resolved.name);
+
+      await client.query(
+        `INSERT INTO program_day_exercises
+           (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [dayId, resolved.id, item.sets, item.reps, item.weight || null, item.rpe || null,
+         sortOrder, null, item.rest_seconds || null, item.notes || null]
+      );
+      sortOrder++;
+    }
+  }
+
+  return { created: createdExercises, existing: existingExercises };
+}
 
 export function registerProgramTool(server: McpServer) {
   server.registerTool(
@@ -50,15 +123,19 @@ Actions:
 - "history": List all versions of a program with dates and change descriptions
 
 For "create" and "update" with days, pass the "days" array with day_label, weekdays (ISO: 1=Mon..7=Sun), and exercises.
+The exercises array accepts two types of items:
+1. Solo exercise: { exercise, sets, reps, weight?, rpe?, rest_seconds?, notes? }
+2. Group: { group_type, label?, notes?, rest_seconds?, exercises: [solo_exercise, ...] }
+   - group_type: "superset" (back-to-back no rest), "paired" (active rest), "circuit" (rotate)
+   - label: optional display label (e.g. "Pecho + Hombro")
+   - notes: group-level notes (e.g. "Sin descanso entre ejercicios")
+   - rest_seconds: rest between rounds of the group
+   - exercises: array of 2+ solo exercises (rest_seconds on individual exercises is ignored inside groups)
+Discriminator: if the item has "exercise" (string) it's solo; if it has "group_type" + "exercises" (array) it's a group.
 Each exercise needs: sets (number), reps (number — use the FIRST set's rep count), weight (optional, in kg).
 If the rep scheme varies per set (e.g. pyramid 12/10/8), set reps to the first set's value (12) and put the full scheme in notes as "reps: 12/10/8". The widget displays it as "3×(12/10/8)" automatically.
 If there's a progression instruction, append it in notes (e.g. "reps: 12/10/8 con progresión").
 Do NOT put redundant rep info — either use a flat reps number OR put the varying scheme in notes, never both.
-Each exercise can have superset_group (integer) + group_type to link exercises:
-  - "superset": exercises done back-to-back with no rest (e.g., Cable Fly + Lateral Raise)
-  - "paired": active rest / related exercises done together (e.g., Deadlift + Mobility drill between sets)
-  - "circuit": rotate through exercises in sequence (e.g., Dorsalera → Remo → repeat)
-Exercises with the same superset_group number in a day are grouped together. Always set group_type when using superset_group.
 For "clone", pass source_id (the id of the program to clone, typically a global template).
 For "update" with days, also pass change_description explaining what changed.
 For "update" metadata only, pass new_name and/or description (no days needed).
@@ -188,8 +265,8 @@ When the user wants to SEE their program visually, call show_program instead (no
             [prog.id]
           );
 
-          const createdExercises = new Set<string>();
-          const existingExercises = new Set<string>();
+          const allCreated = new Set<string>();
+          const allExisting = new Set<string>();
 
           for (let i = 0; i < days.length; i++) {
             const day = days[i];
@@ -201,35 +278,9 @@ When the user wants to SEE their program visually, call show_program instead (no
               [ver.id, day.day_label, day.weekdays || null, i]
             );
 
-            for (let j = 0; j < day.exercises.length; j++) {
-              const ex = day.exercises[j];
-              const resolved = await resolveExercise(ex.exercise, undefined, undefined, undefined, undefined, client);
-
-              if (resolved.isNew) {
-                createdExercises.add(resolved.name);
-              } else {
-                existingExercises.add(resolved.name);
-              }
-
-              await client.query(
-                `INSERT INTO program_day_exercises
-                   (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, group_type, rest_seconds, notes)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-                [
-                  newDay.id,
-                  resolved.id,
-                  ex.sets,
-                  ex.reps,
-                  ex.weight || null,
-                  ex.rpe || null,
-                  j,
-                  ex.superset_group || null,
-                  ex.superset_group ? (ex.group_type || "superset") : null,
-                  ex.rest_seconds || null,
-                  ex.notes || null,
-                ]
-              );
-            }
+            const { created, existing } = await insertDayItems(newDay.id, day.exercises, client);
+            created.forEach(n => allCreated.add(n));
+            existing.forEach(n => allExisting.add(n));
           }
 
           await client.query("COMMIT");
@@ -238,9 +289,9 @@ When the user wants to SEE their program visually, call show_program instead (no
               program: { id: prog.id, name, version: 1 },
               days_created: days.length,
               exercises_summary: {
-                created: Array.from(createdExercises),
-                existing: Array.from(existingExercises),
-                total: createdExercises.size + existingExercises.size,
+                created: Array.from(allCreated),
+                existing: Array.from(allExisting),
+                total: allCreated.size + allExisting.size,
               },
             });
         } catch (err) {
@@ -311,12 +362,20 @@ When the user wants to SEE their program visually, call show_program instead (no
               [ver.id, day.day_label, day.weekdays || null, i]
             );
 
+            // Clone groups for this day
+            const groupMap = await cloneGroups(
+              "program_exercise_groups", "program_exercise_groups",
+              "day_id", "day_id",
+              day.id, newDay.id,
+              client
+            );
+
             for (let j = 0; j < day.exercises.length; j++) {
               const ex = day.exercises[j];
               await client.query(
                 `INSERT INTO program_day_exercises
-                   (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, group_type, rest_seconds, notes)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                   (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
                 [
                   newDay.id,
                   ex.exercise_id,
@@ -325,8 +384,7 @@ When the user wants to SEE their program visually, call show_program instead (no
                   ex.target_weight || null,
                   ex.target_rpe || null,
                   j,
-                  ex.superset_group || null,
-                  ex.group_type || null,
+                  ex.group_id ? (groupMap.get(ex.group_id) ?? null) : null,
                   ex.rest_seconds || null,
                   ex.notes || null,
                 ]
@@ -406,8 +464,8 @@ When the user wants to SEE their program visually, call show_program instead (no
             [program.id, newVersionNumber, change_description || null]
           );
 
-          const createdExercises = new Set<string>();
-          const existingExercises = new Set<string>();
+          const allCreated = new Set<string>();
+          const allExisting = new Set<string>();
 
           for (let i = 0; i < days.length; i++) {
             const day = days[i];
@@ -419,35 +477,9 @@ When the user wants to SEE their program visually, call show_program instead (no
               [ver.id, day.day_label, day.weekdays || null, i]
             );
 
-            for (let j = 0; j < day.exercises.length; j++) {
-              const ex = day.exercises[j];
-              const resolved = await resolveExercise(ex.exercise, undefined, undefined, undefined, undefined, client);
-
-              if (resolved.isNew) {
-                createdExercises.add(resolved.name);
-              } else {
-                existingExercises.add(resolved.name);
-              }
-
-              await client.query(
-                `INSERT INTO program_day_exercises
-                   (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, group_type, rest_seconds, notes)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-                [
-                  newDay.id,
-                  resolved.id,
-                  ex.sets,
-                  ex.reps,
-                  ex.weight || null,
-                  ex.rpe || null,
-                  j,
-                  ex.superset_group || null,
-                  ex.superset_group ? (ex.group_type || "superset") : null,
-                  ex.rest_seconds || null,
-                  ex.notes || null,
-                ]
-              );
-            }
+            const { created, existing } = await insertDayItems(newDay.id, day.exercises, client);
+            created.forEach(n => allCreated.add(n));
+            existing.forEach(n => allExisting.add(n));
           }
 
           await client.query("COMMIT");
@@ -456,9 +488,9 @@ When the user wants to SEE their program visually, call show_program instead (no
               program: { name: name || program.name, version: newVersionNumber },
               change_description,
               exercises_summary: {
-                created: Array.from(createdExercises),
-                existing: Array.from(existingExercises),
-                total: createdExercises.size + existingExercises.size,
+                created: Array.from(allCreated),
+                existing: Array.from(allExisting),
+                total: allCreated.size + allExisting.size,
               },
             });
         } catch (err) {
@@ -516,7 +548,7 @@ When the user wants to SEE their program visually, call show_program instead (no
 
           // Replace days if provided
           if (days && days.length > 0) {
-            // Delete existing days (CASCADE deletes exercises)
+            // Delete existing days (CASCADE deletes exercises and groups)
             await client.query(
               "DELETE FROM program_days WHERE version_id = $1",
               [latestVersion.id]
@@ -531,30 +563,16 @@ When the user wants to SEE their program visually, call show_program instead (no
               );
               daysCount++;
 
-              for (let j = 0; j < day.exercises.length; j++) {
-                const ex = day.exercises[j];
-                const resolved = await resolveExercise(ex.exercise, undefined, undefined, undefined, undefined, client);
-
-                await client.query(
-                  `INSERT INTO program_day_exercises
-                     (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, superset_group, group_type, rest_seconds, notes)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-                  [
-                    newDay.id,
-                    resolved.id,
-                    ex.sets,
-                    ex.reps,
-                    ex.weight || null,
-                    ex.rpe || null,
-                    j,
-                    ex.superset_group || null,
-                    ex.superset_group ? (ex.group_type || "superset") : null,
-                    ex.rest_seconds || null,
-                    ex.notes || null,
-                  ]
-                );
-                exercisesCount++;
+              // Count exercises (flatten groups)
+              for (const item of day.exercises) {
+                if (isGroupItem(item)) {
+                  exercisesCount += item.exercises.length;
+                } else {
+                  exercisesCount++;
+                }
               }
+
+              await insertDayItems(newDay.id, day.exercises, client);
             }
           }
 
