@@ -7,7 +7,8 @@ import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerHistoryTool(server: McpServer) {
-  server.tool("get_history", `${APP_CONTEXT}Get workout history. Shows past sessions with exercises and sets.
+  server.registerTool("get_history", {
+    description: `${APP_CONTEXT}Get workout history. Shows past sessions with exercises and sets.
 Use period to filter: "today", "week", "month", "year", or a number of days.
 Optionally filter by exercise name or program_day label.
 Use session_id to fetch a specific session by ID (ignores other filters).
@@ -16,7 +17,8 @@ Use limit/offset for pagination. Use summary_only for lightweight summaries.
 Examples:
 - "¿qué entrené esta semana?" → period: "week"
 - "historial de press banca" → exercise: "press banca"
-- "¿qué hice hoy?" → period: "today"`, {
+- "¿qué hice hoy?" → period: "today"`,
+    inputSchema: {
       period: z
         .union([
           z.enum(["today", "week", "month", "year"]),
@@ -33,6 +35,8 @@ Examples:
       summary_only: z.boolean().optional().describe("If true, return only session summaries without exercise/set details"),
       include_sets: z.boolean().optional().describe("If true, include individual set details per exercise. Defaults to true"),
     },
+    annotations: { readOnlyHint: true },
+  },
     async ({ period, exercise, program_day, tags: rawTags, session_id, limit: rawLimit, offset: rawOffset, summary_only, include_sets }) => {
       const tags = parseJsonArrayParam<string>(rawTags);
       const userId = getUserId();

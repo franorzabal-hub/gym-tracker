@@ -7,9 +7,10 @@ import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js
 import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerExercisesTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "manage_exercises",
-    `${APP_CONTEXT}Use this when you need to manage the exercise library. Actions:
+    {
+      description: `${APP_CONTEXT}Use this when you need to manage the exercise library. Actions:
 - "list": List all exercises, optionally filtered by muscle_group. Supports pagination with limit/offset. Returns { exercises, total }.
 - "search": Search exercises by name/alias (fuzzy)
 - "add": Add a new exercise with optional muscle_group, equipment, aliases, rep_type, exercise_type
@@ -25,31 +26,33 @@ export function registerExercisesTool(server: McpServer) {
 
 rep_type: "reps" (default), "seconds", "meters", "calories" - how the exercise is measured
 exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category of exercise (PRs only tracked for strength)`,
-    {
-      action: z.enum(["list", "add", "search", "update", "delete", "add_bulk", "delete_bulk", "update_bulk", "list_aliases", "add_alias", "remove_alias", "merge"]),
-      name: z.string().optional(),
-      muscle_group: z.string().optional(),
-      equipment: z.string().optional(),
-      aliases: z.array(z.string()).optional(),
-      rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
-      exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
-      names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of exercise names for delete_bulk"),
-      exercises: z.union([
-        z.array(z.object({
-          name: z.string(),
-          muscle_group: z.string().optional(),
-          equipment: z.string().optional(),
-          aliases: z.array(z.string()).optional(),
-          rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
-          exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
-        })),
-        z.string(),
-      ]).optional(),
-      limit: z.number().int().optional().describe("Max exercises to return. Defaults to 100"),
-      offset: z.number().int().optional().describe("Skip first N exercises for pagination. Defaults to 0"),
-      alias: z.string().optional().describe("Alias name for add_alias/remove_alias actions"),
-      source: z.string().optional().describe("Source exercise name for merge action"),
-      target: z.string().optional().describe("Target exercise name for merge action"),
+      inputSchema: {
+        action: z.enum(["list", "add", "search", "update", "delete", "add_bulk", "delete_bulk", "update_bulk", "list_aliases", "add_alias", "remove_alias", "merge"]),
+        name: z.string().optional(),
+        muscle_group: z.string().optional(),
+        equipment: z.string().optional(),
+        aliases: z.array(z.string()).optional(),
+        rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
+        exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
+        names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of exercise names for delete_bulk"),
+        exercises: z.union([
+          z.array(z.object({
+            name: z.string(),
+            muscle_group: z.string().optional(),
+            equipment: z.string().optional(),
+            aliases: z.array(z.string()).optional(),
+            rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
+            exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
+          })),
+          z.string(),
+        ]).optional(),
+        limit: z.number().int().optional().describe("Max exercises to return. Defaults to 100"),
+        offset: z.number().int().optional().describe("Skip first N exercises for pagination. Defaults to 0"),
+        alias: z.string().optional().describe("Alias name for add_alias/remove_alias actions"),
+        source: z.string().optional().describe("Source exercise name for merge action"),
+        target: z.string().optional().describe("Target exercise name for merge action"),
+      },
+      annotations: { destructiveHint: true },
     },
     async ({ action, name, muscle_group, equipment, aliases, rep_type, exercise_type, names: rawNames, exercises, limit, offset, alias, source, target }) => {
       const userId = getUserId();

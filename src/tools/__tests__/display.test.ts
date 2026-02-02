@@ -51,7 +51,7 @@ describe("show_profile display tool", () => {
       expect.objectContaining({
         title: "Show Profile",
         annotations: { readOnlyHint: true },
-        _meta: { ui: { resourceUri: "ui://gym-tracker/profile.html" } },
+        _meta: expect.objectContaining({ ui: { resourceUri: "ui://gym-tracker/profile.html" } }),
       }),
       expect.any(Function)
     );
@@ -92,8 +92,8 @@ describe("show_programs display tool", () => {
       "show_programs",
       expect.objectContaining({
         title: "My Programs",
-        annotations: {},
-        _meta: { ui: { resourceUri: "ui://gym-tracker/programs-list.html" } },
+        annotations: { readOnlyHint: false },
+        _meta: expect.objectContaining({ ui: { resourceUri: "ui://gym-tracker/programs-list.html" } }),
       }),
       expect.any(Function)
     );
@@ -151,7 +151,7 @@ describe("show_available_programs display tool", () => {
       expect.objectContaining({
         title: "Available Programs",
         annotations: { readOnlyHint: true },
-        _meta: { ui: { resourceUri: "ui://gym-tracker/available-programs.html" } },
+        _meta: expect.objectContaining({ ui: { resourceUri: "ui://gym-tracker/available-programs.html" } }),
       }),
       expect.any(Function)
     );
@@ -246,8 +246,8 @@ describe("show_program display tool", () => {
       "show_program",
       expect.objectContaining({
         title: "Show Program",
-        annotations: {},
-        _meta: { ui: { resourceUri: "ui://gym-tracker/programs.html" } },
+        annotations: { readOnlyHint: false },
+        _meta: expect.objectContaining({ ui: { resourceUri: "ui://gym-tracker/programs.html" } }),
       }),
       expect.any(Function)
     );

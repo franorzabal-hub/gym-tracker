@@ -31,9 +31,10 @@ const daySchema = z.object({
 });
 
 export function registerProgramTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "manage_program",
-    `${APP_CONTEXT}Manage workout programs (routines). A program is a weekly routine like PPL, Upper/Lower, Full Body.
+    {
+      description: `${APP_CONTEXT}Manage workout programs (routines). A program is a weekly routine like PPL, Upper/Lower, Full Body.
 Each program has versioned days with exercises. When updated, a new version is created preserving history.
 
 Actions:
@@ -62,18 +63,20 @@ For "clone", pass source_id (the id of the program to clone, typically a global 
 For "update" with days, also pass change_description explaining what changed.
 For "update" metadata only, pass new_name and/or description (no days needed).
 For "activate", pass the program name.`,
-    {
-      action: z.enum(["list", "get", "create", "clone", "update", "patch", "activate", "delete", "delete_bulk", "history"]),
-      name: z.string().optional(),
-      program_id: z.number().int().optional().describe("Program ID (for patch action). Identifies which program to patch."),
-      source_id: z.number().int().optional().describe("Program ID to clone (for clone action). Typically a global template program ID from show_programs."),
-      new_name: z.string().optional().describe("New name for the program (update metadata only)"),
-      description: z.string().optional(),
-      days: z.union([z.array(daySchema), z.string()]).optional(),
-      change_description: z.string().optional(),
-      hard_delete: z.boolean().optional(),
-      names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of program names for delete_bulk"),
-      include_exercises: z.boolean().optional().describe("If true, include exercise details for each day. Defaults to true"),
+      inputSchema: {
+        action: z.enum(["list", "get", "create", "clone", "update", "patch", "activate", "delete", "delete_bulk", "history"]),
+        name: z.string().optional(),
+        program_id: z.number().int().optional().describe("Program ID (for patch action). Identifies which program to patch."),
+        source_id: z.number().int().optional().describe("Program ID to clone (for clone action). Typically a global template program ID from show_programs."),
+        new_name: z.string().optional().describe("New name for the program (update metadata only)"),
+        description: z.string().optional(),
+        days: z.union([z.array(daySchema), z.string()]).optional(),
+        change_description: z.string().optional(),
+        hard_delete: z.boolean().optional(),
+        names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of program names for delete_bulk"),
+        include_exercises: z.boolean().optional().describe("If true, include exercise details for each day. Defaults to true"),
+      },
+      annotations: {},
     },
     async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames, include_exercises, source_id, program_id }) => {
       try {

@@ -10,6 +10,9 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = path.join(__dirname, "../../web/dist");
 
+/** MIME type for OpenAI/ChatGPT widget resources */
+const OPENAI_MIME = "text/html+skybridge";
+
 /** Widget definitions mapping resource URIs to built HTML files */
 const WIDGETS: Array<{ name: string; uri: string; file: string; description: string }> = [
   { name: "session-widget", uri: "ui://gym-tracker/session.html", file: "session.html", description: "Active session dashboard with exercises and sets" },
@@ -28,13 +31,34 @@ const WIDGETS: Array<{ name: string; uri: string; file: string; description: str
   { name: "workouts-widget", uri: "ui://gym-tracker/workouts.html", file: "workouts.html", description: "Workout history list with session cards" },
 ];
 
+/** Read widget HTML from dist, returning a fallback if not built */
+function readWidgetFile(filePath: string) {
+  return async () => {
+    try {
+      return await fs.readFile(filePath, "utf-8");
+    } catch (err: any) {
+      if (err?.code === "ENOENT") {
+        console.error(`[Widget] File not found: ${filePath}. Run: cd web && npm run build`);
+        return `<!DOCTYPE html><html><body><p>Widget not built. Run: cd web && npm run build</p></body></html>`;
+      }
+      throw err;
+    }
+  };
+}
+
 /**
  * Register all widget resources on the MCP server.
- * Each widget is served as a ui:// resource with the MCP Apps mime type.
- * Hosts that don't support MCP Apps will ignore these resources.
+ * Each widget is registered twice:
+ *   1. MCP Apps (Claude Desktop / claude.ai) — `text/html;profile=mcp-app`
+ *   2. OpenAI (ChatGPT) — `text/html+skybridge`
+ * Hosts only request the URI their protocol specifies; the other is ignored.
  */
 export function registerWidgetResources(server: McpServer) {
   for (const widget of WIDGETS) {
+    const filePath = path.join(DIST_DIR, widget.file);
+    const getHtml = readWidgetFile(filePath);
+
+    // MCP Apps registration (existing)
     registerAppResource(
       server,
       widget.name,
@@ -44,23 +68,32 @@ export function registerWidgetResources(server: McpServer) {
         description: widget.description,
       },
       async () => {
-        let html: string;
-        const filePath = path.join(DIST_DIR, widget.file);
-        try {
-          html = await fs.readFile(filePath, "utf-8");
-        } catch (err: any) {
-          if (err?.code === "ENOENT") {
-            console.error(`[Widget] File not found: ${filePath}. Run: cd web && npm run build`);
-            html = `<!DOCTYPE html><html><body><p>Widget not built. Run: cd web && npm run build</p></body></html>`;
-          } else {
-            throw err;
-          }
-        }
+        const html = await getHtml();
         return {
           contents: [
             {
               uri: widget.uri,
               mimeType: RESOURCE_MIME_TYPE,
+              text: html,
+            },
+          ],
+        };
+      }
+    );
+
+    // OpenAI registration — same HTML, different MIME type and URI namespace
+    const oaiUri = widget.uri.replace("ui://gym-tracker/", "ui://gym-tracker-oai/");
+    server.resource(
+      `${widget.name}-oai`,
+      oaiUri,
+      { mimeType: OPENAI_MIME, description: widget.description },
+      async () => {
+        const html = await getHtml();
+        return {
+          contents: [
+            {
+              uri: oaiUri,
+              mimeType: OPENAI_MIME,
               text: html,
             },
           ],

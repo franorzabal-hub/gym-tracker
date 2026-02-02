@@ -6,14 +6,16 @@ import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerTemplatesTool(server: McpServer) {
-  server.tool("manage_templates", `${APP_CONTEXT}Manage session templates — save a workout as a reusable template, list templates, or start a new session from one.
+  server.registerTool("manage_templates", {
+    description: `${APP_CONTEXT}Manage session templates — save a workout as a reusable template, list templates, or start a new session from one.
 
 Actions:
 - "save": Save a completed session as a template. Pass session_id (or "last" for the most recent ended session) and a name.
 - "list": List all saved templates with their exercises.
 - "start": Start a new session pre-populated from a template. Pass template name. Exercises are logged as session_exercises (no sets yet — use log_workout to fill them in).
 - "delete": Delete a template by name.
-- "delete_bulk": Delete multiple templates at once. Pass "names" array. Returns { deleted, not_found }.`, {
+- "delete_bulk": Delete multiple templates at once. Pass "names" array. Returns { deleted, not_found }.`,
+    inputSchema: {
         action: z.enum(["save", "list", "start", "delete", "delete_bulk"]),
         name: z.string().optional(),
         session_id: z.union([z.number().int(), z.literal("last")]).optional(),
@@ -22,6 +24,8 @@ Actions:
         limit: z.number().int().optional().describe("Max templates to return. Defaults to 50"),
         offset: z.number().int().optional().describe("Skip first N templates for pagination. Defaults to 0"),
       },
+    annotations: { destructiveHint: true },
+  },
     async ({ action, name, session_id, date, names: rawNames, limit, offset }) => {
       const userId = getUserId();
 

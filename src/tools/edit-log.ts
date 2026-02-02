@@ -8,7 +8,8 @@ import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerEditLogTool(server: McpServer) {
-  server.tool("edit_log", `${APP_CONTEXT}Edit or delete previously logged sets, or delete entire sessions.
+  server.registerTool("edit_log", {
+    description: `${APP_CONTEXT}Edit or delete previously logged sets, or delete entire sessions.
 
 Examples:
 - "No, eran 80kg" → update weight on the last logged exercise
@@ -30,7 +31,8 @@ Parameters:
 - bulk: array of { exercise, action?, set_numbers?, set_ids?, set_type_filter?, updates? } for multi-exercise edits
 - delete_session: session ID to soft-delete (sets deleted_at timestamp, can be restored)
 - restore_session: session ID to restore (clears deleted_at timestamp)
-- delete_sessions: array of session IDs for bulk soft-delete. Returns { deleted, not_found }.`, {
+- delete_sessions: array of session IDs for bulk soft-delete. Returns { deleted, not_found }.`,
+    inputSchema: {
       exercise: z.string().optional(),
       session: z
         .union([z.enum(["today", "last"]), z.string()])
@@ -67,6 +69,8 @@ Parameters:
       restore_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to restore from soft-delete. Clears the deleted_at timestamp."),
       delete_sessions: z.union([z.array(z.number().int()), z.string()]).optional().describe("Array of session IDs for bulk soft-delete."),
     },
+    annotations: { destructiveHint: true },
+  },
     async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session, restore_session, delete_sessions: rawDeleteSessions }) => {
       const userId = getUserId();
 

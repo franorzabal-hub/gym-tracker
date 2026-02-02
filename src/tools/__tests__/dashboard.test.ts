@@ -53,7 +53,7 @@ describe("show_dashboard tool", () => {
       expect.objectContaining({
         title: "Training Dashboard",
         annotations: { readOnlyHint: true },
-        _meta: { ui: { resourceUri: "ui://gym-tracker/dashboard.html" } },
+        _meta: expect.objectContaining({ ui: { resourceUri: "ui://gym-tracker/dashboard.html" } }),
       }),
       expect.any(Function),
     );

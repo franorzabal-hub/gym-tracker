@@ -21,7 +21,8 @@ const overrideSchema = z.object({
 });
 
 export function registerLogWorkoutTool(server: McpServer) {
-  server.tool("log_workout", `${APP_CONTEXT}Unified workout tool — start a session, log exercises, or log a full routine day. Combines start_session + log_exercise + log_routine into one.
+  server.registerTool("log_workout", {
+    description: `${APP_CONTEXT}Unified workout tool — start a session, log exercises, or log a full routine day. Combines start_session + log_exercise + log_routine into one.
 
 Modes:
 1. Session only: log_workout({}) — creates session, infers program day from weekday, returns plan + last workout.
@@ -56,43 +57,50 @@ Parameters:
 - exercise_type: "strength", "mobility", "cardio", or "warmup"
 - exercises: array of exercise entries for bulk logging
 - include_last_workout: include last workout comparison (default true for session-only mode)
-- minimal_response: return only success status and PRs`, {
-    // Session control
-    program_day: z.string().optional(),
-    date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session"),
-    tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to label this session"),
-    notes: z.string().optional().describe("Session-level notes"),
+- minimal_response: return only success status and PRs`,
+    inputSchema: {
+      // Session control
+      program_day: z.string().optional(),
+      date: z.string().optional().describe("ISO date (e.g. '2025-01-28') to backdate the session"),
+      tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to label this session"),
+      notes: z.string().optional().describe("Session-level notes"),
 
-    // Program day overrides
-    overrides: z.union([
-      z.array(overrideSchema),
-      z.string(),
-    ]).optional(),
-    skip: z.union([z.array(z.string()), z.string()]).optional(),
+      // Program day overrides
+      overrides: z.union([
+        z.array(overrideSchema),
+        z.string(),
+      ]).optional(),
+      skip: z.union([z.array(z.string()), z.string()]).optional(),
 
-    // Single exercise mode
-    exercise: z.string().optional(),
-    sets: z.number().int().min(1).default(1),
-    reps: z.union([z.number().int().min(1), z.array(z.number().int().min(1))]).optional(),
-    weight: z.number().optional(),
-    rpe: z.number().min(1).max(10).optional(),
-    set_type: z.enum(["warmup", "working", "drop", "failure"]).default("working"),
-    exercise_notes: z.string().optional().describe("Notes for the exercise (avoids collision with session notes)"),
-    rest_seconds: z.number().int().optional(),
-    superset_group: z.number().int().optional(),
-    muscle_group: z.string().optional(),
-    equipment: z.string().optional(),
-    set_notes: z.union([z.string(), z.array(z.string())]).optional(),
-    drop_percent: z.number().min(1).max(50).optional(),
-    rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
-    exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
+      // Single exercise mode
+      exercise: z.string().optional(),
+      sets: z.number().int().min(1).default(1),
+      reps: z.union([z.number().int().min(1), z.array(z.number().int().min(1))]).optional(),
+      weight: z.number().optional(),
+      rpe: z.number().min(1).max(10).optional(),
+      set_type: z.enum(["warmup", "working", "drop", "failure"]).default("working"),
+      exercise_notes: z.string().optional().describe("Notes for the exercise (avoids collision with session notes)"),
+      rest_seconds: z.number().int().optional(),
+      superset_group: z.number().int().optional(),
+      muscle_group: z.string().optional(),
+      equipment: z.string().optional(),
+      set_notes: z.union([z.string(), z.array(z.string())]).optional(),
+      drop_percent: z.number().min(1).max(50).optional(),
+      rep_type: z.enum(["reps", "seconds", "meters", "calories"]).optional(),
+      exercise_type: z.enum(["strength", "mobility", "cardio", "warmup"]).optional(),
 
-    // Bulk mode
-    exercises: z.union([z.array(exerciseEntrySchema), z.string()]).optional(),
+      // Bulk mode
+      exercises: z.union([z.array(exerciseEntrySchema), z.string()]).optional(),
 
-    // Response control
-    include_last_workout: z.boolean().optional(),
-    minimal_response: z.boolean().optional().describe("If true, return only success status and new PRs"),
+      // Response control
+      include_last_workout: z.boolean().optional(),
+      minimal_response: z.boolean().optional().describe("If true, return only success status and new PRs"),
+    },
+    annotations: {},
+    _meta: {
+      "openai/toolInvocation/invoking": "Logging workout...",
+      "openai/toolInvocation/invoked": "Workout logged",
+    },
   }, async (params) => {
     const userId = getUserId();
     const tags = parseJsonArrayParam<string>(params.tags);

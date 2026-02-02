@@ -25,7 +25,11 @@ Use the "period" param to control the time range (default: 3months).`,
       period: z.enum(["month", "3months", "year", "all"]).optional().describe("Time range for data. Default: 3months."),
     },
     annotations: { readOnlyHint: true },
-    _meta: { ui: { resourceUri: "ui://gym-tracker/dashboard.html" } },
+    _meta: {
+      ui: { resourceUri: "ui://gym-tracker/dashboard.html" },
+      "openai/toolInvocation/invoking": "Loading dashboard...",
+      "openai/toolInvocation/invoked": "Dashboard loaded",
+    },
   }, async ({ metric, period }: { metric?: Metric; period?: string }) => {
     const userId = getUserId();
     const p = period || "3months";

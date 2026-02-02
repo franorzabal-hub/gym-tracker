@@ -9,7 +9,8 @@ import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerStatsTool(server: McpServer) {
-  server.tool("get_stats", `${APP_CONTEXT}Get detailed statistics for one or more exercises. Shows personal records, progression over time, volume trends, and training frequency.
+  server.registerTool("get_stats", {
+    description: `${APP_CONTEXT}Get detailed statistics for one or more exercises. Shows personal records, progression over time, volume trends, and training frequency.
 
 Single mode: pass "exercise" (string) for one exercise.
 Multi mode: pass "exercises" (string[]) for multiple exercises at once. Returns an array of stats.
@@ -18,7 +19,8 @@ Examples:
 - "¿cómo voy en sentadilla?" → exercise: "sentadilla"
 - "stats de press banca del último mes" → exercise: "press banca", period: "month"
 - "¿cuánto levanto en peso muerto?" → exercise: "peso muerto"
-- "stats de press banca, sentadilla y peso muerto" → exercises: ["press banca", "sentadilla", "peso muerto"]`, {
+- "stats de press banca, sentadilla y peso muerto" → exercises: ["press banca", "sentadilla", "peso muerto"]`,
+    inputSchema: {
       exercise: z.string().optional(),
       exercises: z.union([z.array(z.string()), z.string()]).optional().describe("Array of exercise names for multi-exercise stats"),
       period: z
@@ -29,6 +31,8 @@ Examples:
       max_data_points: z.number().int().optional().describe("Max progression/volume data points to return. Defaults to 50"),
       by_muscle_group: z.boolean().optional().describe("If true, return volume breakdown by muscle group"),
     },
+    annotations: { readOnlyHint: true },
+  },
     async ({ exercise, exercises: rawExercises, period, summary_only, max_data_points, by_muscle_group }) => {
       const userId = getUserId();
       const effectiveMaxDataPoints = max_data_points ?? 50;

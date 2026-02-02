@@ -6,16 +6,23 @@ import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerSessionTools(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "end_session",
-    `${APP_CONTEXT}Use this when you need to end the current active workout session. Returns a summary with duration, exercises count, total sets, and total volume.
-Optionally add or update tags on the session.`,
     {
-      notes: z.string().optional(),
-      force: z.boolean().optional().default(false),
-      tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to set on this session (replaces existing tags)"),
-      summary_only: z.boolean().optional().describe("If true, return only summary totals without per-exercise set details"),
-      include_comparison: z.boolean().optional().describe("If true, include comparison with previous session. Defaults to true"),
+      description: `${APP_CONTEXT}Use this when you need to end the current active workout session. Returns a summary with duration, exercises count, total sets, and total volume.
+Optionally add or update tags on the session.`,
+      inputSchema: {
+        notes: z.string().optional(),
+        force: z.boolean().optional().default(false),
+        tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to set on this session (replaces existing tags)"),
+        summary_only: z.boolean().optional().describe("If true, return only summary totals without per-exercise set details"),
+        include_comparison: z.boolean().optional().describe("If true, include comparison with previous session. Defaults to true"),
+      },
+      annotations: {},
+      _meta: {
+        "openai/toolInvocation/invoking": "Ending session...",
+        "openai/toolInvocation/invoked": "Session ended",
+      },
     },
     async ({ notes, force, tags: rawTags, summary_only, include_comparison }) => {
       const tags = parseJsonArrayParam<string>(rawTags);
@@ -222,10 +229,13 @@ Optionally add or update tags on the session.`,
     }
   );
 
-  server.tool(
+  server.registerTool(
     "get_active_session",
-    `${APP_CONTEXT}Use this when you need to check if there is an active (open) workout session. Returns session details with exercises logged so far, or indicates no active session.`,
-    {},
+    {
+      description: `${APP_CONTEXT}Use this when you need to check if there is an active (open) workout session. Returns session details with exercises logged so far, or indicates no active session.`,
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
     async () => {
       const userId = getUserId();
 

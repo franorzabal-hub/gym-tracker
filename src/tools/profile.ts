@@ -5,9 +5,10 @@ import { getUserId } from "../context/user-context.js";
 import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerProfileTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "manage_profile",
-    `${APP_CONTEXT}Read or update user profile data. This is a data-only tool — no visual UI.
+    {
+      description: `${APP_CONTEXT}Read or update user profile data. This is a data-only tool — no visual UI.
 Use action "get" to retrieve the current profile (call this at conversation start for context).
 Use action "update" to save user info. The data field merges with existing data.
 When the user wants to SEE their profile visually, call show_profile instead.
@@ -29,9 +30,11 @@ Standard fields (always use these exact keys):
 
 Example: user says "peso 82kg" → update with { "weight_kg": 82 }
 Example: user says "entreno lunes miercoles y viernes" → update with { "training_days_per_week": 3, "available_days": ["monday", "wednesday", "friday"] }`,
-    {
-      action: z.enum(["get", "update"]),
-      data: z.record(z.any()).optional(),
+      inputSchema: {
+        action: z.enum(["get", "update"]),
+        data: z.record(z.any()).optional(),
+      },
+      annotations: {},
     },
     async ({ action, data }) => {
       const userId = getUserId();

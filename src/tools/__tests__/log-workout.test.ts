@@ -59,7 +59,7 @@ describe("log_workout tool", () => {
     mockInferTodayDay.mockReset();
 
     const server = {
-      tool: vi.fn((_name: string, _desc: string, _schema: any, handler: Function) => {
+      registerTool: vi.fn((_name: string, _config: any, handler: Function) => {
         toolHandler = handler;
       }),
     } as unknown as McpServer;

@@ -23,7 +23,7 @@ describe("session tools", () => {
     mockQuery.mockReset();
 
     const server = {
-      tool: vi.fn((_name: string, _desc: any, _schema: any, handler: Function) => {
+      registerTool: vi.fn((_name: string, _config: any, handler: Function) => {
         if (_name === "end_session") endHandler = handler;
         if (_name === "get_active_session") getActiveHandler = handler;
       }),

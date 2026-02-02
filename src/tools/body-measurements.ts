@@ -6,9 +6,10 @@ import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerBodyMeasurementsTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "manage_body_measurements",
-    `${APP_CONTEXT}Track body measurements over time. Use action "log" to record a measurement, "history" to see trends for a specific type, "latest" to get the most recent value of each type.
+    {
+      description: `${APP_CONTEXT}Track body measurements over time. Use action "log" to record a measurement, "history" to see trends for a specific type, "latest" to get the most recent value of each type.
 
 Common types: weight_kg, body_fat_pct, chest_cm, waist_cm, arm_cm, thigh_cm — or any custom type.
 
@@ -16,14 +17,16 @@ Examples:
 - "peso 82kg" → log, measurement_type: "weight_kg", value: 82
 - "historial de peso" → history, measurement_type: "weight_kg"
 - "mis medidas actuales" → latest`,
-    {
-      action: z.enum(["log", "history", "latest"]),
-      measurement_type: z.string().optional().describe("Type: weight_kg, body_fat_pct, chest_cm, waist_cm, arm_cm, thigh_cm, or any custom type"),
-      value: z.number().optional().describe("Measurement value for log action"),
-      measured_at: z.string().optional().describe("ISO date for measurement. Defaults to now"),
-      notes: z.string().optional().describe("Optional notes for log action"),
-      period: z.enum(["month", "3months", "6months", "year", "all"]).optional().describe("Time period for history action. Defaults to 3months"),
-      limit: z.number().int().optional().describe("Max data points for history. Defaults to 50"),
+      inputSchema: {
+        action: z.enum(["log", "history", "latest"]),
+        measurement_type: z.string().optional().describe("Type: weight_kg, body_fat_pct, chest_cm, waist_cm, arm_cm, thigh_cm, or any custom type"),
+        value: z.number().optional().describe("Measurement value for log action"),
+        measured_at: z.string().optional().describe("ISO date for measurement. Defaults to now"),
+        notes: z.string().optional().describe("Optional notes for log action"),
+        period: z.enum(["month", "3months", "6months", "year", "all"]).optional().describe("Time period for history action. Defaults to 3months"),
+        limit: z.number().int().optional().describe("Max data points for history. Defaults to 50"),
+      },
+      annotations: {},
     },
     async ({ action, measurement_type, value, measured_at, notes, period, limit }) => {
       const userId = getUserId();

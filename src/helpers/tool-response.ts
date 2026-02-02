@@ -25,17 +25,24 @@ export function toolResponse(data: Record<string, unknown>, isError?: boolean) {
  * Build widget tool responses: brief instruction for LLM, full data for widget.
  * - content: short message telling the LLM what was displayed (DO NOT repeat in response)
  * - structuredContent: full data the widget renders visually
+ * - _meta: optional metadata (only visible to widget in OpenAI, ignored by MCP Apps)
  */
-export function widgetResponse(llmNote: string, data: Record<string, unknown>) {
+export function widgetResponse(
+  llmNote: string,
+  data: Record<string, unknown>,
+  meta?: Record<string, unknown>,
+) {
   return {
     content: [{ type: "text" as const, text: llmNote }],
     structuredContent: data,
+    ...(meta ? { _meta: meta } : {}),
   };
 }
 
 /**
- * Register an MCP tool that automatically injects `_meta["ui/resourceUri"]`
- * into every tool result so hosts know which widget to render.
+ * Register an MCP tool with both MCP Apps and OpenAI metadata.
+ * Injects `openai/outputTemplate` and `openai/widgetAccessible` into _meta
+ * based on the MCP Apps `ui.resourceUri` when present.
  */
 export function registerAppToolWithMeta(
   server: McpServer,
@@ -43,5 +50,19 @@ export function registerAppToolWithMeta(
   config: any,
   handler: (...args: any[]) => Promise<any>,
 ) {
-  return (registerAppTool as any)(server, name, config, handler);
+  const mcpAppsUri: string | undefined = config._meta?.ui?.resourceUri;
+
+  const enrichedConfig = {
+    ...config,
+    _meta: {
+      ...config._meta,
+      // Add OpenAI metadata if tool has a widget
+      ...(mcpAppsUri ? {
+        "openai/outputTemplate": mcpAppsUri.replace("ui://gym-tracker/", "ui://gym-tracker-oai/"),
+        "openai/widgetAccessible": true,
+      } : {}),
+    },
+  };
+
+  return (registerAppTool as any)(server, name, enrichedConfig, handler);
 }

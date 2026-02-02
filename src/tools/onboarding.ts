@@ -4,9 +4,10 @@ import { getUserId } from "../context/user-context.js";
 import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerOnboardingTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "initialize_gym_session",
-    `${APP_CONTEXT}MANDATORY: Call this tool FIRST before calling any other gym-tracker tool. This initializes the user context and returns critical routing information.
+    {
+      description: `${APP_CONTEXT}MANDATORY: Call this tool FIRST before calling any other gym-tracker tool. This initializes the user context and returns critical routing information.
 
 Returns the user's setup state: profile, active program, training history, and onboarding status. Without calling this first, other tools may behave incorrectly because you won't know the user's context.
 
@@ -14,7 +15,13 @@ CRITICAL ROUTING — you MUST follow the "required_next_tool" field in the respo
 - If required_next_tool is "show_profile": new user — call show_profile IMMEDIATELY to let them set up their profile. After profile setup, call show_programs to help them pick a program.
 - If required_next_tool is "show_programs": profile complete but no program — call show_programs IMMEDIATELY to let them pick or create a program.
 - If required_next_tool is null: respond normally using the suggestion field.`,
-    {},
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+      _meta: {
+        "openai/toolInvocation/invoking": "Initializing session...",
+        "openai/toolInvocation/invoked": "Session initialized",
+      },
+    },
     async () => {
       const userId = getUserId();
 

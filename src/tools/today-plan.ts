@@ -6,12 +6,19 @@ import { getUserId } from "../context/user-context.js";
 import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerTodayPlanTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "get_today_plan",
-    `${APP_CONTEXT}Get today's planned workout without starting a session. Returns the program day, exercises with targets, and last workout comparison.
-Uses the active program + user's timezone to infer which day it is. Returns rest_day if no day is mapped to today.`,
     {
-      include_last_workout: z.boolean().optional().describe("If true, include last workout data. Defaults to true"),
+      description: `${APP_CONTEXT}Get today's planned workout without starting a session. Returns the program day, exercises with targets, and last workout comparison.
+Uses the active program + user's timezone to infer which day it is. Returns rest_day if no day is mapped to today.`,
+      inputSchema: {
+        include_last_workout: z.boolean().optional().describe("If true, include last workout data. Defaults to true"),
+      },
+      annotations: { readOnlyHint: true },
+      _meta: {
+        "openai/toolInvocation/invoking": "Loading today's plan...",
+        "openai/toolInvocation/invoked": "Plan loaded",
+      },
     },
     async ({ include_last_workout }) => {
       const userId = getUserId();

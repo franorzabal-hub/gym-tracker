@@ -23,18 +23,21 @@ function toCsv(headers: string[], rows: Record<string, any>[]): string {
 }
 
 export function registerExportTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "export_data",
-    `${APP_CONTEXT}Export user data as JSON or CSV. Use scope to choose what to export: all, sessions, exercises, programs, measurements, prs.
+    {
+      description: `${APP_CONTEXT}Export user data as JSON or CSV. Use scope to choose what to export: all, sessions, exercises, programs, measurements, prs.
 
 Examples:
 - "exportar mis datos" → json, scope: "all"
 - "csv de mis sesiones del último mes" → csv, scope: "sessions", period: "month"
 - "descargar mis ejercicios" → json, scope: "exercises"`,
-    {
-      action: z.enum(["json", "csv"]),
-      scope: z.enum(["all", "sessions", "exercises", "programs", "measurements", "prs"]).optional().describe("What data to export. Defaults to all"),
-      period: z.enum(["month", "3months", "year", "all"]).optional().describe("Time period filter. Defaults to all"),
+      inputSchema: {
+        action: z.enum(["json", "csv"]),
+        scope: z.enum(["all", "sessions", "exercises", "programs", "measurements", "prs"]).optional().describe("What data to export. Defaults to all"),
+        period: z.enum(["month", "3months", "year", "all"]).optional().describe("Time period filter. Defaults to all"),
+      },
+      annotations: { readOnlyHint: true },
     },
     async ({ action, scope: rawScope, period: rawPeriod }) => {
       const userId = getUserId();
