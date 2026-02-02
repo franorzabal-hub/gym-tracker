@@ -13,7 +13,11 @@ export function registerDisplayTools(server: McpServer) {
     description: `${APP_CONTEXT}Display the user's profile as a visual card with inline editing. Used both for viewing existing profiles and for new user setup — the widget handles empty/partial profiles gracefully with placeholder fields. The widget already shows all profile fields visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps. For reading/updating profile data programmatically, use manage_profile instead.`,
     inputSchema: {},
     annotations: { readOnlyHint: true },
-    _meta: { ui: { resourceUri: "ui://gym-tracker/profile.html" } },
+    _meta: {
+      ui: { resourceUri: "ui://gym-tracker/profile.html" },
+      "openai/toolInvocation/invoking": "Loading profile...",
+      "openai/toolInvocation/invoked": "Profile loaded",
+    },
   }, async () => {
     const userId = getUserId();
     const { rows } = await pool.query(
@@ -33,8 +37,12 @@ export function registerDisplayTools(server: McpServer) {
 The widget already shows all information visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps.
 Call this when the user wants to see, edit, or manage their programs. For browsing global templates, use show_available_programs instead.`,
     inputSchema: {},
-    annotations: {},
-    _meta: { ui: { resourceUri: "ui://gym-tracker/programs-list.html" } },
+    annotations: { readOnlyHint: false },
+    _meta: {
+      ui: { resourceUri: "ui://gym-tracker/programs-list.html" },
+      "openai/toolInvocation/invoking": "Loading programs...",
+      "openai/toolInvocation/invoked": "Programs loaded",
+    },
   }, async () => {
     const userId = getUserId();
 
@@ -92,7 +100,11 @@ After a user clones a program from the widget, follow up with show_program so th
         .describe("Program names to show from global templates (LLM filters based on user context). If omitted, returns all global programs."),
     },
     annotations: { readOnlyHint: true },
-    _meta: { ui: { resourceUri: "ui://gym-tracker/available-programs.html" } },
+    _meta: {
+      ui: { resourceUri: "ui://gym-tracker/available-programs.html" },
+      "openai/toolInvocation/invoking": "Loading programs...",
+      "openai/toolInvocation/invoked": "Programs loaded",
+    },
   }, async ({ filter }: { filter?: string[] }) => {
     const userId = getUserId();
 
@@ -171,8 +183,12 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday"). The wi
       name: z.string().optional().describe("Program name. Omit for active program."),
       day: z.string().optional().describe("Scroll to a specific day. Accepts day label (e.g. 'Dia 1'), weekday name (e.g. 'lunes', 'monday'), or weekday number (1=Mon..7=Sun)."),
     },
-    annotations: {},
-    _meta: { ui: { resourceUri: "ui://gym-tracker/programs.html" } },
+    annotations: { readOnlyHint: false },
+    _meta: {
+      ui: { resourceUri: "ui://gym-tracker/programs.html" },
+      "openai/toolInvocation/invoking": "Loading program...",
+      "openai/toolInvocation/invoked": "Program loaded",
+    },
   }, async ({ name, day }: { name?: string; day?: string }) => {
     const userId = getUserId();
 
@@ -259,7 +275,11 @@ Use this when the user wants to see past workouts, training history, or review t
       offset: z.number().int().optional().describe("Skip first N sessions for pagination. Defaults to 0"),
     },
     annotations: { readOnlyHint: true },
-    _meta: { ui: { resourceUri: "ui://gym-tracker/workouts.html" } },
+    _meta: {
+      ui: { resourceUri: "ui://gym-tracker/workouts.html" },
+      "openai/toolInvocation/invoking": "Loading workouts...",
+      "openai/toolInvocation/invoked": "Workouts loaded",
+    },
   }, async ({ period, exercise, program_day, tags: rawTags, limit: rawLimit, offset: rawOffset }: {
     period?: "today" | "week" | "month" | "year" | number;
     exercise?: string;
@@ -328,10 +348,13 @@ Use this when the user wants to see past workouts, training history, or review t
         pd.day_label as program_day, s.tags,
         COUNT(DISTINCT se.id) as exercises_count,
         COALESCE(SUM((SELECT COUNT(*) FROM sets st WHERE st.session_exercise_id = se.id)), 0) as total_sets,
-        COALESCE(SUM((SELECT COALESCE(SUM(st.weight * st.reps), 0) FROM sets st WHERE st.session_exercise_id = se.id AND st.set_type != 'warmup' AND st.weight IS NOT NULL)), 0) as total_volume_kg
+        COALESCE(SUM((SELECT COALESCE(SUM(st.weight * st.reps), 0) FROM sets st WHERE st.session_exercise_id = se.id AND st.set_type != 'warmup' AND st.weight IS NOT NULL)), 0) as total_volume_kg,
+        ARRAY_AGG(DISTINCT e.muscle_group) FILTER (WHERE e.muscle_group IS NOT NULL) as muscle_groups,
+        ARRAY_AGG(DISTINCT e.name) FILTER (WHERE e.name IS NOT NULL) as exercise_names
       FROM sessions s
       LEFT JOIN program_days pd ON pd.id = s.program_day_id
       LEFT JOIN session_exercises se ON se.session_id = s.id
+      LEFT JOIN exercises e ON e.id = se.exercise_id
       WHERE s.user_id = $1 AND s.deleted_at IS NULL AND ${dateFilter}${extraWhere}
       GROUP BY s.id, pd.day_label, s.tags
       ORDER BY s.started_at DESC
@@ -347,6 +370,8 @@ Use this when the user wants to see past workouts, training history, or review t
       exercises_count: Number(s.exercises_count),
       total_sets: Number(s.total_sets),
       total_volume_kg: Math.round(Number(s.total_volume_kg)),
+      muscle_groups: s.muscle_groups || [],
+      exercise_names: s.exercise_names || [],
     }));
 
     const summary = {

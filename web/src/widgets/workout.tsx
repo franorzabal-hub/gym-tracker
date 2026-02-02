@@ -2,9 +2,18 @@ import { createRoot } from "react-dom/client";
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useToolOutput, useCallTool } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
+import { ExerciseIcon, MUSCLE_COLOR } from "./shared/exercise-icons.js";
 import "../styles.css";
 
 // ── Types ──
+
+interface PrevSetData {
+  set_number: number;
+  reps: number;
+  weight: number | null;
+  rpe: number | null;
+  set_type: string;
+}
 
 interface SetData {
   set_id: number;
@@ -13,12 +22,18 @@ interface SetData {
   weight: number | null;
   rpe: number | null;
   set_type: string;
+  logged_at?: string | null;
 }
 
 interface ExerciseData {
   name: string;
   superset_group: number | null;
+  muscle_group?: string | null;
+  exercise_type?: string | null;
+  rep_type?: string | null;
   sets: SetData[];
+  previous?: { date: string; sets: PrevSetData[] } | null;
+  prs?: Record<string, number> | null;
 }
 
 interface SessionData {
@@ -34,6 +49,8 @@ interface SessionData {
 interface ExerciseSuggestion {
   name: string;
   muscle_group: string | null;
+  rep_type?: string | null;
+  exercise_type?: string | null;
 }
 
 interface ToolData {
@@ -42,7 +59,7 @@ interface ToolData {
   exerciseCatalog?: ExerciseSuggestion[];
 }
 
-// ── Live timer hook ──
+// ── Helpers ──
 
 function useLiveTimer(startedAt: string) {
   const [minutes, setMinutes] = useState(() =>
@@ -57,10 +74,64 @@ function useLiveTimer(startedAt: string) {
 }
 
 function formatDuration(minutes: number): string {
+  if (minutes <= 0) return "< 1 min";
   if (minutes < 60) return `${minutes} min`;
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function formatRelativeTime(isoDate: string): string {
+  const diff = Math.round((Date.now() - new Date(isoDate).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
+
+function isPR(set: SetData, prs: Record<string, number> | null | undefined): string | null {
+  if (!prs || !set.weight || set.set_type === "warmup") return null;
+  if (prs.max_weight != null && set.weight > prs.max_weight) return "Weight PR";
+  const e1rm = set.weight * (1 + (set.reps || 0) / 30);
+  if (prs.estimated_1rm != null && e1rm > prs.estimated_1rm) return "1RM PR";
+  return null;
+}
+
+function weightRange(sets: SetData[]): string {
+  const weights = sets.map(s => s.weight).filter((w): w is number => w != null && w > 0);
+  if (weights.length === 0) return "bodyweight";
+  const min = Math.min(...weights);
+  const max = Math.max(...weights);
+  return min === max ? `${min}kg` : `${min}-${max}kg`;
+}
+
+function prevWeightRange(sets: PrevSetData[]): string {
+  const weights = sets.map(s => s.weight).filter((w): w is number => w != null && w > 0);
+  if (weights.length === 0) return "";
+  const min = Math.min(...weights);
+  const max = Math.max(...weights);
+  return min === max ? `${min}kg` : `${min}-${max}kg`;
+}
+
+function groupExercises(exercises: ExerciseData[]): { exercises: ExerciseData[]; supersetGroup: number | null }[] {
+  const groups: { exercises: ExerciseData[]; supersetGroup: number | null }[] = [];
+  let currentGroup: ExerciseData[] = [];
+  let currentSupersetGroup: number | null = null;
+
+  for (const ex of exercises) {
+    if (ex.superset_group != null && ex.superset_group === currentSupersetGroup) {
+      currentGroup.push(ex);
+    } else {
+      if (currentGroup.length > 0) {
+        groups.push({ exercises: currentGroup, supersetGroup: currentSupersetGroup });
+      }
+      currentGroup = [ex];
+      currentSupersetGroup = ex.superset_group;
+    }
+  }
+  if (currentGroup.length > 0) {
+    groups.push({ exercises: currentGroup, supersetGroup: currentSupersetGroup });
+  }
+  return groups;
 }
 
 // ── Editable number (click-to-edit) ──
@@ -337,8 +408,10 @@ function SetTypeBadge({ type, onChange, readonly }: { type: string; onChange: (t
           fontWeight: 600,
           color: colorMap[type] || "var(--text-secondary)",
           cursor: readonly ? "default" : "pointer",
-          opacity: 0.7,
+          opacity: 0.8,
           userSelect: "none",
+          width: 18,
+          textAlign: "center",
         }}
         title={type}
       >
@@ -383,109 +456,204 @@ function SetTypeBadge({ type, onChange, readonly }: { type: string; onChange: (t
   );
 }
 
-// ── Set row ──
+// ── Rest timer hook ──
+
+function useRestTimer(sets: SetData[], active: boolean) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setNow(Date.now()), 10000);
+    return () => clearInterval(id);
+  }, [active]);
+
+  if (!active || sets.length === 0) return null;
+  const lastSet = sets[sets.length - 1];
+  if (!lastSet.logged_at) return null;
+
+  const elapsed = Math.round((now - new Date(lastSet.logged_at).getTime()) / 1000);
+  if (elapsed < 5 || elapsed > 1800) return null;
+  return formatRelativeTime(lastSet.logged_at);
+}
+
+// ── Set row (flex layout) ──
 
 function SetRow({
   set,
   onUpdate,
   onDelete,
-  exerciseName,
   readonly,
+  prevSet,
+  prLabel,
 }: {
   set: SetData;
   onUpdate: (updates: Partial<SetData>) => void;
   onDelete: () => void;
-  exerciseName: string;
   readonly?: boolean;
+  prevSet?: PrevSetData | null;
+  prLabel?: string | null;
 }) {
   const [hovered, setHovered] = useState(false);
 
   return (
-    <tr
+    <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{ height: 32 }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        minHeight: 30,
+        padding: "2px 0",
+      }}
     >
-      <td style={{ width: 28, textAlign: "center", color: "var(--text-secondary)", fontSize: 12 }}>
+      {/* Set number circle */}
+      <span style={{
+        width: 20, height: 20, borderRadius: "50%",
+        background: "var(--bg)", border: "1px solid var(--border)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 10, fontWeight: 600, color: "var(--text-secondary)",
+        flexShrink: 0,
+      }}>
         {set.set_number}
-      </td>
-      <td style={{ textAlign: "center" }}>
+      </span>
+
+      {/* Set type badge */}
+      <SetTypeBadge type={set.set_type || "working"} onChange={(t) => onUpdate({ set_type: t })} readonly={readonly} />
+
+      {/* Reps x Weight */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 2, minWidth: 0 }}>
         <EditableNumber
           value={set.reps}
           onChange={(v) => onUpdate({ reps: v ?? 0 })}
           placeholder="—"
           min={0}
-          width={36}
+          width={30}
           readonly={readonly}
         />
-      </td>
-      <td style={{ textAlign: "center" }}>
-        <EditableNumber
-          value={set.weight}
-          onChange={(v) => onUpdate({ weight: v })}
-          placeholder="—"
-          min={0}
-          step={0.5}
-          width={44}
-          allowNull
-          readonly={readonly}
-        />
-      </td>
-      <td style={{ textAlign: "center" }}>
-        <EditableNumber
-          value={set.rpe}
-          onChange={(v) => onUpdate({ rpe: v })}
-          placeholder="—"
-          min={1}
-          width={28}
-          allowNull
-          color={set.rpe != null ? (set.rpe >= 9 ? "var(--danger)" : set.rpe >= 8 ? "var(--warning)" : "var(--success)") : undefined}
-          readonly={readonly}
-        />
-      </td>
-      <td style={{ textAlign: "center" }}>
-        <SetTypeBadge type={set.set_type || "working"} onChange={(t) => onUpdate({ set_type: t })} readonly={readonly} />
-      </td>
-      {!readonly && (
-        <td style={{ width: 24, textAlign: "center" }}>
-          <span
-            onClick={onDelete}
-            style={{
-              cursor: "pointer",
-              fontSize: 13,
-              color: "var(--text-secondary)",
-              opacity: hovered ? 0.8 : 0,
-              transition: "opacity 0.15s",
-            }}
-            title="Remove set"
-          >
-            ×
-          </span>
-        </td>
+        {set.weight != null && (
+          <>
+            <span style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 1px" }}>×</span>
+            <EditableNumber
+              value={set.weight}
+              onChange={(v) => onUpdate({ weight: v })}
+              placeholder="—"
+              min={0}
+              step={0.5}
+              width={40}
+              allowNull
+              readonly={readonly}
+            />
+            <span style={{ fontSize: 10, color: "var(--text-secondary)" }}>kg</span>
+          </>
+        )}
+        {set.weight == null && !readonly && (
+          <>
+            <span style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 1px" }}>×</span>
+            <EditableNumber
+              value={null}
+              onChange={(v) => onUpdate({ weight: v })}
+              placeholder="—"
+              min={0}
+              step={0.5}
+              width={40}
+              allowNull
+              readonly={readonly}
+            />
+            <span style={{ fontSize: 10, color: "var(--text-secondary)" }}>kg</span>
+          </>
+        )}
+      </div>
+
+      {/* RPE */}
+      {(set.rpe != null || !readonly) && (
+        <span style={{ display: "flex", alignItems: "baseline", gap: 1 }}>
+          <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>@</span>
+          <EditableNumber
+            value={set.rpe}
+            onChange={(v) => onUpdate({ rpe: v })}
+            placeholder="—"
+            min={1}
+            width={22}
+            fontSize={12}
+            allowNull
+            color={set.rpe != null ? (set.rpe >= 9 ? "var(--danger)" : set.rpe >= 8 ? "var(--warning)" : "var(--success)") : undefined}
+            readonly={readonly}
+          />
+        </span>
       )}
-    </tr>
+
+      {/* Spacer */}
+      <span style={{ flex: 1 }} />
+
+      {/* Previous ref */}
+      {prevSet && prevSet.weight != null && (
+        <span style={{ fontSize: 10, color: "var(--text-secondary)", opacity: 0.6, whiteSpace: "nowrap" }}>
+          prev: {prevSet.weight}×{prevSet.reps}
+        </span>
+      )}
+
+      {/* PR badge */}
+      {prLabel && (
+        <span style={{
+          fontSize: 9, fontWeight: 700, color: "var(--warning)",
+          background: "light-dark(#fef3c7, #451a03)",
+          padding: "1px 5px", borderRadius: 4,
+          whiteSpace: "nowrap",
+        }}>
+          PR
+        </span>
+      )}
+
+      {/* Delete button */}
+      {!readonly && (
+        <span
+          onClick={onDelete}
+          style={{
+            cursor: "pointer",
+            fontSize: 13,
+            color: "var(--text-secondary)",
+            opacity: hovered ? 0.8 : 0,
+            transition: "opacity 0.15s",
+            flexShrink: 0,
+            width: 16,
+            textAlign: "center",
+          }}
+          title="Remove set"
+        >
+          ×
+        </span>
+      )}
+    </div>
   );
 }
 
-// ── Exercise card ──
+// ── Accordion exercise row ──
 
-function ExerciseCard({
+function ExerciseAccordionRow({
   exercise,
+  expanded,
+  onToggle,
   onRefresh,
   catalog,
   readonly,
+  active,
 }: {
   exercise: ExerciseData;
+  expanded: boolean;
+  onToggle: () => void;
   onRefresh: () => void;
   catalog: ExerciseSuggestion[];
   readonly?: boolean;
+  active?: boolean;
 }) {
   const { callTool, loading } = useCallTool();
   const [hovered, setHovered] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const pendingUpdates = useRef<Map<number, { timer: ReturnType<typeof setTimeout>; updates: Record<string, number | null> }>>(new Map());
+  const pendingUpdates = useRef<Map<number, { timer: ReturnType<typeof setTimeout>; updates: Partial<SetData> }>>(new Map());
+  const restTimerLabel = useRestTimer(exercise.sets, !!active);
+  const muscleColor = exercise.muscle_group ? MUSCLE_COLOR[exercise.muscle_group.toLowerCase()] || "var(--text-secondary)" : "var(--text-secondary)";
+  const hasPRs = exercise.sets.some(s => isPR(s, exercise.prs) != null);
 
-  // Debounced set update
   const updateSet = useCallback(
     (setNumber: number, updates: Partial<SetData>) => {
       const existing = pendingUpdates.current.get(setNumber);
@@ -534,7 +702,6 @@ function ExerciseCard({
       weight: lastSet?.weight ?? null,
       set_type: lastSet?.set_type ?? "working",
     });
-    setAdding(false);
     onRefresh();
   }, [callTool, exercise, onRefresh]);
 
@@ -546,87 +713,173 @@ function ExerciseCard({
     onRefresh();
   }, [callTool, exercise.name, onRefresh]);
 
-  const muscle = catalog.find((c) => c.name.toLowerCase() === exercise.name.toLowerCase())?.muscle_group;
+  const prevSets = exercise.previous?.sets || [];
+  const prevRange = exercise.previous ? prevWeightRange(exercise.previous.sets) : "";
 
   return (
     <div
       className="card"
-      style={{ padding: "10px 14px" }}
+      style={{ padding: 0, overflow: "hidden" }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* Exercise header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontWeight: 600, fontSize: 14 }}>{exercise.name}</span>
-          {muscle && (
-            <span style={{ fontSize: 10, color: "var(--text-secondary)", textTransform: "capitalize", opacity: 0.6 }}>
-              {muscle}
-            </span>
-          )}
-        </div>
-        {!readonly && (
-          <span
-            onClick={deleteExercise}
-            style={{
-              cursor: "pointer",
-              fontSize: 14,
-              color: "var(--text-secondary)",
-              opacity: hovered ? 0.6 : 0,
-              transition: "opacity 0.15s",
-            }}
-            title="Remove exercise"
-          >
-            ×
+      {/* Collapsed row — always visible */}
+      <div
+        onClick={onToggle}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 12px",
+          cursor: "pointer",
+          userSelect: "none",
+          transition: "background 0.1s",
+          background: expanded ? "var(--bg-secondary)" : "transparent",
+        }}
+      >
+        <ExerciseIcon name={exercise.name} color={muscleColor} size={18} />
+
+        <span style={{ fontWeight: 600, fontSize: 13, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {exercise.name}
+        </span>
+
+        {exercise.muscle_group && (
+          <span style={{
+            fontSize: 9,
+            padding: "1px 5px",
+            borderRadius: 4,
+            background: muscleColor + "18",
+            color: muscleColor,
+            fontWeight: 500,
+            textTransform: "capitalize",
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+          }}>
+            {exercise.muscle_group}
           </span>
         )}
+
+        {hasPRs && (
+          <span style={{
+            fontSize: 9, fontWeight: 700, color: "var(--warning)",
+            background: "light-dark(#fef3c7, #451a03)",
+            padding: "1px 5px", borderRadius: 4,
+            whiteSpace: "nowrap", flexShrink: 0,
+          }}>
+            PR
+          </span>
+        )}
+
+        <span style={{ fontSize: 11, color: "var(--text-secondary)", whiteSpace: "nowrap", flexShrink: 0 }}>
+          {exercise.sets.length} set{exercise.sets.length !== 1 ? "s" : ""}
+          {" · "}
+          {weightRange(exercise.sets)}
+        </span>
+
+        {prevRange && !expanded && (
+          <span style={{ fontSize: 10, color: "var(--text-secondary)", opacity: 0.5, whiteSpace: "nowrap", flexShrink: 0 }}>
+            (prev: {prevRange})
+          </span>
+        )}
+
+        {restTimerLabel && !expanded && (
+          <span style={{ fontSize: 10, color: "var(--text-secondary)", opacity: 0.7, whiteSpace: "nowrap", flexShrink: 0 }}>
+            {restTimerLabel}
+          </span>
+        )}
+
+        <span style={{
+          fontSize: 11,
+          color: "var(--text-secondary)",
+          transition: "transform 0.15s",
+          transform: expanded ? "rotate(90deg)" : "none",
+          flexShrink: 0,
+        }}>
+          ▸
+        </span>
       </div>
 
-      {/* Sets table */}
-      {exercise.sets.length > 0 && (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ fontSize: 10, color: "var(--text-secondary)", textTransform: "uppercase" as const, letterSpacing: "0.5px" }}>
-              <th style={{ width: 28, textAlign: "center", padding: "2px 0", fontWeight: 500 }}>#</th>
-              <th style={{ textAlign: "center", padding: "2px 0", fontWeight: 500 }}>Reps</th>
-              <th style={{ textAlign: "center", padding: "2px 0", fontWeight: 500 }}>Kg</th>
-              <th style={{ textAlign: "center", padding: "2px 0", fontWeight: 500 }}>RPE</th>
-              <th style={{ textAlign: "center", padding: "2px 0", fontWeight: 500 }}>Type</th>
-              {!readonly && <th style={{ width: 24 }} />}
-            </tr>
-          </thead>
-          <tbody>
-            {exercise.sets.map((set) => (
-              <SetRow
-                key={set.set_id}
-                set={set}
-                onUpdate={(updates) => updateSet(set.set_number, updates)}
-                onDelete={() => deleteSet(set.set_number)}
-                exerciseName={exercise.name}
-                readonly={readonly}
-              />
-            ))}
-          </tbody>
-        </table>
-      )}
+      {/* Expanded detail */}
+      {expanded && (
+        <div style={{ padding: "4px 12px 10px" }}>
+          {/* Previous workout summary */}
+          {exercise.previous && (
+            <div style={{ fontSize: 10, color: "var(--text-secondary)", opacity: 0.6, marginBottom: 6 }}>
+              Previous ({new Date(exercise.previous.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}):
+              {" "}{exercise.previous.sets.map((s) =>
+                s.weight != null ? `${s.weight}×${s.reps}` : `${s.reps}r`
+              ).join(", ")}
+            </div>
+          )}
 
-      {/* Add set */}
-      {!readonly && (
-        <div style={{ marginTop: 4 }}>
-          <span
-            onClick={addSet}
-            style={{
-              fontSize: 12,
-              color: "var(--text-secondary)",
-              cursor: loading ? "default" : "pointer",
-              opacity: loading ? 0.4 : 0.6,
-              transition: "opacity 0.15s",
-            }}
-            onMouseEnter={(e) => { if (!loading) e.currentTarget.style.opacity = "1"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.6"; }}
-          >
-            + Add set
-          </span>
+          {restTimerLabel && (
+            <div style={{ fontSize: 10, color: "var(--text-secondary)", opacity: 0.7, marginBottom: 4 }}>
+              Last set: {restTimerLabel}
+            </div>
+          )}
+
+          {/* Sets */}
+          {exercise.sets.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {exercise.sets.map((set) => {
+                const matchingPrev = prevSets.find((p) => p.set_number === set.set_number) || null;
+                const prLabel = isPR(set, exercise.prs);
+                return (
+                  <SetRow
+                    key={set.set_id}
+                    set={set}
+                    onUpdate={(updates) => updateSet(set.set_number, updates)}
+                    onDelete={() => deleteSet(set.set_number)}
+                    readonly={readonly}
+                    prevSet={matchingPrev}
+                    prLabel={prLabel}
+                  />
+                );
+              })}
+            </div>
+          )}
+
+          {/* Add set + delete exercise buttons */}
+          {!readonly && (
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <div
+                onClick={loading ? undefined : addSet}
+                style={{
+                  flex: 1,
+                  padding: "5px 0",
+                  textAlign: "center",
+                  fontSize: 12,
+                  color: "var(--text-secondary)",
+                  cursor: loading ? "default" : "pointer",
+                  border: "1px dashed var(--border)",
+                  borderRadius: 6,
+                  opacity: loading ? 0.4 : 0.6,
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={(e) => { if (!loading) { e.currentTarget.style.opacity = "1"; e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; } }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.6"; e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
+              >
+                + Add set
+              </div>
+              <div
+                onClick={deleteExercise}
+                style={{
+                  padding: "5px 10px",
+                  textAlign: "center",
+                  fontSize: 12,
+                  color: "var(--text-secondary)",
+                  cursor: "pointer",
+                  opacity: hovered ? 0.6 : 0.3,
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.opacity = "1"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-secondary)"; e.currentTarget.style.opacity = "0.3"; }}
+                title="Remove exercise"
+              >
+                ×
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -675,6 +928,25 @@ function AddExerciseForm({
   );
 }
 
+// ── Superset group wrapper ──
+
+function SupersetWrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      borderLeft: "3px solid var(--primary)",
+      paddingLeft: 8,
+      marginLeft: 2,
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--primary)", marginBottom: 2, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+        Superset
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ── Main widget ──
 
 function WorkoutWidget() {
@@ -685,7 +957,6 @@ function WorkoutWidget() {
   const [addingExercise, setAddingExercise] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Initialize from tool output
   useEffect(() => {
     if (data && !initialized) {
       setSession(data.session);
@@ -695,26 +966,16 @@ function WorkoutWidget() {
 
   const catalog = useMemo(() => data?.exerciseCatalog || [], [data]);
 
-  // Refresh session data
   const refreshSession = useCallback(async () => {
+    if (!session) return;
     setRefreshing(true);
-    const result = await callTool("get_active_session");
-    if (result && result.active) {
-      setSession({
-        session_id: result.session_id,
-        started_at: result.started_at,
-        duration_minutes: result.duration_minutes,
-        program_day: result.program_day,
-        tags: result.tags || [],
-        exercises: result.exercises || [],
-      });
-    } else if (result && !result.active) {
-      setSession(null);
+    const result = await callTool("show_workout", { session_id: session.session_id });
+    if (result?.session) {
+      setSession(result.session);
     }
     setRefreshing(false);
-  }, [callTool]);
+  }, [callTool, session]);
 
-  // Add exercise
   const handleAddExercise = useCallback(
     async (name: string) => {
       await callTool("log_workout", {
@@ -733,9 +994,9 @@ function WorkoutWidget() {
   if (!session) {
     return (
       <div className="empty" style={{ padding: 32 }}>
-        <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8 }}>No active session</div>
+        <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8 }}>No workouts yet</div>
         <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-          Start a workout session to track your exercises here.
+          Start your first session to begin tracking your exercises here.
         </div>
       </div>
     );
@@ -773,6 +1034,7 @@ function ActiveWorkout({
   readonly?: boolean;
 }) {
   const liveMinutes = useLiveTimer(session.started_at);
+  const isActive = !readonly && !session.ended_at;
   const minutes = readonly ? session.duration_minutes : liveMinutes;
   const totalSets = session.exercises.reduce((sum, e) => sum + e.sets.length, 0);
   const totalVolume = session.exercises.reduce(
@@ -780,15 +1042,33 @@ function ActiveWorkout({
     0,
   );
 
+  const [expandedExercise, setExpandedExercise] = useState<string | null>(null);
+
+  const toggleExercise = useCallback((name: string) => {
+    setExpandedExercise(prev => prev === name ? null : name);
+  }, []);
+
+  // Collect unique muscle groups
+  const muscleGroups = useMemo(() => {
+    const groups = new Set<string>();
+    for (const ex of session.exercises) {
+      if (ex.muscle_group) groups.add(ex.muscle_group);
+    }
+    return Array.from(groups);
+  }, [session.exercises]);
+
+  // Group exercises by superset
+  const exerciseGroups = useMemo(() => groupExercises(session.exercises), [session.exercises]);
+
   return (
     <div style={{ maxWidth: 600 }}>
       {/* Header */}
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontWeight: 600, fontSize: 17 }}>{readonly ? "Workout" : "Active Workout"}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <span style={{ fontWeight: 600, fontSize: 15 }}>{readonly ? "Workout" : "Active Workout"}</span>
             {session.program_day && (
-              <span className="badge badge-primary">{session.program_day}</span>
+              <span className="badge badge-primary" style={{ fontSize: 10 }}>{session.program_day}</span>
             )}
             {readonly && (
               <span className="badge" style={{ background: "var(--bg-secondary)", color: "var(--text-secondary)", fontSize: 10 }}>
@@ -798,52 +1078,87 @@ function ActiveWorkout({
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             {!readonly && refreshing && (
-              <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>Refreshing...</span>
+              <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>...</span>
             )}
-            <span style={{ fontWeight: 600, fontSize: 15, color: readonly ? "var(--text-secondary)" : "var(--primary)" }}>
+            <span style={{ fontWeight: 600, fontSize: 14, color: readonly ? "var(--text-secondary)" : "var(--primary)" }}>
               {formatDuration(minutes)}
             </span>
           </div>
         </div>
 
-        {/* Summary stats */}
-        <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 12, color: "var(--text-secondary)" }}>
+        {/* Summary stats + muscle groups + tags — all inline */}
+        <div style={{ display: "flex", gap: 12, marginTop: 4, fontSize: 11, color: "var(--text-secondary)", flexWrap: "wrap", alignItems: "center" }}>
           {readonly && session.ended_at && (
             <span>{new Date(session.started_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
           )}
           <span>{session.exercises.length} exercise{session.exercises.length !== 1 ? "s" : ""}</span>
           <span>{totalSets} set{totalSets !== 1 ? "s" : ""}</span>
-          {totalVolume > 0 && <span>{Math.round(totalVolume).toLocaleString()} kg vol</span>}
-        </div>
+          {totalVolume > 0 && <span>{Math.round(totalVolume).toLocaleString()} kg</span>}
 
-        {/* Tags */}
-        {session.tags.length > 0 && (
-          <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
-            {session.tags.map((tag) => (
-              <span key={tag} className="badge badge-success" style={{ fontSize: 11 }}>
-                {tag}
+          {muscleGroups.map((mg) => {
+            const c = MUSCLE_COLOR[mg.toLowerCase()] || "var(--text-secondary)";
+            return (
+              <span key={mg} style={{
+                fontSize: 9,
+                padding: "1px 5px",
+                borderRadius: 4,
+                background: c + "18",
+                color: c,
+                fontWeight: 500,
+                textTransform: "capitalize",
+              }}>
+                {mg}
               </span>
-            ))}
-          </div>
-        )}
+            );
+          })}
+
+          {session.tags.map((tag) => (
+            <span key={tag} className="badge badge-success" style={{ fontSize: 9 }}>
+              {tag}
+            </span>
+          ))}
+        </div>
       </div>
 
-      {/* Exercise list */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {session.exercises.map((ex) => (
-          <ExerciseCard
-            key={ex.name}
-            exercise={ex}
-            onRefresh={refreshSession}
-            catalog={catalog}
-            readonly={readonly}
-          />
-        ))}
+      {/* Exercise accordion */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {exerciseGroups.map((group, gi) => {
+          if (group.supersetGroup != null && group.exercises.length > 1) {
+            return (
+              <SupersetWrapper key={`ss-${gi}`}>
+                {group.exercises.map((ex) => (
+                  <ExerciseAccordionRow
+                    key={ex.name}
+                    exercise={ex}
+                    expanded={expandedExercise === ex.name}
+                    onToggle={() => toggleExercise(ex.name)}
+                    onRefresh={refreshSession}
+                    catalog={catalog}
+                    readonly={readonly}
+                    active={isActive}
+                  />
+                ))}
+              </SupersetWrapper>
+            );
+          }
+          return group.exercises.map((ex) => (
+            <ExerciseAccordionRow
+              key={ex.name}
+              exercise={ex}
+              expanded={expandedExercise === ex.name}
+              onToggle={() => toggleExercise(ex.name)}
+              onRefresh={refreshSession}
+              catalog={catalog}
+              readonly={readonly}
+              active={isActive}
+            />
+          ));
+        })}
       </div>
 
-      {/* Add exercise */}
+      {/* Add exercise button */}
       {!readonly && (
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 6 }}>
           {addingExercise ? (
             <AddExerciseForm
               catalog={catalog}
@@ -851,23 +1166,23 @@ function ActiveWorkout({
               onCancel={() => setAddingExercise(false)}
             />
           ) : (
-            <span
+            <div
               onClick={() => setAddingExercise(true)}
               style={{
-                fontSize: 13,
+                padding: "7px 0",
+                textAlign: "center",
+                fontSize: 12,
                 color: "var(--text-secondary)",
                 cursor: "pointer",
-                opacity: 0.7,
-                transition: "opacity 0.15s",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
+                border: "1px dashed var(--border)",
+                borderRadius: "var(--radius)",
+                transition: "all 0.15s",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.7"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
             >
               + Add exercise
-            </span>
+            </div>
           )}
         </div>
       )}

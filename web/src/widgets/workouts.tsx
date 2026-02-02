@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { useToolOutput, useCallTool } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
+import { ExerciseIcon, MUSCLE_COLOR } from "./shared/exercise-icons.js";
 import "../styles.css";
 
 interface Session {
@@ -12,6 +13,8 @@ interface Session {
   exercises_count: number;
   total_sets: number;
   total_volume_kg: number;
+  muscle_groups?: string[];
+  exercise_names?: string[];
 }
 
 interface WorkoutsData {
@@ -54,36 +57,89 @@ function periodLabel(period: string): string {
   return `Last ${period} days`;
 }
 
-function SessionCard({ session, onClick }: { session: Session; onClick: () => void }) {
+function SessionRow({ session, onClick }: { session: Session; onClick: () => void }) {
   const duration = formatDuration(session.started_at, session.ended_at);
+  const muscleGroups = session.muscle_groups || [];
+  const exerciseNames = session.exercise_names || [];
+  // Pick up to 3 representative exercise icons
+  const iconExercises = exerciseNames.slice(0, 3);
 
   return (
-    <div className="card" onClick={onClick} style={{ cursor: "pointer", transition: "border-color 0.15s" }}
+    <div
+      className="card"
+      onClick={onClick}
+      style={{ padding: 0, cursor: "pointer", overflow: "hidden", transition: "border-color 0.15s" }}
       onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--primary)")}
-      onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 14 }}>{formatDate(session.started_at)}</div>
-          <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+      onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px" }}>
+        {/* Exercise icons cluster */}
+        {iconExercises.length > 0 && (
+          <div style={{ display: "flex", gap: 1, flexShrink: 0 }}>
+            {iconExercises.map((name, i) => {
+              const mg = muscleGroups[0];
+              const color = mg ? MUSCLE_COLOR[mg.toLowerCase()] || "var(--text-secondary)" : "var(--text-secondary)";
+              return <ExerciseIcon key={i} name={name} color={color} size={16} />;
+            })}
+          </div>
+        )}
+
+        {/* Date + time */}
+        <div style={{ minWidth: 0, flexShrink: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.2 }}>{formatDate(session.started_at)}</div>
+          <div style={{ fontSize: 10, color: "var(--text-secondary)", lineHeight: 1.2 }}>
             {formatTime(session.started_at)}
             {duration && ` · ${duration}`}
           </div>
         </div>
-        {!session.ended_at && <span className="badge badge-success">Active</span>}
+
+        {/* Program day badge */}
+        {session.program_day && (
+          <span className="badge badge-primary" style={{ fontSize: 9, flexShrink: 0 }}>{session.program_day}</span>
+        )}
+
+        {/* Active badge */}
+        {!session.ended_at && (
+          <span className="badge badge-success" style={{ fontSize: 9, flexShrink: 0 }}>Active</span>
+        )}
+
+        {/* Spacer */}
+        <span style={{ flex: 1 }} />
+
+        {/* Stats summary */}
+        <span style={{ fontSize: 11, color: "var(--text-secondary)", whiteSpace: "nowrap", flexShrink: 0 }}>
+          {session.exercises_count} ex · {session.total_sets} sets
+          {session.total_volume_kg > 0 && ` · ${formatVolume(session.total_volume_kg)}`}
+        </span>
+
+        {/* Chevron */}
+        <span style={{ fontSize: 11, color: "var(--text-secondary)", flexShrink: 0 }}>▸</span>
       </div>
 
-      {(session.program_day || (session.tags && session.tags.length > 0)) && (
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
-          {session.program_day && <span className="badge badge-primary">{session.program_day}</span>}
-          {session.tags?.map(t => <span key={t} className="badge badge-muted">{t}</span>)}
+      {/* Bottom row: muscle group badges + tags */}
+      {(muscleGroups.length > 0 || (session.tags && session.tags.length > 0)) && (
+        <div style={{ display: "flex", gap: 4, padding: "0 12px 6px", flexWrap: "wrap", alignItems: "center" }}>
+          {muscleGroups.map((mg) => {
+            const c = MUSCLE_COLOR[mg.toLowerCase()] || "var(--text-secondary)";
+            return (
+              <span key={mg} style={{
+                fontSize: 9,
+                padding: "1px 5px",
+                borderRadius: 4,
+                background: c + "18",
+                color: c,
+                fontWeight: 500,
+                textTransform: "capitalize",
+              }}>
+                {mg}
+              </span>
+            );
+          })}
+          {session.tags?.map(t => (
+            <span key={t} className="badge badge-muted" style={{ fontSize: 9 }}>{t}</span>
+          ))}
         </div>
       )}
-
-      <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--text-secondary)" }}>
-        <span>{session.exercises_count} exercise{session.exercises_count !== 1 ? "s" : ""}</span>
-        <span>{session.total_sets} set{session.total_sets !== 1 ? "s" : ""}</span>
-        {session.total_volume_kg > 0 && <span>{formatVolume(session.total_volume_kg)}</span>}
-      </div>
     </div>
   );
 }
@@ -99,28 +155,25 @@ function WorkoutsWidget() {
   return (
     <div style={{ maxWidth: 600 }}>
       {/* Header */}
-      <div style={{ marginBottom: 12 }}>
-        <div className="title" style={{ marginBottom: 4 }}>{periodLabel(filters.period)}</div>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontWeight: 600, fontSize: 15 }}>{periodLabel(filters.period)}</span>
+        </div>
+
+        {/* Active filters */}
         {(filters.exercise || filters.program_day || (filters.tags && filters.tags.length > 0)) && (
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
-            {filters.exercise && <span className="badge badge-primary">{filters.exercise}</span>}
-            {filters.program_day && <span className="badge badge-primary">{filters.program_day}</span>}
-            {filters.tags?.map(t => <span key={t} className="badge badge-muted">{t}</span>)}
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
+            {filters.exercise && <span className="badge badge-primary" style={{ fontSize: 10 }}>{filters.exercise}</span>}
+            {filters.program_day && <span className="badge badge-primary" style={{ fontSize: 10 }}>{filters.program_day}</span>}
+            {filters.tags?.map(t => <span key={t} className="badge badge-muted" style={{ fontSize: 10 }}>{t}</span>)}
           </div>
         )}
-        <div style={{ display: "flex", gap: 24 }}>
-          <div>
-            <div className="stat-value">{summary.total_sessions}</div>
-            <div className="stat-label">sessions</div>
-          </div>
-          <div>
-            <div className="stat-value">{summary.total_volume_kg > 0 ? formatVolume(summary.total_volume_kg) : "—"}</div>
-            <div className="stat-label">volume</div>
-          </div>
-          <div>
-            <div className="stat-value">{summary.exercises_count}</div>
-            <div className="stat-label">exercises</div>
-          </div>
+
+        {/* Summary stats inline */}
+        <div style={{ display: "flex", gap: 12, marginTop: 4, fontSize: 11, color: "var(--text-secondary)" }}>
+          <span>{summary.total_sessions} session{summary.total_sessions !== 1 ? "s" : ""}</span>
+          <span>{summary.exercises_count} exercise{summary.exercises_count !== 1 ? "s" : ""}</span>
+          {summary.total_volume_kg > 0 && <span>{formatVolume(summary.total_volume_kg)} total</span>}
         </div>
       </div>
 
@@ -128,13 +181,15 @@ function WorkoutsWidget() {
       {sessions.length === 0 ? (
         <div className="empty">No workouts found for this period</div>
       ) : (
-        sessions.map(s => (
-          <SessionCard
-            key={s.session_id}
-            session={s}
-            onClick={() => callTool("show_workout", { session_id: s.session_id })}
-          />
-        ))
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {sessions.map(s => (
+            <SessionRow
+              key={s.session_id}
+              session={s}
+              onClick={() => callTool("show_workout", { session_id: s.session_id })}
+            />
+          ))}
+        </div>
       )}
     </div>
   );

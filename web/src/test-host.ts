@@ -256,40 +256,81 @@ const sampleData: Record<string, { content?: Array<{ type: string; text: string 
           {
             name: "Bench Press",
             superset_group: null,
+            muscle_group: "chest",
+            exercise_type: "strength",
+            rep_type: "reps",
             sets: [
-              { set_id: 101, set_number: 1, reps: 10, weight: 80, rpe: 7, set_type: "working" },
-              { set_id: 102, set_number: 2, reps: 8, weight: 85, rpe: 8, set_type: "working" },
-              { set_id: 103, set_number: 3, reps: 6, weight: 90, rpe: 9, set_type: "working" },
+              { set_id: 101, set_number: 1, reps: 10, weight: 80, rpe: 7, set_type: "working", logged_at: new Date(Date.now() - 40 * 60000).toISOString() },
+              { set_id: 102, set_number: 2, reps: 8, weight: 85, rpe: 8, set_type: "working", logged_at: new Date(Date.now() - 35 * 60000).toISOString() },
+              { set_id: 103, set_number: 3, reps: 6, weight: 90, rpe: 9, set_type: "working", logged_at: new Date(Date.now() - 30 * 60000).toISOString() },
             ],
+            previous: {
+              date: new Date(Date.now() - 3 * 86400000).toISOString(),
+              sets: [
+                { set_number: 1, reps: 10, weight: 75, rpe: 7, set_type: "working" },
+                { set_number: 2, reps: 8, weight: 80, rpe: 8, set_type: "working" },
+                { set_number: 3, reps: 6, weight: 85, rpe: 9, set_type: "working" },
+              ],
+            },
+            prs: { max_weight: 87.5, estimated_1rm: 108 },
           },
           {
             name: "Incline DB Press",
             superset_group: null,
+            muscle_group: "chest",
+            exercise_type: "strength",
+            rep_type: "reps",
             sets: [
-              { set_id: 104, set_number: 1, reps: 12, weight: 30, rpe: null, set_type: "working" },
-              { set_id: 105, set_number: 2, reps: 10, weight: 32, rpe: null, set_type: "working" },
+              { set_id: 104, set_number: 1, reps: 12, weight: 30, rpe: null, set_type: "working", logged_at: new Date(Date.now() - 20 * 60000).toISOString() },
+              { set_id: 105, set_number: 2, reps: 10, weight: 32, rpe: null, set_type: "working", logged_at: new Date(Date.now() - 15 * 60000).toISOString() },
             ],
+            previous: null,
+            prs: null,
           },
           {
             name: "Cable Fly",
             superset_group: 1,
+            muscle_group: "chest",
+            exercise_type: "strength",
+            rep_type: "reps",
             sets: [
-              { set_id: 106, set_number: 1, reps: 15, weight: 15, rpe: null, set_type: "working" },
+              { set_id: 106, set_number: 1, reps: 15, weight: 15, rpe: null, set_type: "working", logged_at: new Date(Date.now() - 8 * 60000).toISOString() },
+              { set_id: 107, set_number: 2, reps: 12, weight: 15, rpe: null, set_type: "working", logged_at: new Date(Date.now() - 5 * 60000).toISOString() },
             ],
+            previous: {
+              date: new Date(Date.now() - 3 * 86400000).toISOString(),
+              sets: [
+                { set_number: 1, reps: 15, weight: 12.5, rpe: null, set_type: "working" },
+              ],
+            },
+            prs: null,
+          },
+          {
+            name: "Lateral Raise",
+            superset_group: 1,
+            muscle_group: "shoulders",
+            exercise_type: "strength",
+            rep_type: "reps",
+            sets: [
+              { set_id: 108, set_number: 1, reps: 15, weight: 10, rpe: null, set_type: "working", logged_at: new Date(Date.now() - 7 * 60000).toISOString() },
+              { set_id: 109, set_number: 2, reps: 12, weight: 10, rpe: null, set_type: "working", logged_at: new Date(Date.now() - 3 * 60000).toISOString() },
+            ],
+            previous: null,
+            prs: null,
           },
         ],
       },
       exerciseCatalog: [
-        { name: "Bench Press", muscle_group: "chest" },
-        { name: "Incline DB Press", muscle_group: "chest" },
-        { name: "Cable Fly", muscle_group: "chest" },
-        { name: "Overhead Press", muscle_group: "shoulders" },
-        { name: "Lateral Raise", muscle_group: "shoulders" },
-        { name: "Tricep Pushdown", muscle_group: "triceps" },
-        { name: "Squat", muscle_group: "legs" },
-        { name: "Deadlift", muscle_group: "back" },
-        { name: "Barbell Row", muscle_group: "back" },
-        { name: "Pull-Up", muscle_group: "back" },
+        { name: "Bench Press", muscle_group: "chest", rep_type: "reps", exercise_type: "strength" },
+        { name: "Incline DB Press", muscle_group: "chest", rep_type: "reps", exercise_type: "strength" },
+        { name: "Cable Fly", muscle_group: "chest", rep_type: "reps", exercise_type: "strength" },
+        { name: "Overhead Press", muscle_group: "shoulders", rep_type: "reps", exercise_type: "strength" },
+        { name: "Lateral Raise", muscle_group: "shoulders", rep_type: "reps", exercise_type: "strength" },
+        { name: "Tricep Pushdown", muscle_group: "triceps", rep_type: "reps", exercise_type: "strength" },
+        { name: "Squat", muscle_group: "legs", rep_type: "reps", exercise_type: "strength" },
+        { name: "Deadlift", muscle_group: "back", rep_type: "reps", exercise_type: "strength" },
+        { name: "Barbell Row", muscle_group: "back", rep_type: "reps", exercise_type: "strength" },
+        { name: "Pull-Up", muscle_group: "back", rep_type: "reps", exercise_type: "strength" },
       ],
     })}],
   },
@@ -299,24 +340,30 @@ const sampleData: Record<string, { content?: Array<{ type: string; text: string 
         {
           session_id: 42, started_at: new Date(Date.now() - 2 * 3600000).toISOString(),
           ended_at: new Date(Date.now() - 1 * 3600000).toISOString(),
-          duration_minutes: 58, program_day: "Push A", tags: ["morning"],
-          exercise_count: 5, set_count: 18, total_volume: 12450,
+          program_day: "Push A", tags: ["morning"],
+          exercises_count: 5, total_sets: 18, total_volume_kg: 12450,
+          muscle_groups: ["chest", "shoulders", "triceps"],
+          exercise_names: ["Bench Press", "Incline Bench Press", "Overhead Press", "Tricep Pushdown", "Lateral Raise"],
         },
         {
           session_id: 41, started_at: new Date(Date.now() - 26 * 3600000).toISOString(),
           ended_at: new Date(Date.now() - 25 * 3600000).toISOString(),
-          duration_minutes: 52, program_day: "Pull A", tags: [],
-          exercise_count: 4, set_count: 16, total_volume: 10200,
+          program_day: "Pull A", tags: [],
+          exercises_count: 4, total_sets: 16, total_volume_kg: 10200,
+          muscle_groups: ["back", "biceps"],
+          exercise_names: ["Barbell Row", "Lat Pulldown", "Seated Cable Row", "Barbell Curl"],
         },
         {
           session_id: 40, started_at: new Date(Date.now() - 50 * 3600000).toISOString(),
           ended_at: new Date(Date.now() - 49 * 3600000).toISOString(),
-          duration_minutes: 65, program_day: "Legs", tags: ["heavy"],
-          exercise_count: 6, set_count: 22, total_volume: 18300,
+          program_day: "Legs", tags: ["heavy"],
+          exercises_count: 6, total_sets: 22, total_volume_kg: 18300,
+          muscle_groups: ["quads", "hamstrings", "glutes", "calves"],
+          exercise_names: ["Squat", "Romanian Deadlift", "Leg Press", "Leg Curl", "Calf Raise", "Barbell Lunge"],
         },
       ],
-      total: 3,
-      hasMore: false,
+      summary: { total_sessions: 3, total_volume_kg: 40950, exercises_count: 15 },
+      filters: { period: "month" },
     })}],
   },
   dashboard: {
@@ -410,12 +457,16 @@ const deviceSelect = document.getElementById("device-select") as HTMLSelectEleme
 const deviceFrame = document.getElementById("device-frame") as HTMLDivElement;
 const navContainer = document.getElementById("widget-nav") as HTMLDivElement;
 
+type HostMode = "mcp-apps" | "openai";
+
 let currentTheme: "light" | "dark" = "light";
 let currentWidget = "profile";
 let currentBridge: AppBridge | null = null;
 let mcpClient: Client | null = null;
 let isLiveMode = false;
 let currentFrameLoadHandler: (() => void) | null = null;
+let currentHostMode: HostMode = "mcp-apps";
+const hostModeLabel = document.getElementById("host-mode-label") as HTMLSpanElement;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -557,8 +608,8 @@ function getHostContext() {
     "--color-border-primary": "#e0e0e0",
   };
   return {
-    theme: currentTheme as string,
-    styles: { variables: currentTheme === "dark" ? darkVars : lightVars },
+    theme: currentTheme,
+    styles: { variables: currentTheme === "dark" ? darkVars : lightVars } as any,
   };
 }
 
@@ -643,6 +694,121 @@ async function connectBridge() {
 }
 
 // ---------------------------------------------------------------------------
+// OpenAI simulation mode
+// ---------------------------------------------------------------------------
+
+function parseToolContentForHost(result: any): any {
+  if (result?.structuredContent) return result.structuredContent;
+  const textContent = result?.content?.find((c: any) => c.type === "text");
+  if (textContent?.text) {
+    try { return JSON.parse(textContent.text); } catch { return textContent.text; }
+  }
+  return result;
+}
+
+async function loadWidgetOpenAi(name: string) {
+  // Ensure MCP client for live data
+  if (!mcpClient) {
+    mcpClient = await connectMcpClient();
+    isLiveMode = mcpClient !== null;
+    updateModeLabel();
+  }
+
+  const entry = WIDGET_TOOLS[name];
+  let toolResult: any;
+  if (mcpClient && entry) {
+    try {
+      toolResult = await callToolViaClient(mcpClient, entry.tool, entry.args);
+    } catch (err) {
+      log("Tool call failed, falling back to sample data", err instanceof Error ? err.message : err);
+      toolResult = sampleData[name];
+    }
+  } else {
+    toolResult = sampleData[name];
+  }
+
+  const parsedOutput = parseToolContentForHost(toolResult);
+
+  // Remove previous frame load handler
+  if (currentFrameLoadHandler) {
+    frame.removeEventListener("load", currentFrameLoadHandler);
+    currentFrameLoadHandler = null;
+  }
+
+  // Set up load handler that injects window.openai mock
+  const loadHandler = () => {
+    const win = frame.contentWindow as any;
+    if (!win) return;
+
+    // In-memory widget state
+    let widgetState: any = null;
+
+    // Build the mock window.openai object
+    const openaiMock = {
+      toolOutput: parsedOutput,
+      toolInput: entry?.args ?? {},
+      toolResponseMetadata: toolResult?._meta ?? null,
+      widgetState,
+      theme: currentTheme,
+      locale: "en-US",
+      displayMode: "inline" as const,
+      maxHeight: 1200,
+      safeArea: { top: 0, bottom: 0, left: 0, right: 0 },
+      userAgent: "TestHost/1.0",
+      view: "default",
+      callTool: async (toolName: string, args: Record<string, unknown>) => {
+        if (!mcpClient) return { content: [{ type: "text", text: "No MCP client" }] };
+        const result = await callToolViaClient(mcpClient, toolName, args);
+        // After a tool call, update toolOutput and fire event
+        const newParsed = parseToolContentForHost(result);
+        openaiMock.toolOutput = newParsed;
+        win.dispatchEvent(new CustomEvent("openai:set_globals", {
+          detail: { globals: { toolOutput: newParsed } },
+        }));
+        return result;
+      },
+      sendFollowUpMessage: async (opts: any) => {
+        log("sendFollowUpMessage", opts);
+      },
+      notifyIntrinsicHeight: (height: number) => {
+        const preset = DEVICE_PRESETS.find((p) => p.label === deviceSelect?.value);
+        if (preset?.width === null) {
+          frame.style.height = `${Math.min(height + 40, 1200)}px`;
+        }
+      },
+      setWidgetState: (state: any) => {
+        widgetState = state;
+        openaiMock.widgetState = state;
+        win.dispatchEvent(new CustomEvent("openai:set_globals", {
+          detail: { globals: { widgetState: state } },
+        }));
+      },
+      requestDisplayMode: (opts: any) => { log("requestDisplayMode", opts); },
+      openExternal: (url: string) => { log("openExternal", url); },
+      uploadFile: async () => ({ fileId: "mock-file-id" }),
+      getFileDownloadUrl: async () => "https://example.com/mock-download",
+    };
+
+    // Inject window.openai into the iframe
+    win.openai = openaiMock;
+
+    // Fire the set_globals event to trigger widget initialization
+    win.dispatchEvent(new CustomEvent("openai:set_globals", {
+      detail: { globals: openaiMock },
+    }));
+
+    log("OpenAI mock injected into iframe", { theme: currentTheme, dataKeys: parsedOutput ? Object.keys(parsedOutput) : null });
+  };
+
+  currentFrameLoadHandler = loadHandler;
+  frame.addEventListener("load", loadHandler);
+
+  // Load the widget HTML
+  frame.removeAttribute("srcdoc");
+  frame.src = `/${name}.html`;
+}
+
+// ---------------------------------------------------------------------------
 // Public API (exposed to HTML)
 // ---------------------------------------------------------------------------
 
@@ -655,13 +821,15 @@ async function loadWidget(name: string) {
     b.classList.toggle("active", matches);
   });
 
-  logEl.textContent = `// Loading ${name}...\n`;
+  logEl.textContent = `// Loading ${name} (${currentHostMode})...\n`;
 
   const entry = WIDGET_TOOLS[name];
 
   if (entry?.type === "data-only") {
     // No widget HTML — call tool directly and show raw JSON
     await loadDataOnly(name, entry);
+  } else if (currentHostMode === "openai") {
+    await loadWidgetOpenAi(name);
   } else {
     await connectBridge();
     // Clear srcdoc from any previous data-only view, then set src
@@ -712,6 +880,15 @@ async function loadDataOnly(name: string, entry: { tool: string; args: Record<st
   if (themeLabel) themeLabel.textContent = currentTheme === "dark" ? "Dark" : "Light";
 
   // Reload widget with new theme
+  loadWidget(currentWidget);
+};
+
+(window as any).toggleHostMode = function toggleHostMode() {
+  currentHostMode = currentHostMode === "mcp-apps" ? "openai" : "mcp-apps";
+  if (hostModeLabel) {
+    hostModeLabel.textContent = currentHostMode === "openai" ? "OpenAI" : "MCP Apps";
+  }
+  log(`Host mode: ${currentHostMode}`);
   loadWidget(currentWidget);
 };
 
