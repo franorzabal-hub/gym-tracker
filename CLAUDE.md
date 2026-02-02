@@ -162,7 +162,7 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 
 | Tool | Widget | Description |
 |---|---|---|
-| `show_profile` | profile.html | User profile card |
+| `show_profile` | profile.html | Read-only profile card. Supports `pending_changes` param for LLM-proposed edits with visual diff + confirm button |
 | `show_programs` | programs-list.html | Programs list with user's existing programs and global program templates. Users can activate programs, clone global programs, or choose custom |
 | `show_available_programs` | available-programs.html | Browse global program templates with clone capability |
 | `show_program` | programs.html | Program viewer with days, exercises, supersets, weights. Defaults to active program, optional `name` param |
@@ -172,7 +172,32 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 
 ## MCP Apps Widgets
 
-Interactive HTML widgets rendered by MCP hosts (Claude Desktop, claude.ai, VS Code). Powered by `@modelcontextprotocol/ext-apps` and its official React hooks (`/react` subpath).
+HTML widgets rendered by MCP hosts (Claude Desktop, claude.ai, VS Code, ChatGPT). Powered by `@modelcontextprotocol/ext-apps` and its official React hooks (`/react` subpath).
+
+### Widget interaction philosophy
+
+**The LLM is the editor; the widget is the reviewer.** Display widgets (`show_*`) are read-only cards — they show data but don't have inline editing (no inputs, no toggles, no auto-save). When the user wants to change something, they say it in conversation → the LLM interprets and calls the display tool with a `pending_changes` param → the widget shows a visual diff (old value strikethrough → new value in accent color) with a single "Confirm" button → the user clicks to apply or rejects by saying "no" in chat.
+
+**Why:** Inline editing in widgets creates a parallel edit path that competes with the LLM. The user ends up confused about whether to edit in the widget or talk to the LLM. With this approach, all editing goes through conversation, and the widget is purely for review and confirmation.
+
+**Pending changes flow:**
+1. `show_profile()` with no params → read-only card
+2. `show_profile({ pending_changes: { weight_kg: 85, gym: "Iron Paradise" } })` → card with diff highlights + "Confirm" button
+3. User clicks "Confirm" → widget calls `manage_profile({ action: "update", data: pendingChanges })` via `useCallTool()` → merges into local state, shows "Updated" flash
+4. User says "no" in chat → nothing happens, changes never applied
+
+**Applied to:** `show_profile` (done). Planned for `show_program`, `show_programs` in future iterations.
+
+**Pending changes pattern — server side:**
+- Add `pending_changes: z.record(z.any()).optional()` to tool inputSchema
+- Set `readOnlyHint: false` (widget can trigger writes via confirm)
+- Include `pendingChanges` in `structuredContent` only when non-empty
+- LLM note: with pending → "Wait for user to confirm"; without → "Do NOT repeat"
+
+**Pending changes pattern — widget side:**
+- Reusable components: `DiffValue` (scalar diff: ~~old~~ → **new**), `DiffChips` (array set diff: unchanged + removed + added), `ConfirmBar` (button with saving/confirmed states)
+- CSS classes in `styles.css`: `.diff-old` (strikethrough), `.diff-new` (accent color), `.diff-chip-added` (green dashed), `.diff-chip-removed` (red strikethrough), `.skeleton` (loading pulse)
+- Widget states: loading (skeleton) → read-only → diff view + confirm bar → confirming (disabled button) → confirmed (flash + merge into local state)
 
 ### Architecture Overview
 
@@ -280,19 +305,41 @@ The `hooks.ts` module provides convenience hooks that read from this context:
 
 ### Widget component pattern
 
+**Read-only widget (basic):**
 ```tsx
-// web/src/widgets/example.tsx
-import { createRoot } from "react-dom/client";
-import { useToolOutput } from "../hooks.js";
-import { AppProvider } from "../app-context.js";
-import "../styles.css";
-
 function ExampleWidget() {
-  const data = useToolOutput();     // Receives parsed tool result JSON
-  if (!data) return <div className="loading">Loading...</div>;
+  const data = useToolOutput();
+  if (!data) return <SkeletonCard />;   // Pulsing placeholder, not "Loading..." text
   return <div>...</div>;
 }
+```
 
+**Widget with pending changes (confirm flow):**
+```tsx
+function ExampleWidget() {
+  const data = useToolOutput<{ profile: Record<string, any>; pendingChanges?: Record<string, any> }>();
+  const { callTool } = useCallTool();
+  const [confirming, setConfirming] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [localData, setLocalData] = useState(null);
+
+  const handleConfirm = useCallback(async () => {
+    setConfirming(true);
+    await callTool("manage_profile", { action: "update", data: data.pendingChanges });
+    setLocalData(prev => ({ ...prev, ...data.pendingChanges }));
+    setConfirming(false);
+    setConfirmed(true);
+  }, [data, callTool]);
+
+  if (!data) return <SkeletonCard />;
+  const hasPending = !!data.pendingChanges && Object.keys(data.pendingChanges).length > 0;
+  // Render read-only card, with DiffValue/DiffChips where fields changed
+  // Show <ConfirmBar> only when hasPending
+}
+```
+
+All widgets wrap root render in `<AppProvider>`:
+```tsx
 createRoot(document.getElementById("root")!).render(
   <AppProvider><ExampleWidget /></AppProvider>
 );
@@ -420,4 +467,5 @@ Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture
 - Rate limiting persistence (currently in-memory, resets on deploy)
 - Persist `STATE_SECRET` as a Cloud Run secret (currently falls back to ephemeral random)
 - Widget UIs are styled (profile, session, stats, today-plan, exercises, programs, programs-list, templates, measurements, dashboard, workout, workouts, available-programs); export widget intentionally shows raw JSON
+- Apply pending changes pattern to `show_program` and `show_programs` (replace inline editing with read-only + diff confirm flow)
 - Remove debug logging from server.ts (MCP method/resource logging) and register-widgets.ts before production
