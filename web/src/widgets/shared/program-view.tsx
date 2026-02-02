@@ -247,6 +247,8 @@ function formatRestSeconds(seconds: number): string {
 function NoteTooltip({ text, defaultOpen = false }: { text: string; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   const ref = useRef<HTMLSpanElement>(null);
+  const tooltipRef = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState<{ top?: string; bottom?: string; left?: string; right?: string }>({ left: "0", top: "calc(100% + 4px)" });
 
   useEffect(() => {
     if (!open) return;
@@ -255,6 +257,31 @@ function NoteTooltip({ text, defaultOpen = false }: { text: string; defaultOpen?
     };
     document.addEventListener("click", handler, true);
     return () => document.removeEventListener("click", handler, true);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !tooltipRef.current) return;
+    const el = tooltipRef.current;
+    const rect = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const next: typeof pos = {};
+
+    // Horizontal: if overflows right, anchor to right instead
+    if (rect.right > vw - 8) {
+      next.right = "0";
+    } else {
+      next.left = "0";
+    }
+
+    // Vertical: if overflows bottom, show above
+    if (rect.bottom > vh - 8) {
+      next.bottom = "calc(100% + 4px)";
+    } else {
+      next.top = "calc(100% + 4px)";
+    }
+
+    setPos(next);
   }, [open]);
 
   return (
@@ -273,10 +300,9 @@ function NoteTooltip({ text, defaultOpen = false }: { text: string; defaultOpen?
         ⓘ
       </span>
       {open && (
-        <span style={{
+        <span ref={tooltipRef} style={{
           position: "absolute",
-          left: 0,
-          top: "calc(100% + 4px)",
+          ...pos,
           background: "var(--card-bg, var(--bg))",
           border: "1px solid var(--border)",
           borderRadius: radius.md,
