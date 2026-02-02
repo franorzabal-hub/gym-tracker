@@ -66,7 +66,7 @@ describe("show_profile display tool", () => {
     const result = await toolHandlers["show_profile"]({});
     expect(result.structuredContent.profile).toEqual({ name: "Franco", weight_kg: 80 });
     expect(result.structuredContent.pendingChanges).toBeUndefined();
-    expect(result.content[0].text).toContain("Do NOT repeat");
+    expect(result.content[0].text).toContain("Do NOT describe");
   });
 
   it("returns empty profile when no data", async () => {
@@ -74,7 +74,7 @@ describe("show_profile display tool", () => {
 
     const result = await toolHandlers["show_profile"]({});
     expect(result.structuredContent.profile).toEqual({});
-    expect(result.content[0].text).toContain("Do NOT repeat");
+    expect(result.content[0].text).toContain("Do NOT describe");
   });
 
   it("includes pendingChanges when pending_changes provided", async () => {
@@ -95,7 +95,7 @@ describe("show_profile display tool", () => {
 
     const result = await toolHandlers["show_profile"]({ pending_changes: {} });
     expect(result.structuredContent.pendingChanges).toBeUndefined();
-    expect(result.content[0].text).toContain("Do NOT repeat");
+    expect(result.content[0].text).toContain("Do NOT describe");
   });
 });
 
@@ -140,7 +140,7 @@ describe("show_programs display tool", () => {
     expect(result.structuredContent.programs[0].days).toHaveLength(1);
     expect(result.structuredContent.programs[0].days[0].exercises).toHaveLength(1);
     expect(result.structuredContent.exerciseCatalog).toBeUndefined();
-    expect(result.content[0].text).toContain("Do NOT repeat");
+    expect(result.content[0].text).toContain("Do NOT describe");
     expect(mockGetProgramDaysWithExercises).toHaveBeenCalledWith(10);
   });
 
@@ -199,7 +199,7 @@ describe("show_available_programs display tool", () => {
     expect(result.structuredContent.globalPrograms[0].days_per_week).toBe(3);
     expect(result.structuredContent.globalPrograms[0].days).toHaveLength(3);
     expect(result.structuredContent.clonedNames).toEqual([]);
-    expect(result.content[0].text).toContain("Do NOT repeat");
+    expect(result.content[0].text).toContain("Do NOT describe");
     expect(mockGetProgramDaysWithExercises).toHaveBeenCalledWith(50);
   });
 
@@ -293,7 +293,7 @@ describe("show_program display tool", () => {
     expect(result.structuredContent.program.days).toHaveLength(2);
     expect(result.structuredContent.initialDayIdx).toBe(0);
     expect(result.structuredContent.exerciseCatalog).toBeUndefined();
-    expect(result.content[0].text).toContain("Do NOT repeat");
+    expect(result.content[0].text).toContain("Do NOT describe");
   });
 
   it("returns null program when none found", async () => {
@@ -351,6 +351,6 @@ describe("show_program display tool", () => {
     const result = await toolHandlers["show_program"]({ pending_changes: {} });
 
     expect(result.structuredContent.pendingChanges).toBeUndefined();
-    expect(result.content[0].text).toContain("Do NOT repeat");
+    expect(result.content[0].text).toContain("Do NOT describe");
   });
 });

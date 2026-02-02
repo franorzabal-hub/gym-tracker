@@ -91,7 +91,7 @@ describe("show_dashboard tool", () => {
     expect(result.structuredContent.muscle_groups).toHaveLength(1);
     expect(result.structuredContent.body_weight).toHaveLength(1);
     expect(result.structuredContent.top_exercises).toHaveLength(1);
-    expect(result.content[0].text).toContain("Do NOT repeat");
+    expect(result.content[0].text).toContain("Do NOT describe");
   });
 
   it("returns only the specified metric when metric param is given", async () => {

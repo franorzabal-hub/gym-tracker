@@ -93,7 +93,7 @@ describe("show_workout display tool", () => {
     expect(result.structuredContent.session).toBeTruthy();
     expect(result.structuredContent.session.session_id).toBe(42);
     expect(result.structuredContent.exerciseCatalog).toBeUndefined();
-    expect(result.content[0].text).toContain("Do NOT repeat");
+    expect(result.content[0].text).toContain("Do NOT describe");
     expect(result.content[0].text).not.toContain("inline editing");
   });
 

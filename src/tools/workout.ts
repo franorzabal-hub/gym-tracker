@@ -126,12 +126,8 @@ The widget already shows all information visually — do NOT repeat exercises or
       prMap.get(row.name)![row.record_type] = parseFloat(row.value);
     }
 
-    const exerciseCount = exerciseDetails.length;
-    const totalSets = exerciseDetails.reduce((sum: number, e: any) => sum + (Array.isArray(e.sets) ? e.sets.length : 0), 0);
-
-    const statusLabel = isEnded ? "past" : "active";
     return widgetResponse(
-      `Workout widget displayed showing ${statusLabel} session (${durationMinutes} min, ${exerciseCount} exercises, ${totalSets} sets${programDay ? `, ${programDay}` : ""}). Do NOT repeat this information — the user can see it in the widget.`,
+      `Workout widget displayed. The user can see the full session visually. Do NOT describe, list, or summarize any workout details in text.`,
       {
         session: {
           session_id: session.id,

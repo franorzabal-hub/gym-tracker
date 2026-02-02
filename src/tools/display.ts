@@ -31,10 +31,9 @@ Without pending_changes: read-only view. With pending_changes: diff view + confi
     );
     const profile = rows[0]?.data || {};
     const hasPending = pending_changes && Object.keys(pending_changes).length > 0;
-    const fields = Object.keys(profile).filter(k => profile[k] != null).join(", ") || "none";
     const llmNote = hasPending
-      ? `Profile widget displayed with proposed changes. Wait for the user to confirm or reject in the widget. Do NOT repeat the data.`
-      : `Profile widget displayed to user showing: ${fields}. Do NOT repeat this information in your response — the user can already see it. Just offer next steps or ask if they want to change anything.`;
+      ? `Profile widget displayed with proposed changes. Wait for the user to confirm or reject in the widget. Do NOT describe or list any data.`
+      : `Profile widget displayed. The user can already see all their data visually. Do NOT describe, list, or summarize any profile information in text. Just acknowledge it's shown and offer to help with changes.`;
     return widgetResponse(
       llmNote,
       { profile, ...(hasPending ? { pendingChanges: pending_changes } : {}) }
@@ -82,7 +81,7 @@ Call this when the user wants to see or review their programs. To edit programs,
     );
 
     return widgetResponse(
-      `Programs list widget displayed showing ${programsWithDays.length} user program(s). Do NOT repeat this information — the user can see it in the widget.`,
+      `Programs list widget displayed. The user can see all their programs visually. Do NOT describe, list, or summarize any program information in text.`,
       { programs: programsWithDays }
     );
   });
@@ -157,7 +156,7 @@ After a user clones a program from the widget, follow up with show_program so th
       .map((g) => g.name);
 
     return widgetResponse(
-      `Available programs widget displayed showing ${globalPrograms.length} global template(s). Do NOT repeat this information — the user can see it in the widget. After a clone, follow up with show_program.`,
+      `Available programs widget displayed. The user can browse all templates visually. Do NOT describe, list, or summarize any program information in text. After a clone, follow up with show_program.`,
       { profile, globalPrograms, clonedNames }
     );
   });
@@ -231,12 +230,10 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday").`,
       if (matchIdx >= 0) initialDayIdx = matchIdx;
     }
 
-    const totalExercises = days.reduce((sum: number, d: any) => sum + d.exercises.length, 0);
-
     const hasPending = pending_changes && Object.keys(pending_changes).length > 0;
     const llmNote = hasPending
-      ? `Program widget displayed showing "${program.name}" with proposed changes. Wait for the user to confirm or reject in the widget. Do NOT repeat the data.`
-      : `Program widget displayed showing "${program.name}" (v${program.version_number}, ${days.length} day${days.length > 1 ? "s" : ""}, ${totalExercises} exercises). Do NOT repeat this information — the user can see it in the widget.`;
+      ? `Program widget displayed with proposed changes. Wait for the user to confirm or reject in the widget. Do NOT describe or list any data.`
+      : `Program widget displayed. The user can see the full program visually. Do NOT describe, list, or summarize any program details in text.`;
 
     return widgetResponse(
       llmNote,
@@ -389,7 +386,7 @@ Use this when the user wants to see past workouts, training history, or review t
     };
 
     return widgetResponse(
-      `Workout history widget displayed showing ${sessions.length} session(s) for period "${periodStr}". Do NOT repeat this information — the user can see it in the widget.`,
+      `Workout history widget displayed. The user can see all sessions visually. Do NOT describe, list, or summarize any workout information in text.`,
       { sessions, summary, filters }
     );
   });

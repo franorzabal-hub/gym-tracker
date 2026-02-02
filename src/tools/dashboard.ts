@@ -57,10 +57,8 @@ Use the "period" param to control the time range (default: 3months).`,
     if (bodyWeight) data.body_weight = bodyWeight;
     if (topExercises) data.top_exercises = topExercises;
 
-    const cards = [streak, volume, frequency, prs, muscleGroups, bodyWeight, topExercises].filter(Boolean).length;
-
     return widgetResponse(
-      `Dashboard widget displayed with ${cards} metric card(s) for period "${p}". Do NOT repeat this data in your response.`,
+      `Dashboard widget displayed. The user can see all metrics visually. Do NOT describe, list, or summarize any dashboard data in text.`,
       data,
     );
   });
