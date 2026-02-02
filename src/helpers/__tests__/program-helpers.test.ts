@@ -80,11 +80,11 @@ describe("getProgramDaysWithExercises", () => {
       rows: [
         {
           id: 1, day_label: "Push", weekdays: [1, 4], sort_order: 0,
-          exercises: [{ id: 10, exercise_name: "Bench Press", exercise_id: 1, target_sets: 4, target_reps: 8, target_weight: null, target_rpe: null, sort_order: 0, group_id: null, group_type: null, group_label: null, group_notes: null, group_rest_seconds: null, notes: null }],
+          exercises: [{ id: 10, exercise_name: "Bench Press", exercise_id: 1, target_sets: 4, target_reps: 8, target_weight: null, target_rpe: null, sort_order: 0, group_id: null, group_type: null, group_label: null, group_notes: null, group_rest_seconds: null, section_id: null, section_label: null, section_notes: null, notes: null }],
         },
         {
           id: 2, day_label: "Pull", weekdays: [2, 5], sort_order: 1,
-          exercises: [{ id: 20, exercise_name: "Barbell Row", exercise_id: 5, target_sets: 4, target_reps: 8, target_weight: null, target_rpe: null, sort_order: 0, group_id: null, group_type: null, group_label: null, group_notes: null, group_rest_seconds: null, notes: null }],
+          exercises: [{ id: 20, exercise_name: "Barbell Row", exercise_id: 5, target_sets: 4, target_reps: 8, target_weight: null, target_rpe: null, sort_order: 0, group_id: null, group_type: null, group_label: null, group_notes: null, group_rest_seconds: null, section_id: null, section_label: null, section_notes: null, notes: null }],
         },
       ],
     });
@@ -150,6 +150,7 @@ describe("cloneVersion", () => {
       })
       .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT program_days
       .mockResolvedValueOnce({ rows: [] }) // cloneGroups: SELECT groups (none)
+      .mockResolvedValueOnce({ rows: [] }) // cloneSections: SELECT sections (none)
       .mockResolvedValueOnce({ rows: [] }) // SELECT exercises (none)
       .mockResolvedValueOnce({}); // COMMIT
 

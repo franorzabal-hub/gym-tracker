@@ -11,8 +11,8 @@ import {
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
-import { insertGroup } from "../helpers/group-helpers.js";
-import { cloneGroups } from "../helpers/group-helpers.js";
+import { insertGroup, cloneGroups } from "../helpers/group-helpers.js";
+import { insertSection, cloneSections } from "../helpers/section-helpers.js";
 
 const soloExerciseSchema = z.object({
   exercise: z.string(),
@@ -32,7 +32,13 @@ const groupSchema = z.object({
   exercises: z.array(soloExerciseSchema).min(2),
 });
 
-const dayItemSchema = z.union([soloExerciseSchema, groupSchema]);
+const sectionSchema = z.object({
+  section: z.string(),
+  notes: z.string().nullable().optional(),
+  exercises: z.array(z.union([soloExerciseSchema, groupSchema])).min(1),
+});
+
+const dayItemSchema = z.union([soloExerciseSchema, groupSchema, sectionSchema]);
 
 const daySchema = z.object({
   day_label: z.string(),
@@ -43,11 +49,79 @@ const daySchema = z.object({
 type DayItem = z.infer<typeof dayItemSchema>;
 
 function isGroupItem(item: DayItem): item is z.infer<typeof groupSchema> {
-  return "group_type" in item && "exercises" in item && Array.isArray((item as any).exercises);
+  return "group_type" in item && "exercises" in item && Array.isArray((item as any).exercises) && !("section" in item);
+}
+
+function isSectionItem(item: DayItem): item is z.infer<typeof sectionSchema> {
+  return "section" in item && "exercises" in item && Array.isArray((item as any).exercises);
 }
 
 /**
- * Insert a day's exercises (mix of solo and groups) into program_day_exercises.
+ * Insert a single exercise into program_day_exercises.
+ */
+async function insertSoloExercise(
+  dayId: number,
+  ex: z.infer<typeof soloExerciseSchema>,
+  sortOrder: number,
+  groupId: number | null,
+  sectionId: number | null,
+  client: import("pg").PoolClient,
+  createdExercises: Set<string>,
+  existingExercises: Set<string>
+): Promise<void> {
+  const resolved = await resolveExercise(ex.exercise, undefined, undefined, undefined, undefined, client);
+  if (resolved.isNew) createdExercises.add(resolved.name);
+  else existingExercises.add(resolved.name);
+
+  await client.query(
+    `INSERT INTO program_day_exercises
+       (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [dayId, resolved.id, ex.sets, ex.reps, ex.weight || null, ex.rpe || null,
+     sortOrder, groupId, groupId ? null : (ex.rest_seconds || null), ex.notes || null, sectionId]
+  );
+}
+
+/**
+ * Insert items (solo exercises, groups, or sections) starting at a given sortOrder.
+ * Returns { created, existing, nextSortOrder }.
+ */
+async function insertItems(
+  dayId: number,
+  items: Array<z.infer<typeof soloExerciseSchema> | z.infer<typeof groupSchema>>,
+  startSortOrder: number,
+  sectionId: number | null,
+  client: import("pg").PoolClient,
+  createdExercises: Set<string>,
+  existingExercises: Set<string>
+): Promise<number> {
+  let sortOrder = startSortOrder;
+
+  for (const item of items) {
+    if (isGroupItem(item as DayItem)) {
+      const group = item as z.infer<typeof groupSchema>;
+      const groupId = await insertGroup(
+        "program_exercise_groups", "day_id", dayId,
+        { group_type: group.group_type, label: group.label, notes: group.notes, rest_seconds: group.rest_seconds },
+        sortOrder, client
+      );
+
+      for (const ex of group.exercises) {
+        await insertSoloExercise(dayId, ex, sortOrder, groupId, sectionId, client, createdExercises, existingExercises);
+        sortOrder++;
+      }
+    } else {
+      const solo = item as z.infer<typeof soloExerciseSchema>;
+      await insertSoloExercise(dayId, solo, sortOrder, null, sectionId, client, createdExercises, existingExercises);
+      sortOrder++;
+    }
+  }
+
+  return sortOrder;
+}
+
+/**
+ * Insert a day's exercises (mix of solo, groups, and sections) into program_day_exercises.
  * Returns { created, existing } exercise name sets.
  */
 async function insertDayItems(
@@ -58,44 +132,35 @@ async function insertDayItems(
   const createdExercises = new Set<string>();
   const existingExercises = new Set<string>();
   let sortOrder = 0;
+  let sectionSortOrder = 0;
 
   for (const item of items) {
-    if (isGroupItem(item)) {
-      // Insert group row
+    if (isSectionItem(item)) {
+      // Insert section row
+      const sectionId = await insertSection(
+        "program_sections", "day_id", dayId,
+        { label: item.section, notes: item.notes },
+        sectionSortOrder++, client
+      );
+
+      // Insert the section's inner items (solo + groups) with this sectionId
+      sortOrder = await insertItems(
+        dayId, item.exercises, sortOrder, sectionId,
+        client, createdExercises, existingExercises
+      );
+    } else if (isGroupItem(item)) {
       const groupId = await insertGroup(
         "program_exercise_groups", "day_id", dayId,
         { group_type: item.group_type, label: item.label, notes: item.notes, rest_seconds: item.rest_seconds },
         sortOrder, client
       );
 
-      // Insert each exercise in the group
       for (const ex of item.exercises) {
-        const resolved = await resolveExercise(ex.exercise, undefined, undefined, undefined, undefined, client);
-        if (resolved.isNew) createdExercises.add(resolved.name);
-        else existingExercises.add(resolved.name);
-
-        await client.query(
-          `INSERT INTO program_day_exercises
-             (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [dayId, resolved.id, ex.sets, ex.reps, ex.weight || null, ex.rpe || null,
-           sortOrder, groupId, null, ex.notes || null]
-        );
+        await insertSoloExercise(dayId, ex, sortOrder, groupId, null, client, createdExercises, existingExercises);
         sortOrder++;
       }
     } else {
-      // Solo exercise
-      const resolved = await resolveExercise(item.exercise, undefined, undefined, undefined, undefined, client);
-      if (resolved.isNew) createdExercises.add(resolved.name);
-      else existingExercises.add(resolved.name);
-
-      await client.query(
-        `INSERT INTO program_day_exercises
-           (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [dayId, resolved.id, item.sets, item.reps, item.weight || null, item.rpe || null,
-         sortOrder, null, item.rest_seconds || null, item.notes || null]
-      );
+      await insertSoloExercise(dayId, item, sortOrder, null, null, client, createdExercises, existingExercises);
       sortOrder++;
     }
   }
@@ -123,7 +188,7 @@ Actions:
 - "history": List all versions of a program with dates and change descriptions
 
 For "create" and "update" with days, pass the "days" array with day_label, weekdays (ISO: 1=Mon..7=Sun), and exercises.
-The exercises array accepts two types of items:
+The exercises array accepts three types of items:
 1. Solo exercise: { exercise, sets, reps, weight?, rpe?, rest_seconds?, notes? }
 2. Group: { group_type, label?, notes?, rest_seconds?, exercises: [solo_exercise, ...] }
    - group_type: "superset" (back-to-back no rest), "paired" (active rest), "circuit" (rotate)
@@ -131,7 +196,12 @@ The exercises array accepts two types of items:
    - notes: group-level notes (e.g. "Sin descanso entre ejercicios")
    - rest_seconds: rest between rounds of the group
    - exercises: array of 2+ solo exercises (rest_seconds on individual exercises is ignored inside groups)
-Discriminator: if the item has "exercise" (string) it's solo; if it has "group_type" + "exercises" (array) it's a group.
+3. Section: { section, notes?, exercises: [solo_or_group, ...] }
+   - section: label for the section (e.g. "Entrada en calor", "Trabajo principal", "Finisher")
+   - notes: section-level notes
+   - exercises: array of solo exercises and/or groups (no nested sections)
+   - Sections are optional collapsible containers. Exercises without a section render directly.
+Discriminator: if the item has "exercise" (string) it's solo; if it has "group_type" + "exercises" (array) it's a group; if it has "section" (string) + "exercises" (array) it's a section.
 Each exercise needs: sets (number), reps (number — use the FIRST set's rep count), weight (optional, in kg).
 If the rep scheme varies per set (e.g. pyramid 12/10/8), set reps to the first set's value (12) and put the full scheme in notes as "reps: 12/10/8". The widget displays it as "3×(12/10/8)" automatically.
 If there's a progression instruction, append it in notes (e.g. "reps: 12/10/8 con progresión").
@@ -370,12 +440,20 @@ When the user wants to SEE their program visually, call show_program instead (no
               client
             );
 
+            // Clone sections for this day
+            const sectionMap = await cloneSections(
+              "program_sections", "program_sections",
+              "day_id", "day_id",
+              day.id, newDay.id,
+              client
+            );
+
             for (let j = 0; j < day.exercises.length; j++) {
               const ex = day.exercises[j];
               await client.query(
                 `INSERT INTO program_day_exercises
-                   (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                   (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
                 [
                   newDay.id,
                   ex.exercise_id,
@@ -387,6 +465,7 @@ When the user wants to SEE their program visually, call show_program instead (no
                   ex.group_id ? (groupMap.get(ex.group_id) ?? null) : null,
                   ex.rest_seconds || null,
                   ex.notes || null,
+                  ex.section_id ? (sectionMap.get(ex.section_id) ?? null) : null,
                 ]
               );
             }
@@ -563,9 +642,17 @@ When the user wants to SEE their program visually, call show_program instead (no
               );
               daysCount++;
 
-              // Count exercises (flatten groups)
+              // Count exercises (flatten groups and sections)
               for (const item of day.exercises) {
-                if (isGroupItem(item)) {
+                if (isSectionItem(item)) {
+                  for (const inner of item.exercises) {
+                    if (isGroupItem(inner as DayItem)) {
+                      exercisesCount += (inner as z.infer<typeof groupSchema>).exercises.length;
+                    } else {
+                      exercisesCount++;
+                    }
+                  }
+                } else if (isGroupItem(item)) {
                   exercisesCount += item.exercises.length;
                 } else {
                   exercisesCount++;

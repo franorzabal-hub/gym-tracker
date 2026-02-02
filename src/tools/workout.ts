@@ -64,9 +64,10 @@ The widget already shows all information visually — do NOT repeat exercises or
       if (dayRows.length > 0) programDay = dayRows[0].day_label;
     }
 
-    // Get exercises + sets (with logged_at, muscle_group, exercise_type, rep_type, group info)
+    // Get exercises + sets (with logged_at, muscle_group, exercise_type, rep_type, group info, section info)
     const { rows: exerciseDetails } = await pool.query(
       `SELECT e.name, se.group_id, seg.group_type, seg.label as group_label, seg.notes as group_notes, seg.rest_seconds as group_rest_seconds,
+         se.section_id, ss.label as section_label, ss.notes as section_notes,
          e.muscle_group, e.exercise_type, e.rep_type,
          COALESCE(json_agg(json_build_object(
            'set_id', st.id, 'set_number', st.set_number, 'reps', st.reps, 'weight', st.weight,
@@ -76,8 +77,9 @@ The widget already shows all information visually — do NOT repeat exercises or
        JOIN exercises e ON e.id = se.exercise_id
        LEFT JOIN sets st ON st.session_exercise_id = se.id
        LEFT JOIN session_exercise_groups seg ON seg.id = se.group_id
+       LEFT JOIN session_sections ss ON ss.id = se.section_id
        WHERE se.session_id = $1
-       GROUP BY se.id, e.name, se.group_id, seg.group_type, seg.label, seg.notes, seg.rest_seconds, se.sort_order, e.muscle_group, e.exercise_type, e.rep_type
+       GROUP BY se.id, e.name, se.group_id, seg.group_type, seg.label, seg.notes, seg.rest_seconds, se.section_id, ss.label, ss.notes, se.sort_order, e.muscle_group, e.exercise_type, e.rep_type
        ORDER BY se.sort_order`,
       [session.id]
     );
@@ -145,6 +147,9 @@ The widget already shows all information visually — do NOT repeat exercises or
             group_label: e.group_label,
             group_notes: e.group_notes,
             group_rest_seconds: e.group_rest_seconds,
+            section_id: e.section_id,
+            section_label: e.section_label,
+            section_notes: e.section_notes,
             muscle_group: e.muscle_group,
             exercise_type: e.exercise_type,
             rep_type: e.rep_type,

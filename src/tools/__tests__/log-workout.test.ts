@@ -35,6 +35,10 @@ vi.mock("../../helpers/group-helpers.js", () => ({
   cloneGroups: vi.fn().mockResolvedValue(new Map()),
 }));
 
+vi.mock("../../helpers/section-helpers.js", () => ({
+  cloneSections: vi.fn().mockResolvedValue(new Map()),
+}));
+
 vi.mock("../../context/user-context.js", () => ({
   getUserId: vi.fn().mockReturnValue(1),
 }));

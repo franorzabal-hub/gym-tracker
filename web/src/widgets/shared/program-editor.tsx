@@ -40,6 +40,9 @@ export interface EditableExercise {
   group_label: string | null;
   group_notes: string | null;
   group_rest_seconds: number | null;
+  section_id: number | null;
+  section_label: string | null;
+  section_notes: string | null;
   rest_seconds: number | null;
   notes: string | null;
 }
@@ -72,6 +75,9 @@ interface Block {
   groupLabel: string | null;
   groupNotes: string | null;
   groupRestSeconds: number | null;
+  sectionId: number | null;
+  sectionLabel: string | null;
+  sectionNotes: string | null;
   exercises: EditableExercise[];
 }
 
@@ -95,6 +101,9 @@ function exercisesToBlocks(exercises: EditableExercise[]): Block[] {
         groupLabel: blockExercises[0].group_label,
         groupNotes: blockExercises[0].group_notes,
         groupRestSeconds: blockExercises[0].group_rest_seconds,
+        sectionId: blockExercises[0].section_id,
+        sectionLabel: blockExercises[0].section_label,
+        sectionNotes: blockExercises[0].section_notes,
         exercises: blockExercises,
       });
     } else {
@@ -105,6 +114,9 @@ function exercisesToBlocks(exercises: EditableExercise[]): Block[] {
         groupLabel: null,
         groupNotes: null,
         groupRestSeconds: null,
+        sectionId: ex.section_id,
+        sectionLabel: ex.section_label,
+        sectionNotes: ex.section_notes,
         exercises: [ex],
       });
       i++;
@@ -127,6 +139,9 @@ function blocksToExercises(blocks: Block[]): EditableExercise[] {
           group_label: block.groupLabel,
           group_notes: block.groupNotes,
           group_rest_seconds: block.groupRestSeconds,
+          section_id: block.sectionId,
+          section_label: block.sectionLabel,
+          section_notes: block.sectionNotes,
         });
       }
       groupNum++;
@@ -139,6 +154,9 @@ function blocksToExercises(blocks: Block[]): EditableExercise[] {
           group_label: null,
           group_notes: null,
           group_rest_seconds: null,
+          section_id: block.sectionId,
+          section_label: block.sectionLabel,
+          section_notes: block.sectionNotes,
         });
       }
     }
@@ -409,13 +427,18 @@ export function useProgramAutoSave(programId: number | null) {
 
       timerRef.current = setTimeout(async () => {
         setStatus("saving");
-        // Convert block model to nested format: solo exercises + groups
+        // Convert block model to nested format: solo exercises + groups + sections
         const cleanDays = days.map((d) => {
           const blocks = exercisesToBlocks(d.exercises.filter((ex) => ex.exercise.trim() !== ""));
+
+          // Group blocks by sectionId to reconstruct sections
           const items: any[] = [];
-          for (const block of blocks) {
+          const sectionMap = new Map<number, { label: string; notes: string | null; exercises: any[] }>();
+          const sectionOrder: number[] = [];
+
+          const serializeBlock = (block: Block): any[] => {
             if (block.groupType && block.exercises.length >= 2) {
-              items.push({
+              return [{
                 group_type: block.groupType,
                 label: block.groupLabel,
                 notes: block.groupNotes,
@@ -428,21 +451,57 @@ export function useProgramAutoSave(programId: number | null) {
                   rpe: ex.rpe,
                   notes: ex.notes,
                 })),
-              });
-            } else {
-              for (const ex of block.exercises) {
-                items.push({
-                  exercise: ex.exercise,
-                  sets: ex.sets,
-                  reps: ex.reps,
-                  weight: ex.weight,
-                  rpe: ex.rpe,
-                  rest_seconds: ex.rest_seconds,
-                  notes: ex.notes,
+              }];
+            }
+            return block.exercises.map((ex) => ({
+              exercise: ex.exercise,
+              sets: ex.sets,
+              reps: ex.reps,
+              weight: ex.weight,
+              rpe: ex.rpe,
+              rest_seconds: ex.rest_seconds,
+              notes: ex.notes,
+            }));
+          };
+
+          for (const block of blocks) {
+            if (block.sectionId != null) {
+              if (!sectionMap.has(block.sectionId)) {
+                sectionOrder.push(block.sectionId);
+                sectionMap.set(block.sectionId, {
+                  label: block.sectionLabel || "Section",
+                  notes: block.sectionNotes || null,
+                  exercises: [],
                 });
               }
+              sectionMap.get(block.sectionId)!.exercises.push(...serializeBlock(block));
+            } else {
+              // Flush pending sections before unsectioned blocks
+              for (const sid of sectionOrder) {
+                const sec = sectionMap.get(sid)!;
+                items.push({
+                  section: sec.label,
+                  notes: sec.notes,
+                  exercises: sec.exercises,
+                });
+              }
+              sectionOrder.length = 0;
+              sectionMap.clear();
+
+              items.push(...serializeBlock(block));
             }
           }
+
+          // Flush remaining sections
+          for (const sid of sectionOrder) {
+            const sec = sectionMap.get(sid)!;
+            items.push({
+              section: sec.label,
+              notes: sec.notes,
+              exercises: sec.exercises,
+            });
+          }
+
           return { day_label: d.day_label, weekdays: d.weekdays, exercises: items };
         });
 
@@ -494,6 +553,9 @@ export function toEditableDay(day: Day): EditableDay {
       group_label: ex.group_label,
       group_notes: ex.group_notes,
       group_rest_seconds: ex.group_rest_seconds,
+      section_id: ex.section_id ?? null,
+      section_label: ex.section_label ?? null,
+      section_notes: ex.section_notes ?? null,
       rest_seconds: ex.rest_seconds,
       notes: ex.notes,
     })),
@@ -1405,6 +1467,9 @@ function EditableDayCard({
       group_label: null,
       group_notes: null,
       group_rest_seconds: null,
+      section_id: null,
+      section_label: null,
+      section_notes: null,
       rest_seconds: 60,
       notes: null,
     };
@@ -1418,7 +1483,7 @@ function EditableDayCard({
     return used.length > 0 ? Math.max(...used) + 1 : 1;
   }, [day.exercises]);
 
-  const addSection = (type: "superset" | "paired" | "circuit") => {
+  const addGroup = (type: "superset" | "paired" | "circuit") => {
     const groupNum = nextGroupNum;
     const ex1: EditableExercise = {
       exercise: "",
@@ -1431,6 +1496,9 @@ function EditableDayCard({
       group_label: null,
       group_notes: null,
       group_rest_seconds: null,
+      section_id: null,
+      section_label: null,
+      section_notes: null,
       rest_seconds: null,
       notes: null,
     };
@@ -1492,6 +1560,9 @@ function EditableDayCard({
           groupLabel: null,
           groupNotes: null,
           groupRestSeconds: null,
+          sectionId: block.sectionId,
+          sectionLabel: block.sectionLabel,
+          sectionNotes: block.sectionNotes,
           exercises: [{ ...movedEx, group_id: null, group_type: null, group_label: null, group_notes: null, group_rest_seconds: null }],
         });
       } else {
@@ -1650,6 +1721,9 @@ function EditableDayCard({
                         group_label: block.groupLabel,
                         group_notes: block.groupNotes,
                         group_rest_seconds: block.groupRestSeconds,
+                        section_id: block.sectionId,
+                        section_label: block.sectionLabel,
+                        section_notes: block.sectionNotes,
                         rest_seconds: null,
                         notes: null,
                       };
@@ -1747,9 +1821,9 @@ function EditableDayCard({
           {/* Add exercise / section */}
           <div style={{ paddingLeft: RAIL_PX, marginTop: 8, marginBottom: 4, display: "flex", gap: 12, flexWrap: "wrap" }}>
             <AddLink label="+ Exercise" onClick={addExercise} />
-            <AddLink label="+ Superset" icon="⚡" onClick={() => addSection("superset")} />
-            <AddLink label="+ Paired" icon="🔗" onClick={() => addSection("paired")} />
-            <AddLink label="+ Circuit" icon="🔄" onClick={() => addSection("circuit")} />
+            <AddLink label="+ Superset" icon="⚡" onClick={() => addGroup("superset")} />
+            <AddLink label="+ Paired" icon="🔗" onClick={() => addGroup("paired")} />
+            <AddLink label="+ Circuit" icon="🔄" onClick={() => addGroup("circuit")} />
           </div>
         </DndContext>
       )}

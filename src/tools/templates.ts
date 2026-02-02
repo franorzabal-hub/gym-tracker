@@ -5,6 +5,7 @@ import { getUserId } from "../context/user-context.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 import { cloneGroups } from "../helpers/group-helpers.js";
+import { cloneSections } from "../helpers/section-helpers.js";
 
 export function registerTemplatesTool(server: McpServer) {
   server.registerTool("manage_templates", {
@@ -53,13 +54,17 @@ Actions:
                  'group_id', ste.group_id,
                  'group_type', teg.group_type,
                  'group_label', teg.label,
-                 'rest_seconds', ste.rest_seconds
+                 'rest_seconds', ste.rest_seconds,
+                 'section_id', ste.section_id,
+                 'section_label', ts.label,
+                 'section_notes', ts.notes
                ) ORDER BY ste.sort_order
              ) FILTER (WHERE ste.id IS NOT NULL), '[]') as exercises
            FROM session_templates st
            LEFT JOIN session_template_exercises ste ON ste.template_id = st.id
            LEFT JOIN exercises e ON e.id = ste.exercise_id
            LEFT JOIN template_exercise_groups teg ON teg.id = ste.group_id
+           LEFT JOIN template_sections ts ON ts.id = ste.section_id
            WHERE st.user_id = $1
            GROUP BY st.id
            ORDER BY st.name
@@ -91,7 +96,7 @@ Actions:
 
         // Get session exercises with their best set data
         const { rows: sessionExercises } = await pool.query(
-          `SELECT se.exercise_id, se.sort_order, se.group_id, se.rest_seconds, se.notes,
+          `SELECT se.exercise_id, se.sort_order, se.group_id, se.section_id, se.rest_seconds, se.notes,
              COUNT(st.id) as set_count,
              MODE() WITHIN GROUP (ORDER BY st.reps) as common_reps,
              MAX(st.weight) as max_weight,
@@ -126,11 +131,19 @@ Actions:
             client
           );
 
+          // Clone sections from session to template
+          const sectionMap = await cloneSections(
+            "session_sections", "template_sections",
+            "session_id", "template_id",
+            sid, tmpl.id,
+            client
+          );
+
           for (const se of sessionExercises) {
             await client.query(
               `INSERT INTO session_template_exercises
-                 (template_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                 (template_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
               [
                 tmpl.id,
                 se.exercise_id,
@@ -142,6 +155,7 @@ Actions:
                 se.group_id ? (groupMap.get(se.group_id) ?? null) : null,
                 se.rest_seconds || null,
                 se.notes || null,
+                se.section_id ? (sectionMap.get(se.section_id) ?? null) : null,
               ]
             );
           }
@@ -187,7 +201,7 @@ Actions:
           return toolResponse({ error: `Template "${name}" not found` }, true);
         }
 
-        // Get template exercises
+        // Get template exercises (ste.* includes section_id)
         const { rows: templateExercises } = await pool.query(
           `SELECT ste.*, e.name as exercise_name
            FROM session_template_exercises ste
@@ -216,12 +230,20 @@ Actions:
             startClient
           );
 
+          // Clone sections from template to session
+          const sectionMap = await cloneSections(
+            "template_sections", "session_sections",
+            "template_id", "session_id",
+            templates[0].id, session.id,
+            startClient
+          );
+
           // Pre-populate session_exercises
           for (const te of templateExercises) {
             await startClient.query(
-              `INSERT INTO session_exercises (session_id, exercise_id, sort_order, group_id, rest_seconds, notes)
-               VALUES ($1, $2, $3, $4, $5, $6)`,
-              [session.id, te.exercise_id, te.sort_order, te.group_id ? (groupMap.get(te.group_id) ?? null) : null, te.rest_seconds || null, te.notes || null]
+              `INSERT INTO session_exercises (session_id, exercise_id, sort_order, group_id, rest_seconds, notes, section_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [session.id, te.exercise_id, te.sort_order, te.group_id ? (groupMap.get(te.group_id) ?? null) : null, te.rest_seconds || null, te.notes || null, te.section_id ? (sectionMap.get(te.section_id) ?? null) : null]
             );
           }
 

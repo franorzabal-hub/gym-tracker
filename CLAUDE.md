@@ -95,10 +95,10 @@ Node.js + TypeScript, Express, CORS, `@modelcontextprotocol/sdk` (StreamableHTTP
 server.ts                    # Express + MCP server + auth middleware
 src/auth/                    # middleware.ts, oauth-routes.ts, workos.ts
 src/context/user-context.ts  # AsyncLocalStorage: getUserId() / runWithUser()
-src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-016
+src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-017
 src/tools/                   # 16 files → 21 MCP tools (14 data + 7 display)
-src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts, log-exercise-helper.ts, group-helpers.ts, date-helpers.ts, parse-helpers.ts, tool-response.ts
-src/helpers/__tests__/       # Vitest tests for helpers (exercise-resolver, program-helpers, stats-calculator, group-helpers)
+src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts, log-exercise-helper.ts, group-helpers.ts, section-helpers.ts, date-helpers.ts, parse-helpers.ts, tool-response.ts
+src/helpers/__tests__/       # Vitest tests for helpers (exercise-resolver, program-helpers, stats-calculator, group-helpers, section-helpers)
 src/resources/               # register-widgets.ts — registers all widget resources
 src/tools/__tests__/         # Vitest tests for tools
 docs/                        # Product specs (onboarding-flow, product-description, user-journeys)
@@ -125,22 +125,25 @@ user_profile (user_id FK UNIQUE, data JSONB)
 exercises (user_id FK nullable, name, muscle_group, equipment, rep_type, exercise_type, description)
   → UNIQUE on (COALESCE(user_id, 0), LOWER(name)) — global (user_id NULL) + per-user
 exercise_aliases (exercise_id FK, alias UNIQUE)
-programs (user_id FK nullable, name, is_active) → program_versions → program_days → program_day_exercises (group_id FK, rest_seconds)
+programs (user_id FK nullable, name, is_active) → program_versions → program_days → program_day_exercises (group_id FK, section_id FK, rest_seconds)
   → user_id NULL = global template program; user_id set = user-owned program
 program_exercise_groups (day_id FK, group_type CHECK superset|paired|circuit, label, notes, rest_seconds, sort_order)
-sessions (user_id FK, started_at, ended_at, tags TEXT[], deleted_at) → session_exercises (group_id FK, rest_seconds) → sets (notes)
+program_sections (day_id FK CASCADE, label, notes, sort_order)
+sessions (user_id FK, started_at, ended_at, tags TEXT[], deleted_at) → session_exercises (group_id FK, section_id FK, rest_seconds) → sets (notes)
 session_exercise_groups (session_id FK, group_type, label, notes, rest_seconds, sort_order)
+session_sections (session_id FK CASCADE, label, notes, sort_order)
 personal_records (user_id FK, exercise_id FK, record_type) UNIQUE per user+exercise+type
 pr_history (user_id FK, exercise_id FK, record_type, value, achieved_at)
-session_templates (user_id FK, name UNIQUE per user) → session_template_exercises (group_id FK)
+session_templates (user_id FK, name UNIQUE per user) → session_template_exercises (group_id FK, section_id FK)
 template_exercise_groups (template_id FK, group_type, label, notes, rest_seconds, sort_order)
+template_sections (template_id FK CASCADE, label, notes, sort_order)
 body_measurements (user_id FK, measurement_type, value NUMERIC, measured_at, notes)
 auth_tokens (token PK, workos_user_id, email, expires_at)
 auth_codes (code PK, workos_user_id, email, expires_at, code_challenge, code_challenge_method)
 dynamic_clients (client_id PK, redirect_uris TEXT[])
 ```
 
-Key: per-set rows, program versioning, soft delete on sessions, GIN index on tags, `rep_type` (reps/seconds/meters/calories), `exercise_type` (strength/mobility/cardio/warmup — PRs only for strength). Exercise groups (superset/paired/circuit) are first-class entities with label, notes, rest_seconds — 3 tables (program/session/template) for referential integrity. Auth tokens/codes persisted in Postgres with TTL cleanup every 15 min.
+Key: per-set rows, program versioning, soft delete on sessions, GIN index on tags, `rep_type` (reps/seconds/meters/calories), `exercise_type` (strength/mobility/cardio/warmup — PRs only for strength). Exercise groups (superset/paired/circuit) are first-class entities with label, notes, rest_seconds — 3 tables (program/session/template) for referential integrity. Sections are optional containers between day and exercises (e.g. "Warm-up", "Main work") — 3 tables (program_sections/session_sections/template_sections) with section_id FK on exercise tables (ON DELETE SET NULL). Auth tokens/codes persisted in Postgres with TTL cleanup every 15 min.
 
 ## MCP Tools (21)
 
@@ -208,7 +211,7 @@ Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture
 
 ## Migrations
 
-16 migrations in `src/db/migrations/` (001–016). Each file is self-describing — read the SQL for details. Auto-applied on server startup via `runMigrations()`.
+17 migrations in `src/db/migrations/` (001–017). Each file is self-describing — read the SQL for details. Auto-applied on server startup via `runMigrations()`.
 
 ## Pending (Phase 3)
 

@@ -14,10 +14,54 @@ export interface Exercise {
   group_label: string | null;
   group_notes: string | null;
   group_rest_seconds: number | null;
+  section_id: number | null;
+  section_label: string | null;
+  section_notes: string | null;
   rest_seconds: number | null;
   notes: string | null;
   muscle_group: string | null;
   rep_type: "reps" | "seconds" | "meters" | "calories" | null;
+}
+
+export interface Section {
+  sectionId: number;
+  label: string;
+  notes: string | null;
+  exercises: Exercise[];
+}
+
+export interface DayStructure {
+  sections: Section[];
+  unsectioned: Exercise[];
+}
+
+/** Group exercises into sections. Exercises without a section go into unsectioned. */
+export function groupIntoSections(exercises: Exercise[]): DayStructure {
+  const sections = new Map<number, Section>();
+  const unsectioned: Exercise[] = [];
+  const sectionOrder: number[] = [];
+
+  for (const ex of exercises) {
+    if (ex.section_id != null) {
+      if (!sections.has(ex.section_id)) {
+        sectionOrder.push(ex.section_id);
+        sections.set(ex.section_id, {
+          sectionId: ex.section_id,
+          label: ex.section_label || "Section",
+          notes: ex.section_notes || null,
+          exercises: [],
+        });
+      }
+      sections.get(ex.section_id)!.exercises.push(ex);
+    } else {
+      unsectioned.push(ex);
+    }
+  }
+
+  return {
+    sections: sectionOrder.map(id => sections.get(id)!),
+    unsectioned,
+  };
 }
 
 export const REP_UNIT: Record<string, string> = {
@@ -408,6 +452,89 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex }: { e
   );
 }
 
+/** Render a list of exercise blocks with consistent numbering */
+function ExerciseBlockList({ blocks, ssGroupColors, startNumber }: {
+  blocks: Exercise[][];
+  ssGroupColors: Map<number, string>;
+  startNumber: number;
+}) {
+  let currentIdx = startNumber;
+  return (
+    <>
+      {blocks.map((block, i) => {
+        const gid = block[0].group_id;
+        const color = gid != null ? ssGroupColors.get(gid) || null : null;
+        const groupType = block[0].group_type;
+        const startIdx = currentIdx;
+        currentIdx += block.length;
+        return (
+          <div key={i}>
+            <ExerciseBlock exercises={block} ssColor={color} groupType={groupType} startIndex={startIdx} />
+            {i < blocks.length - 1 && (
+              <div style={{
+                borderBottom: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
+                marginLeft: RAIL_PX + 2,
+                marginBottom: sp[5],
+              }} />
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+export function SectionCard({ section, ssGroupColors, startNumber }: {
+  section: Section;
+  ssGroupColors: Map<number, string>;
+  startNumber: number;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const blocks = groupIntoBlocks(section.exercises);
+
+  return (
+    <div style={{
+      border: "1px solid var(--border)",
+      borderRadius: radius.lg,
+      padding: `${sp[4]}px ${sp[5]}px`,
+      marginBottom: sp[4],
+      background: "color-mix(in srgb, var(--bg-secondary) 50%, transparent)",
+    }}>
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: expanded ? sp[4] : 0,
+          userSelect: "none",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
+          <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
+            {expanded ? "▼" : "▶"}
+          </span>
+          <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
+            {section.label}
+          </span>
+          {section.notes && (
+            <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium, fontStyle: "italic" }}>
+              {section.notes}
+            </span>
+          )}
+        </div>
+        <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
+          {section.exercises.length} ej.
+        </span>
+      </div>
+      {expanded && (
+        <ExerciseBlockList blocks={blocks} ssGroupColors={ssGroupColors} startNumber={startNumber} />
+      )}
+    </div>
+  );
+}
+
 export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: boolean }) {
   const [expanded, setExpanded] = useState(true);
   const canCollapse = !alwaysExpanded;
@@ -486,29 +613,103 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
         }} />
       )}
 
-      {expanded && (
-        <div>
-          {blocks.map((block, i) => {
-            const gid = block[0].group_id;
-            const color = gid != null ? ssGroupColors.get(gid) || null : null;
-            const groupType = block[0].group_type;
-            // Calculate global exercise number for this block
-            const startIdx = blocks.slice(0, i).reduce((sum, b) => sum + b.length, 0) + 1;
-            return (
-              <div key={i}>
-                <ExerciseBlock exercises={block} ssColor={color} groupType={groupType} startIndex={startIdx} />
-                {i < blocks.length - 1 && (
-                  <div style={{
-                    borderBottom: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
-                    marginLeft: RAIL_PX + 2,
-                    marginBottom: sp[5],
-                  }} />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {expanded && (() => {
+        const { sections, unsectioned } = groupIntoSections(day.exercises);
+        const hasSections = sections.length > 0;
+
+        if (!hasSections) {
+          // No sections — render blocks directly (original behavior)
+          return (
+            <div>
+              <ExerciseBlockList blocks={blocks} ssGroupColors={ssGroupColors} startNumber={1} />
+            </div>
+          );
+        }
+
+        // Render with sections: maintain global numbering across sections and unsectioned exercises
+        let globalNum = 1;
+
+        // Build render order: interleave sections and unsectioned exercises by sort_order
+        // Unsectioned exercises come before/after/between sections based on their sort_order
+        const allItems: Array<{ type: "section"; section: Section } | { type: "unsectioned"; exercises: Exercise[] }> = [];
+
+        // Find the min sort_order of each section
+        const sectionStarts = sections.map(s => ({
+          section: s,
+          sortOrder: Math.min(...s.exercises.map(e => (e as any).sort_order ?? 0)),
+        }));
+
+        // Group unsectioned exercises by consecutive runs
+        if (unsectioned.length > 0) {
+          allItems.push({ type: "unsectioned", exercises: unsectioned });
+        }
+
+        // Build final ordered list
+        const orderedItems: typeof allItems = [];
+        let unsectionedIdx = 0;
+        const unsectionedByOrder = unsectioned.map(e => ({
+          exercise: e,
+          sortOrder: (e as any).sort_order ?? 0,
+        })).sort((a, b) => a.sortOrder - b.sortOrder);
+
+        let sIdx = 0;
+        let uIdx = 0;
+
+        while (sIdx < sectionStarts.length || uIdx < unsectionedByOrder.length) {
+          const sOrder = sIdx < sectionStarts.length ? sectionStarts[sIdx].sortOrder : Infinity;
+          const uOrder = uIdx < unsectionedByOrder.length ? unsectionedByOrder[uIdx].sortOrder : Infinity;
+
+          if (sOrder <= uOrder && sIdx < sectionStarts.length) {
+            orderedItems.push({ type: "section", section: sectionStarts[sIdx].section });
+            sIdx++;
+          } else if (uIdx < unsectionedByOrder.length) {
+            // Collect consecutive unsectioned exercises
+            const batch: Exercise[] = [unsectionedByOrder[uIdx].exercise];
+            uIdx++;
+            while (uIdx < unsectionedByOrder.length &&
+                   (sIdx >= sectionStarts.length || unsectionedByOrder[uIdx].sortOrder < sectionStarts[sIdx].sortOrder)) {
+              batch.push(unsectionedByOrder[uIdx].exercise);
+              uIdx++;
+            }
+            orderedItems.push({ type: "unsectioned", exercises: batch });
+          }
+        }
+
+        return (
+          <div>
+            {orderedItems.map((item, i) => {
+              if (item.type === "section") {
+                const startNum = globalNum;
+                globalNum += item.section.exercises.length;
+                return (
+                  <SectionCard
+                    key={`section-${item.section.sectionId}`}
+                    section={item.section}
+                    ssGroupColors={ssGroupColors}
+                    startNumber={startNum}
+                  />
+                );
+              } else {
+                const unsectionedBlocks = groupIntoBlocks(item.exercises);
+                const startNum = globalNum;
+                globalNum += item.exercises.length;
+                return (
+                  <div key={`unsectioned-${i}`}>
+                    <ExerciseBlockList blocks={unsectionedBlocks} ssGroupColors={ssGroupColors} startNumber={startNum} />
+                    {i < orderedItems.length - 1 && (
+                      <div style={{
+                        borderBottom: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
+                        marginLeft: RAIL_PX + 2,
+                        marginBottom: sp[5],
+                      }} />
+                    )}
+                  </div>
+                );
+              }
+            })}
+          </div>
+        );
+      })()}
     </div>
   );
 }

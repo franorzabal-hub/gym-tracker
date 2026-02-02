@@ -123,6 +123,7 @@ Optionally add or update tags on the session.`,
       // Get exercises grouped by exercise groups
       const { rows: exerciseDetails } = await pool.query(
         `SELECT e.name, se.group_id, seg.group_type, seg.label as group_label,
+           se.section_id, ss.label as section_label, ss.notes as section_notes,
            COALESCE(json_agg(json_build_object(
              'set_id', st.id, 'set_number', st.set_number, 'reps', st.reps, 'weight', st.weight, 'rpe', st.rpe, 'set_type', st.set_type
            ) ORDER BY st.set_number) FILTER (WHERE st.id IS NOT NULL), '[]') as sets
@@ -130,8 +131,9 @@ Optionally add or update tags on the session.`,
          JOIN exercises e ON e.id = se.exercise_id
          LEFT JOIN sets st ON st.session_exercise_id = se.id
          LEFT JOIN session_exercise_groups seg ON seg.id = se.group_id
+         LEFT JOIN session_sections ss ON ss.id = se.section_id
          WHERE se.session_id = $1
-         GROUP BY se.id, e.name, se.group_id, seg.group_type, seg.label, se.sort_order
+         GROUP BY se.id, e.name, se.group_id, seg.group_type, seg.label, se.section_id, ss.label, ss.notes, se.sort_order
          ORDER BY se.sort_order`,
         [sessionId]
       );
@@ -222,7 +224,7 @@ Optionally add or update tags on the session.`,
         exercises_count: Number(summary.exercises_count),
         total_sets: Number(summary.total_sets),
         total_volume_kg: Math.round(Number(summary.total_volume_kg)),
-        exercises: exerciseDetails.map((e: any) => ({ name: e.name, group_id: e.group_id, group_type: e.group_type, group_label: e.group_label, sets: e.sets })),
+        exercises: exerciseDetails.map((e: any) => ({ name: e.name, group_id: e.group_id, group_type: e.group_type, group_label: e.group_label, section_id: e.section_id, section_label: e.section_label, section_notes: e.section_notes, sets: e.sets })),
         groups: Object.keys(groups).length > 0 ? groups : undefined,
         comparison: comparison || undefined,
       };
@@ -265,6 +267,7 @@ Optionally add or update tags on the session.`,
       // Get exercises + sets
       const { rows: exerciseDetails } = await pool.query(
         `SELECT e.name, se.group_id, seg.group_type, seg.label as group_label,
+           se.section_id, ss.label as section_label, ss.notes as section_notes,
            COALESCE(json_agg(json_build_object(
              'set_id', st.id, 'set_number', st.set_number, 'reps', st.reps, 'weight', st.weight, 'rpe', st.rpe, 'set_type', st.set_type
            ) ORDER BY st.set_number) FILTER (WHERE st.id IS NOT NULL), '[]') as sets
@@ -272,8 +275,9 @@ Optionally add or update tags on the session.`,
          JOIN exercises e ON e.id = se.exercise_id
          LEFT JOIN sets st ON st.session_exercise_id = se.id
          LEFT JOIN session_exercise_groups seg ON seg.id = se.group_id
+         LEFT JOIN session_sections ss ON ss.id = se.section_id
          WHERE se.session_id = $1
-         GROUP BY se.id, e.name, se.group_id, seg.group_type, seg.label, se.sort_order
+         GROUP BY se.id, e.name, se.group_id, seg.group_type, seg.label, se.section_id, ss.label, ss.notes, se.sort_order
          ORDER BY se.sort_order`,
         [session.id]
       );
@@ -285,7 +289,7 @@ Optionally add or update tags on the session.`,
         duration_minutes: durationMinutes,
         program_day: programDay,
         tags: session.tags || [],
-        exercises: exerciseDetails.map((e: any) => ({ name: e.name, group_id: e.group_id, group_type: e.group_type, group_label: e.group_label, sets: e.sets })),
+        exercises: exerciseDetails.map((e: any) => ({ name: e.name, group_id: e.group_id, group_type: e.group_type, group_label: e.group_label, section_id: e.section_id, section_label: e.section_label, section_notes: e.section_notes, sets: e.sets })),
       };
       return toolResponse(activeData);
     })

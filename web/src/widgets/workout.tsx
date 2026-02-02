@@ -33,6 +33,9 @@ interface ExerciseData {
   group_label?: string | null;
   group_notes?: string | null;
   group_rest_seconds?: number | null;
+  section_id?: number | null;
+  section_label?: string | null;
+  section_notes?: string | null;
   muscle_group?: string | null;
   exercise_type?: string | null;
   rep_type?: string | null;
@@ -411,6 +414,111 @@ function GroupWrapper({ groupType, groupLabel, groupNotes, groupRestSeconds, chi
   );
 }
 
+// ── Section container ──
+
+interface WorkoutSection {
+  sectionId: number;
+  label: string;
+  notes: string | null;
+  groups: ExerciseGroup[];
+}
+
+function groupIntoWorkoutSections(exerciseGroups: ExerciseGroup[]): Array<{ type: "section"; section: WorkoutSection } | { type: "groups"; groups: ExerciseGroup[] }> {
+  const result: Array<{ type: "section"; section: WorkoutSection } | { type: "groups"; groups: ExerciseGroup[] }> = [];
+  let currentUnsectioned: ExerciseGroup[] = [];
+
+  // Group exercise groups by section
+  const sectionMap = new Map<number, WorkoutSection>();
+  const sectionOrder: number[] = [];
+
+  for (const group of exerciseGroups) {
+    const firstEx = group.exercises[0];
+    const sectionId = firstEx?.section_id;
+
+    if (sectionId != null) {
+      // Flush unsectioned
+      if (currentUnsectioned.length > 0) {
+        result.push({ type: "groups", groups: currentUnsectioned });
+        currentUnsectioned = [];
+      }
+
+      if (!sectionMap.has(sectionId)) {
+        const section: WorkoutSection = {
+          sectionId,
+          label: firstEx.section_label || "Section",
+          notes: firstEx.section_notes || null,
+          groups: [],
+        };
+        sectionMap.set(sectionId, section);
+        sectionOrder.push(sectionId);
+        result.push({ type: "section", section });
+      }
+      sectionMap.get(sectionId)!.groups.push(group);
+    } else {
+      currentUnsectioned.push(group);
+    }
+  }
+
+  if (currentUnsectioned.length > 0) {
+    result.push({ type: "groups", groups: currentUnsectioned });
+  }
+
+  return result;
+}
+
+function SectionContainer({ section, expandedExercise, onToggle, children }: {
+  section: WorkoutSection;
+  expandedExercise: string | null;
+  onToggle: (name: string) => void;
+  children: React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const exerciseCount = section.groups.reduce((sum, g) => sum + g.exercises.length, 0);
+
+  return (
+    <div style={{
+      border: "1px solid var(--border)",
+      borderRadius: radius.lg,
+      padding: `${sp[4]}px ${sp[5]}px`,
+      background: "color-mix(in srgb, var(--bg-secondary) 50%, transparent)",
+    }}>
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: expanded ? sp[3] : 0,
+          userSelect: "none",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
+          <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
+            {expanded ? "\u25BC" : "\u25B6"}
+          </span>
+          <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
+            {section.label}
+          </span>
+          {section.notes && (
+            <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium, fontStyle: "italic" }}>
+              {section.notes}
+            </span>
+          )}
+        </div>
+        <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
+          {exerciseCount} ej.
+        </span>
+      </div>
+      {expanded && (
+        <div style={{ display: "flex", flexDirection: "column", gap: sp[2] }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main widget ──
 
 function WorkoutWidget() {
@@ -513,8 +621,10 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
       </div>
 
       {/* Exercise accordion */}
-      <div style={{ display: "flex", flexDirection: "column", gap: sp[2] }}>
-        {exerciseGroups.map((group, gi) => {
+      {(() => {
+        const hasSections = session.exercises.some(e => e.section_id != null);
+
+        const renderGroups = (groups: ExerciseGroup[]) => groups.map((group, gi) => {
           if (group.groupId != null && group.exercises.length > 1) {
             return (
               <GroupWrapper
@@ -543,8 +653,41 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
               onToggle={() => toggleExercise(ex.name)}
             />
           ));
-        })}
-      </div>
+        });
+
+        if (!hasSections) {
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: sp[2] }}>
+              {renderGroups(exerciseGroups)}
+            </div>
+          );
+        }
+
+        const sectionedItems = groupIntoWorkoutSections(exerciseGroups);
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: sp[2] }}>
+            {sectionedItems.map((item, i) => {
+              if (item.type === "section") {
+                return (
+                  <SectionContainer
+                    key={`section-${item.section.sectionId}`}
+                    section={item.section}
+                    expandedExercise={expandedExercise}
+                    onToggle={toggleExercise}
+                  >
+                    {renderGroups(item.section.groups)}
+                  </SectionContainer>
+                );
+              }
+              return (
+                <div key={`unsectioned-${i}`}>
+                  {renderGroups(item.groups)}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { cloneGroups } from "./group-helpers.js";
+import { cloneSections } from "./section-helpers.js";
 
 export async function getActiveProgram() {
   const userId = getUserId();
@@ -44,6 +45,9 @@ export async function getProgramDaysWithExercises(versionId: number) {
            'group_label', peg.label,
            'group_notes', peg.notes,
            'group_rest_seconds', peg.rest_seconds,
+           'section_id', pde.section_id,
+           'section_label', ps.label,
+           'section_notes', ps.notes,
            'notes', pde.notes,
            'rest_seconds', pde.rest_seconds,
            'rep_type', e.rep_type,
@@ -55,6 +59,7 @@ export async function getProgramDaysWithExercises(versionId: number) {
      LEFT JOIN program_day_exercises pde ON pde.day_id = pd.id
      LEFT JOIN exercises e ON e.id = pde.exercise_id
      LEFT JOIN program_exercise_groups peg ON peg.id = pde.group_id
+     LEFT JOIN program_sections ps ON ps.id = pde.section_id
      WHERE pd.version_id = $1
      GROUP BY pd.id
      ORDER BY pd.sort_order`,
@@ -140,7 +145,15 @@ export async function cloneVersion(
         client
       );
 
-      // Clone exercises with remapped group_id
+      // Clone sections for this day
+      const sectionMap = await cloneSections(
+        "program_sections", "program_sections",
+        "day_id", "day_id",
+        day.id, newDay.id,
+        client
+      );
+
+      // Clone exercises with remapped group_id and section_id
       const { rows: sourceExercises } = await client.query(
         `SELECT * FROM program_day_exercises WHERE day_id = $1 ORDER BY sort_order`,
         [day.id]
@@ -148,10 +161,11 @@ export async function cloneVersion(
       for (const ex of sourceExercises) {
         await client.query(
           `INSERT INTO program_day_exercises
-             (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+             (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
           [newDay.id, ex.exercise_id, ex.target_sets, ex.target_reps, ex.target_weight, ex.target_rpe,
-           ex.sort_order, ex.group_id ? (groupMap.get(ex.group_id) ?? null) : null, ex.rest_seconds, ex.notes]
+           ex.sort_order, ex.group_id ? (groupMap.get(ex.group_id) ?? null) : null, ex.rest_seconds, ex.notes,
+           ex.section_id ? (sectionMap.get(ex.section_id) ?? null) : null]
         );
       }
     }

@@ -104,13 +104,15 @@ Examples:
           `SELECT p.name as program_name, p.is_active,
             pv.version_number, pd.day_label, pd.weekdays,
             e.name as exercise_name, pde.target_sets, pde.target_reps, pde.target_weight, pde.target_rpe, pde.rest_seconds,
-            peg.group_type, peg.label as group_label
+            peg.group_type, peg.label as group_label,
+            ps.label as section_label, ps.notes as section_notes
            FROM programs p
            JOIN program_versions pv ON pv.program_id = p.id
            JOIN program_days pd ON pd.version_id = pv.id
            LEFT JOIN program_day_exercises pde ON pde.day_id = pd.id
            LEFT JOIN exercises e ON e.id = pde.exercise_id
            LEFT JOIN program_exercise_groups peg ON peg.id = pde.group_id
+           LEFT JOIN program_sections ps ON ps.id = pde.section_id
            WHERE p.user_id = $1
            ORDER BY p.name, pv.version_number DESC, pd.day_label, pde.sort_order
            LIMIT ${EXPORT_ROW_LIMIT}`,
@@ -174,7 +176,7 @@ Examples:
       }
 
       if (data.programs && data.programs.length > 0) {
-        const headers = ["program_name", "is_active", "version_number", "day_label", "weekdays", "exercise_name", "target_sets", "target_reps", "target_weight", "target_rpe", "rest_seconds", "group_type", "group_label"];
+        const headers = ["program_name", "is_active", "version_number", "day_label", "weekdays", "exercise_name", "target_sets", "target_reps", "target_weight", "target_rpe", "rest_seconds", "group_type", "group_label", "section_label", "section_notes"];
         const programRows = data.programs.map((r: any) => ({
           ...r,
           weekdays: r.weekdays ? r.weekdays.join(";") : "",

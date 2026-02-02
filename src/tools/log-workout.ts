@@ -12,6 +12,7 @@ import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 import { logSingleExercise, exerciseEntrySchema, type ExerciseEntry } from "../helpers/log-exercise-helper.js";
 import { cloneGroups } from "../helpers/group-helpers.js";
+import { cloneSections } from "../helpers/section-helpers.js";
 
 const overrideSchema = z.object({
   exercise: z.string(),
@@ -152,7 +153,7 @@ Parameters:
         // If we have a program day and it was requested (explicit or session-only), get its exercises
         if (dayInfo && hasProgramDay) {
           const { rows } = await pool.query(
-            `SELECT pde.*, e.name as exercise_name, e.id as exercise_id, e.exercise_type, pde.group_id
+            `SELECT pde.*, e.name as exercise_name, e.id as exercise_id, e.exercise_type, pde.group_id, pde.section_id
              FROM program_day_exercises pde
              JOIN exercises e ON e.id = pde.exercise_id
              WHERE pde.day_id = $1 ORDER BY pde.sort_order`,
@@ -251,6 +252,14 @@ Parameters:
           client
         );
 
+        // Clone sections from program day to session
+        const sectionMap = await cloneSections(
+          "program_sections", "session_sections",
+          "day_id", "session_id",
+          dayInfo.id, sessionId,
+          client
+        );
+
         for (const dex of dayExercises) {
           if (
             skipSet.has(dex.exercise_name.toLowerCase()) ||
@@ -265,12 +274,13 @@ Parameters:
           const weight = override?.weight ?? dex.target_weight;
           const rpe = override?.rpe ?? dex.target_rpe;
 
-          // Create session_exercise with remapped group_id
+          // Create session_exercise with remapped group_id and section_id
           const sessionGroupId = dex.group_id ? (groupMap.get(dex.group_id) ?? null) : null;
+          const sessionSectionId = dex.section_id ? (sectionMap.get(dex.section_id) ?? null) : null;
           const { rows: [se] } = await client.query(
-            `INSERT INTO session_exercises (session_id, exercise_id, sort_order, group_id, rest_seconds)
-             VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-            [sessionId, dex.exercise_id, dex.sort_order, sessionGroupId, dex.rest_seconds || null]
+            `INSERT INTO session_exercises (session_id, exercise_id, sort_order, group_id, rest_seconds, section_id)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+            [sessionId, dex.exercise_id, dex.sort_order, sessionGroupId, dex.rest_seconds || null, sessionSectionId]
           );
 
           // Insert sets

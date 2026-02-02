@@ -12,14 +12,76 @@ El usuario crea o elige un programa hablando con Claude. Claude lo arma con `man
 Programa
   └─ Version (se crea una nueva al editar, historial preservado)
        └─ Dias (ej: "Push", "Pull", "Legs")
-            └─ Ejercicios (ordenados, con sets/reps/peso objetivo)
-                 └─ Agrupamientos opcionales (superset, paired, circuit)
+            └─ Secciones opcionales (ej: "Entrada en calor", "Trabajo principal")
+                 └─ Ejercicios (ordenados, con sets/reps/peso objetivo)
+                      └─ Agrupamientos opcionales (superset, paired, circuit)
 ```
 
 - **Programa**: nombre, activo/inactivo. Solo uno activo a la vez.
 - **Version**: snapshot inmutable. Editar crea version nueva. `history` muestra todas.
 - **Dia**: label (ej: "Upper A"), weekdays opcionales (1=Lun..7=Dom).
+- **Seccion**: contenedor opcional con label y notas. Colapsable en widget.
 - **Ejercicio**: nombre, sets, reps, peso objetivo, RPE, descanso, notas.
+
+## Secciones (exercise sections)
+
+Las secciones son contenedores **opcionales** que organizan los ejercicios de un dia en bloques logicos. Ejemplos: "Entrada en calor", "Trabajo principal", "Accesorios", "Finisher".
+
+### Caracteristicas
+
+- **Opcionales**: los ejercicios pueden existir sin seccion (se renderizan directamente en el dia).
+- **No anidan**: una seccion contiene ejercicios sueltos y/o grupos, pero no otras secciones.
+- **Colapsables**: en el widget, cada seccion es un contenedor colapsable con chevron.
+- **Con notas**: cada seccion puede tener un `label` (obligatorio) y `notes` (opcional).
+- **Se preservan**: al clonar versiones, logear rutinas, o guardar/iniciar templates, las secciones se copian con remap de IDs.
+
+### Formato de entrada (LLM → server)
+
+Tercer discriminador en el array de `exercises` de cada dia:
+
+```json
+{
+  "day_label": "Push",
+  "exercises": [
+    {
+      "section": "Entrada en calor",
+      "notes": "Movilidad general",
+      "exercises": [
+        { "exercise": "Band Pull Apart", "sets": 2, "reps": 15 },
+        { "exercise": "Foam Rolling", "sets": 1, "reps": 60 }
+      ]
+    },
+    {
+      "section": "Trabajo principal",
+      "exercises": [
+        { "exercise": "Bench Press", "sets": 4, "reps": 8, "rest_seconds": 180 },
+        {
+          "group_type": "superset",
+          "label": "Pecho + Hombro",
+          "rest_seconds": 90,
+          "exercises": [
+            { "exercise": "Cable Fly", "sets": 3, "reps": 12 },
+            { "exercise": "Lateral Raise", "sets": 3, "reps": 15 }
+          ]
+        }
+      ]
+    },
+    { "exercise": "Stretching", "sets": 1, "reps": 300 }
+  ]
+}
+```
+
+**Discriminador**: `"exercise"` (string) → ejercicio suelto | `"group_type"` + `"exercises"` → grupo | `"section"` (string) + `"exercises"` → seccion.
+
+Las secciones no anidan: `section.exercises` acepta solo ejercicios sueltos y grupos.
+
+### Numeracion
+
+La numeracion de ejercicios es **global por dia** (1-N), cruza secciones. Un ejercicio que esta en la seccion "Trabajo principal" sigue la numeracion del ultimo ejercicio de "Entrada en calor".
+
+### DB schema
+
+3 tablas (mismo patron que groups): `program_sections`, `session_sections`, `template_sections`. Cada una con `label`, `notes`, `sort_order` y FK al padre (day_id, session_id, template_id) con CASCADE. Los ejercicios apuntan a su seccion via `section_id` FK (ON DELETE SET NULL).
 
 ## Agrupamiento de ejercicios (exercise groups)
 
@@ -48,7 +110,7 @@ Los ejercicios de un dia se envian como array mixto de **ejercicios sueltos** y 
 }
 ```
 
-**Discriminador**: si el item tiene `"exercise"` (string) es un ejercicio suelto. Si tiene `"group_type"` + `"exercises"` (array) es un grupo.
+**Discriminador**: si el item tiene `"exercise"` (string) es un ejercicio suelto. Si tiene `"group_type"` + `"exercises"` (array) es un grupo. Si tiene `"section"` (string) + `"exercises"` (array) es una seccion (ver arriba).
 
 ### superset
 
