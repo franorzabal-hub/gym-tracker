@@ -42,6 +42,8 @@ function DotIndicator({ total, active, onDot }: { total: number; active: number;
             background: i === active ? "var(--primary)" : "var(--border)",
             cursor: "pointer",
             transition: "all 0.2s",
+            boxSizing: "content-box",
+            border: "10px solid transparent",
           }}
         />
       ))}
@@ -173,8 +175,8 @@ function AvailableProgramsWidget() {
           width: 48, height: 48, borderRadius: "50%",
           background: "var(--success)", color: "white",
           display: "inline-flex", alignItems: "center", justifyContent: "center",
-          fontSize: 24, fontWeight: 700, marginBottom: 12,
-        }}>✓</div>
+          fontSize: 20, fontWeight: 700, marginBottom: 12,
+        }}>✔</div>
         <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Program created!</div>
         <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
           "{createdName}" is ready. Start training by telling me what you want to do.

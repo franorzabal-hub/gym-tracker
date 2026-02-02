@@ -36,6 +36,8 @@ function DotIndicator({ total, active, onDot }: { total: number; active: number;
             background: i === active ? "var(--primary)" : "var(--border)",
             cursor: "pointer",
             transition: "all 0.2s",
+            boxSizing: "content-box",
+            border: "10px solid transparent",
           }}
         />
       ))}

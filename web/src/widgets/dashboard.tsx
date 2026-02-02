@@ -30,7 +30,7 @@ function Card({ title, icon, children, fullWidth }: { title: string; icon: strin
         borderRadius: "var(--radius)",
         padding: "14px 16px",
         width: fullWidth ? "100%" : undefined,
-        minHeight: 120,
+        minHeight: 0,
         display: "flex",
         flexDirection: "column",
       }}
@@ -52,7 +52,7 @@ function StreakCard({ data, fullWidth }: { data: DashboardData["streak"]; fullWi
   if (!data) return null;
   const { current_weeks, longest_weeks, this_week } = data;
   return (
-    <Card title="Training Streak" icon="🔥" fullWidth={fullWidth}>
+    <Card title="Training Streak" icon="↗" fullWidth={fullWidth}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
         <span className="stat-value">{current_weeks}</span>
         <span className="stat-label">weeks</span>
@@ -74,7 +74,7 @@ function StreakCard({ data, fullWidth }: { data: DashboardData["streak"]; fullWi
 function VolumeCard({ data, fullWidth }: { data: DashboardData["volume_weekly"]; fullWidth?: boolean }) {
   if (!data || data.length === 0) {
     return (
-      <Card title="Weekly Volume" icon="🏋️" fullWidth={fullWidth}>
+      <Card title="Weekly Volume" icon="◆" fullWidth={fullWidth}>
         <div className="empty" style={{ padding: 12 }}>No volume data yet</div>
       </Card>
     );
@@ -88,7 +88,7 @@ function VolumeCard({ data, fullWidth }: { data: DashboardData["volume_weekly"];
   });
 
   return (
-    <Card title="Weekly Volume" icon="🏋️" fullWidth={fullWidth}>
+    <Card title="Weekly Volume" icon="◆" fullWidth={fullWidth}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
         <span className="stat-value">{formatLargeNumber(last.volume)}</span>
         <span className="stat-label">kg</span>
@@ -113,13 +113,13 @@ function VolumeCard({ data, fullWidth }: { data: DashboardData["volume_weekly"];
 function FrequencyCard({ data, fullWidth }: { data: DashboardData["frequency"]; fullWidth?: boolean }) {
   if (!data || data.weekly.length === 0) {
     return (
-      <Card title="Frequency" icon="📅" fullWidth={fullWidth}>
+      <Card title="Frequency" icon="▦" fullWidth={fullWidth}>
         <div className="empty" style={{ padding: 12 }}>No sessions yet</div>
       </Card>
     );
   }
   return (
-    <Card title="Frequency" icon="📅" fullWidth={fullWidth}>
+    <Card title="Frequency" icon="▦" fullWidth={fullWidth}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
         <span className="stat-value">{data.avg_per_week}</span>
         <span className="stat-label">sessions / week</span>
@@ -139,7 +139,7 @@ function FrequencyCard({ data, fullWidth }: { data: DashboardData["frequency"]; 
 function PRsCard({ data, fullWidth }: { data: DashboardData["recent_prs"]; fullWidth?: boolean }) {
   if (!data || data.length === 0) {
     return (
-      <Card title="Recent PRs" icon="🏆" fullWidth={fullWidth}>
+      <Card title="Recent PRs" icon="★" fullWidth={fullWidth}>
         <div className="empty" style={{ padding: 12 }}>No PRs yet</div>
       </Card>
     );
@@ -152,7 +152,7 @@ function PRsCard({ data, fullWidth }: { data: DashboardData["recent_prs"]; fullW
   };
 
   return (
-    <Card title="Recent PRs" icon="🏆" fullWidth={fullWidth}>
+    <Card title="Recent PRs" icon="★" fullWidth={fullWidth}>
       {data.map((pr, i) => (
         <div
           key={i}
@@ -184,13 +184,13 @@ function PRsCard({ data, fullWidth }: { data: DashboardData["recent_prs"]; fullW
 function MuscleGroupCard({ data, fullWidth }: { data: DashboardData["muscle_groups"]; fullWidth?: boolean }) {
   if (!data || data.length === 0) {
     return (
-      <Card title="Muscle Groups" icon="💪" fullWidth={fullWidth}>
+      <Card title="Muscle Groups" icon="●" fullWidth={fullWidth}>
         <div className="empty" style={{ padding: 12 }}>No data yet</div>
       </Card>
     );
   }
   return (
-    <Card title="Muscle Groups" icon="💪" fullWidth={fullWidth}>
+    <Card title="Muscle Groups" icon="●" fullWidth={fullWidth}>
       <HorizontalBars
         data={data.slice(0, 6).map((d) => ({
           label: d.muscle_group,
@@ -211,7 +211,7 @@ function BodyWeightCard({ data, fullWidth }: { data: DashboardData["body_weight"
   const diff = last - first;
 
   return (
-    <Card title="Body Weight" icon="⚖️" fullWidth={fullWidth}>
+    <Card title="Body Weight" icon="△" fullWidth={fullWidth}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
         <span className="stat-value">{last.toFixed(1)}</span>
         <span className="stat-label">kg</span>
@@ -237,13 +237,13 @@ function BodyWeightCard({ data, fullWidth }: { data: DashboardData["body_weight"
 function TopExercisesCard({ data, fullWidth }: { data: DashboardData["top_exercises"]; fullWidth?: boolean }) {
   if (!data || data.length === 0) {
     return (
-      <Card title="Top Exercises" icon="⭐" fullWidth={fullWidth}>
+      <Card title="Top Exercises" icon="▲" fullWidth={fullWidth}>
         <div className="empty" style={{ padding: 12 }}>No data yet</div>
       </Card>
     );
   }
   return (
-    <Card title="Top Exercises" icon="⭐" fullWidth={fullWidth}>
+    <Card title="Top Exercises" icon="▲" fullWidth={fullWidth}>
       <HorizontalBars
         data={data.map((d) => ({
           label: d.exercise,
@@ -317,6 +317,10 @@ function SwipeCarousel({ children, count }: { children: (idx: number) => React.R
                 background: i === activeIdx ? "var(--primary)" : "var(--border)",
                 cursor: "pointer",
                 transition: "background 0.2s",
+                padding: 0,
+                margin: 0,
+                boxSizing: "content-box",
+                border: "10px solid transparent",
               }}
             />
           ))}

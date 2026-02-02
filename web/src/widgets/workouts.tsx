@@ -61,16 +61,13 @@ function SessionRow({ session, onClick }: { session: Session; onClick: () => voi
   const duration = formatDuration(session.started_at, session.ended_at);
   const muscleGroups = session.muscle_groups || [];
   const exerciseNames = session.exercise_names || [];
-  // Pick up to 3 representative exercise icons
   const iconExercises = exerciseNames.slice(0, 3);
 
   return (
     <div
-      className="card"
+      className="card card-tappable"
       onClick={onClick}
-      style={{ padding: 0, cursor: "pointer", overflow: "hidden", transition: "border-color 0.15s" }}
-      onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--primary)")}
-      onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}
+      style={{ padding: 0, overflow: "hidden" }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px" }}>
         {/* Exercise icons cluster */}
@@ -103,7 +100,6 @@ function SessionRow({ session, onClick }: { session: Session; onClick: () => voi
           <span className="badge badge-success" style={{ fontSize: 9, flexShrink: 0 }}>Active</span>
         )}
 
-        {/* Spacer */}
         <span style={{ flex: 1 }} />
 
         {/* Stats summary */}
@@ -123,13 +119,9 @@ function SessionRow({ session, onClick }: { session: Session; onClick: () => voi
             const c = MUSCLE_COLOR[mg.toLowerCase()] || "var(--text-secondary)";
             return (
               <span key={mg} style={{
-                fontSize: 9,
-                padding: "1px 5px",
-                borderRadius: 4,
-                background: c + "18",
-                color: c,
-                fontWeight: 500,
-                textTransform: "capitalize",
+                fontSize: 9, padding: "1px 5px", borderRadius: 4,
+                background: c + "18", color: c,
+                fontWeight: 500, textTransform: "capitalize",
               }}>
                 {mg}
               </span>
