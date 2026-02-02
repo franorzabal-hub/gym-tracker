@@ -2,7 +2,7 @@ import { createRoot } from "react-dom/client";
 import { useState, useCallback } from "react";
 import { useToolOutput, useCallTool } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
-import { sp, font, weight } from "../tokens.js";
+import { sp, radius, font, weight } from "../tokens.js";
 import "../styles.css";
 import {
   type Day,
@@ -10,6 +10,47 @@ import {
   DayCard,
   DayCarousel,
 } from "./shared/program-view.js";
+
+/** Day navigation tabs — always visible when multiple days exist */
+function DayTabs({ days, activeIdx, goTo }: { days: Day[]; activeIdx: number; goTo: (idx: number) => void }) {
+  return (
+    <div style={{
+      display: "flex",
+      gap: sp[2],
+      overflowX: "auto",
+      WebkitOverflowScrolling: "touch",
+      scrollbarWidth: "none",
+      paddingBottom: sp[2],
+    }}>
+      {days.map((day, i) => {
+        const isActive = i === activeIdx;
+        // Extract short label: "Día 1" from "Día 1 — Peso Muerto + Push Pecho"
+        const shortLabel = day.day_label.split(/\s*[—–-]\s*/)[0] || `Day ${i + 1}`;
+        return (
+          <button
+            key={i}
+            onClick={() => goTo(i)}
+            style={{
+              padding: `${sp[2]}px ${sp[5]}px`,
+              borderRadius: radius.lg,
+              border: isActive ? "1.5px solid var(--primary)" : "1.5px solid var(--border)",
+              background: isActive ? "var(--primary)" : "transparent",
+              color: isActive ? "var(--card-bg, var(--bg))" : "var(--text-secondary)",
+              fontSize: font.sm,
+              fontWeight: isActive ? weight.semibold : weight.normal,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+              transition: "all 0.15s ease",
+            }}
+          >
+            {shortLabel}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 interface ProgramData {
   id: number;
@@ -99,6 +140,7 @@ function ProgramsWidget() {
   const totalExercises = program.days.reduce((sum, d) => sum + d.exercises.length, 0);
   const viewingWeekdays = program.days[viewingIdx]?.weekdays || [];
 
+  const hasAnyWeekdays = program.days.some(d => d.weekdays && d.weekdays.length > 0);
   const hasPending = !!data.pendingChanges && Object.keys(data.pendingChanges).length > 0 && !confirmed;
   const pending = data.pendingChanges;
 
@@ -129,9 +171,16 @@ function ProgramsWidget() {
             {program.days.length} days &middot; {totalExercises} exercises
           </span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginTop: sp[4] }}>
-          <WeekdayPills days={program.days} highlightedDays={viewingWeekdays} onDayClick={goTo} />
-        </div>
+        {hasAnyWeekdays && (
+          <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginTop: sp[4] }}>
+            <WeekdayPills days={program.days} highlightedDays={viewingWeekdays} onDayClick={goTo} />
+          </div>
+        )}
+        {program.days.length > 1 && (
+          <div style={{ marginTop: sp[4] }}>
+            <DayTabs days={program.days} activeIdx={viewingIdx} goTo={goTo} />
+          </div>
+        )}
       </div>
 
       {/* Days */}
