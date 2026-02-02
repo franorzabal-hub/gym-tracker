@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { sp, radius, font, weight, opacity } from "../../tokens.js";
 
 export { WeekdayPills } from "./weekday-pills.js";
@@ -21,7 +21,8 @@ export interface Exercise {
 }
 
 export const REP_UNIT: Record<string, string> = {
-  seconds: "″",
+  reps: "r",
+  seconds: "s",
   meters: "m",
   calories: "cal",
 };
@@ -41,10 +42,10 @@ export const SS_COLORS = ["var(--primary)", "#10b981", "var(--warning)", "var(--
 // Consistent left padding for the content rail
 export const RAIL_PX = 18;
 
-export const GROUP_LABELS: Record<string, { icon: string; label: string }> = {
-  superset: { icon: "⚡", label: "Superset" },
-  paired: { icon: "🔗", label: "Paired" },
-  circuit: { icon: "🔄", label: "Circuit" },
+export const GROUP_LABELS: Record<string, { icon: string; label: string; pattern: string }> = {
+  superset: { icon: "⚡", label: "Superset", pattern: "2 ejercicios seguidos sin pausa, descanso al terminar la ronda" },
+  paired: { icon: "🔗", label: "Paired", pattern: "El segundo se hace durante el descanso del primero, no suma tiempo" },
+  circuit: { icon: "🔄", label: "Circuit", pattern: "3+ ejercicios en secuencia sin pausa, descanso al terminar la ronda" },
 };
 
 export function MuscleGroupTags({ exercises }: { exercises: Exercise[] }) {
@@ -72,12 +73,11 @@ export function MuscleGroupTags({ exercises }: { exercises: Exercise[] }) {
 }
 
 export function RpeBadge({ rpe }: { rpe: number }) {
-  const color = rpe >= 9 ? "var(--danger)" : rpe >= 8 ? "var(--warning)" : "var(--success)";
   return (
     <span style={{
       fontSize: font.sm,
-      fontWeight: weight.semibold,
-      color,
+      fontWeight: weight.medium,
+      color: "var(--text-secondary)",
       marginLeft: sp[2],
     }}>
       RPE {rpe}
@@ -127,12 +127,19 @@ export function MuscleChip({ group }: { group: string }) {
 }
 
 /** Strip redundant grouping phrases from notes (e.g. "superset con...", "Circuito con...") */
-export function cleanNotes(notes: string | null, isGrouped: boolean, muscleGroup: string | null): string | null {
-  if (!notes || !isGrouped) return notes;
-  let cleaned = notes
-    .replace(/\s*-?\s*(superset|circuito|paired|circuit)\s+(con|with)\s+\S+.*/i, "")
-    .replace(/^\s*-\s*/, "")
-    .trim();
+export function cleanNotes(notes: string | null, isGrouped: boolean, muscleGroup: string | null, repType?: string | null): string | null {
+  if (!notes) return notes;
+  let cleaned = notes;
+  // Strip redundant "segundos" prefix when rep_type is already seconds (widget shows ″)
+  if (repType === "seconds") {
+    cleaned = cleaned.replace(/^segundos?\s*,?\s*/i, "").trim();
+  }
+  if (isGrouped) {
+    cleaned = cleaned
+      .replace(/\s*-?\s*(superset|circuito|paired|circuit)\s+(con|with)\s+\S+.*/i, "")
+      .replace(/^\s*-\s*/, "")
+      .trim();
+  }
   if (muscleGroup && cleaned.toLowerCase() === muscleGroup.toLowerCase()) {
     return null;
   }
@@ -190,7 +197,68 @@ function formatRestSeconds(seconds: number): string {
   return `${seconds}″`;
 }
 
-export function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Exercise[]; ssColor: string | null; groupType: string | null }) {
+/** Tap-to-reveal tooltip for notes */
+function NoteTooltip({ text, defaultOpen = false }: { text: string; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("click", handler, true);
+    return () => document.removeEventListener("click", handler, true);
+  }, [open]);
+
+  return (
+    <span ref={ref} style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+      <span
+        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+        style={{
+          cursor: "pointer",
+          fontSize: font.xs,
+          opacity: open ? opacity.high : opacity.subtle,
+          userSelect: "none",
+          lineHeight: 1,
+        }}
+        title={text}
+      >
+        ⓘ
+      </span>
+      {open && (
+        <span style={{
+          position: "absolute",
+          left: 0,
+          top: "calc(100% + 4px)",
+          background: "var(--card-bg, var(--bg))",
+          border: "1px solid var(--border)",
+          borderRadius: radius.md,
+          padding: `${sp[2]}px ${sp[4]}px`,
+          fontSize: font.xs,
+          color: "var(--text-secondary)",
+          fontStyle: "italic",
+          whiteSpace: "nowrap",
+          zIndex: 10,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+          fontWeight: weight.normal,
+          textTransform: "none",
+          letterSpacing: "0px",
+        }}>
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}
+
+const EXERCISE_TYPE_LABELS: Record<string, string> = {
+  warmup: "Entrada en calor",
+  mobility: "Movilidad",
+  cardio: "Cardio",
+};
+
+export function ExerciseBlock({ exercises, ssColor, groupType, startIndex }: { exercises: Exercise[]; ssColor: string | null; groupType: string | null; startIndex: number }) {
   const isGrouped = exercises.length > 1;
   const type = groupType || "superset";
   const groupLabel = isGrouped ? exercises[0].group_label : null;
@@ -210,7 +278,7 @@ export function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Ex
     borderStyle = "2px dashed var(--border)";
     labelColor = "var(--text-secondary)";
   } else {
-    borderStyle = `2px dotted ${ssColor || "var(--border)"}`;
+    borderStyle = `4px double ${ssColor || "var(--border)"}`;
     labelColor = ssColor || "var(--text-secondary)";
   }
 
@@ -221,44 +289,79 @@ export function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Ex
       paddingLeft: RAIL_PX,
       marginBottom: sp[2],
     }}>
-      {/* Header: icon + type + label */}
+      {/* Header: type chip + label + tooltip */}
       {isGrouped && (
         <div style={{
-          fontSize: font.xs,
-          fontWeight: weight.semibold,
-          textTransform: "uppercase",
-          color: labelColor,
-          marginBottom: sp[2],
-          letterSpacing: "0.5px",
-          opacity: opacity.high,
+          marginBottom: sp[3],
           display: "flex",
           alignItems: "center",
-          gap: sp[1.5],
+          gap: sp[3],
         }}>
-          <span style={{ fontSize: font.base }}>{(GROUP_LABELS[type] || GROUP_LABELS.superset).icon}</span>
-          {(GROUP_LABELS[type] || GROUP_LABELS.superset).label}
+          <span style={{
+            fontSize: font.xs,
+            fontWeight: weight.semibold,
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+            padding: `${sp[1]}px ${sp[3]}px`,
+            borderRadius: radius.lg,
+            background: labelColor,
+            color: "var(--card-bg, var(--bg))",
+            whiteSpace: "nowrap",
+          }}>
+            {(GROUP_LABELS[type] || GROUP_LABELS.superset).label}
+          </span>
           {groupLabel && (
-            <span style={{ textTransform: "none", fontWeight: weight.medium, opacity: opacity.medium, letterSpacing: "0px" }}>
-              — {groupLabel}
+            <span style={{ fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.medium }}>
+              {groupLabel}
             </span>
           )}
+          <NoteTooltip text={(GROUP_LABELS[type] || GROUP_LABELS.superset).pattern} />
         </div>
       )}
       {/* Exercises */}
       {exercises.map((ex, i) => {
-        const note = cleanNotes(ex.notes, isGrouped, ex.muscle_group);
-        const { repScheme, progression, rest: noteText } = parseNoteReps(note);
-        // Solo exercise shows its own rest_seconds; grouped exercises don't (rest is on the group footer)
+        const note = cleanNotes(ex.notes, isGrouped, ex.muscle_group, ex.rep_type);
+        const { repScheme } = parseNoteReps(note);
+        const noteDisplay = note?.replace(/(?:principal\s*-?\s*)?reps?:\s*[\d]+(?:\/[\d]+)+\s*/i, "").trim() || null;
         const showExerciseRest = !isGrouped && ex.rest_seconds != null;
+        const isSecondary = ex.exercise_type === "warmup" || ex.exercise_type === "mobility" || ex.exercise_type === "cardio";
+        const typeLabel = EXERCISE_TYPE_LABELS[ex.exercise_type || ""] || null;
+        const hasMetaLine = ex.target_rpe != null || showExerciseRest;
+        const exNum = startIndex + i;
         return (
           <div key={i} style={{
+            display: "flex",
+            alignItems: hasMetaLine ? "center" : "baseline",
+            justifyContent: "space-between",
+            gap: sp[3],
             marginBottom: i < exercises.length - 1 ? sp[4] : 0,
           }}>
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: `0 ${sp[4]}px` }}>
-              <div style={{ fontWeight: weight.medium, fontSize: font.lg }}>
-                {ex.exercise_name}
+            {/* Left: number + name + type tag + note */}
+            <div style={{ display: "flex", alignItems: "baseline", gap: sp[3], minWidth: 0 }}>
+              <span style={{ fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.muted, minWidth: "1.2em", textAlign: "right", flexShrink: 0 }}>{exNum}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: sp[2] }}>
+                  <span style={{
+                    fontWeight: isSecondary ? weight.normal : weight.medium,
+                    fontSize: font.lg,
+                    opacity: isSecondary ? opacity.high : 1,
+                  }}>{ex.exercise_name}</span>
+                  {typeLabel && (
+                    <span style={{
+                      fontSize: font.xs,
+                      color: "var(--text-secondary)",
+                      opacity: opacity.medium,
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                    }}>{typeLabel}</span>
+                  )}
+                  {noteDisplay && <NoteTooltip text={noteDisplay} />}
+                </div>
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: sp[1], fontSize: font.md, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+            </div>
+            {/* Right: data lines stacked */}
+            <div style={{ flexShrink: 0, textAlign: "right" }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "flex-end", gap: sp[1], fontSize: font.md, whiteSpace: "nowrap" }}>
                 <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{ex.target_sets}</span>
                 <span style={{ opacity: opacity.muted }}>×</span>
                 <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>
@@ -274,59 +377,31 @@ export function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Ex
                     <span style={{ opacity: 0.5, fontSize: font.sm }}>kg</span>
                   </>
                 )}
-                {ex.target_rpe != null && <><span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span><RpeBadge rpe={ex.target_rpe} /></>}
-                {showExerciseRest && (
-                  <>
-                    <span style={{ opacity: 0.25, margin: `0 ${sp[1.5]}px` }}>|</span>
-                    <span style={{ opacity: opacity.medium, fontSize: font.sm }}>
-                      ⏱ {formatRestSeconds(ex.rest_seconds!)}
-                    </span>
-                  </>
-                )}
               </div>
-            </div>
-            {progression && (
-              <span style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: sp[1.5],
-                fontSize: font.sm,
-                color: "var(--color-progression)",
-                fontWeight: weight.medium,
-                marginTop: sp[1.5],
-                padding: `${sp[0.5]}px ${sp[4]}px`,
-                borderRadius: radius.lg,
-                background: "var(--color-progression-bg)",
-              }}>
-                📈 {progression}
-              </span>
-            )}
-            {noteText && (() => {
-              const durationMatch = noteText.match(/^(\d+)\s*seg/i);
-              if (durationMatch) {
-                const noteSecs = parseInt(durationMatch[1], 10);
-                if (noteSecs === ex.target_reps || noteSecs === ex.rest_seconds) return null;
-              }
-              return (
-                <div style={{ fontSize: font.sm, color: "var(--text-secondary)", marginTop: sp[0.5], opacity: opacity.subtle }}>
-                  {/^\d+\s*seg/i.test(noteText) ? `⏳ ${noteText}` : noteText}
+              {hasMetaLine && (
+                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "baseline", gap: sp[1], fontSize: font.sm, color: "var(--text-secondary)", marginTop: sp[0.5] }}>
+                  {ex.target_rpe != null && <RpeBadge rpe={ex.target_rpe} />}
+                  {showExerciseRest && (
+                    <>
+                      {ex.target_rpe != null && <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>}
+                      <span style={{ opacity: opacity.medium }}>
+                        ⏱ {formatRestSeconds(ex.rest_seconds!)}
+                      </span>
+                    </>
+                  )}
                 </div>
-              );
-            })()}
+              )}
+            </div>
           </div>
         );
       })}
       {/* Footer: group rest + notes */}
       {isGrouped && (groupRestSeconds != null || groupNotes) && (
-        <div style={{ marginTop: sp[3], fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.medium }}>
+        <div style={{ marginTop: sp[3], fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.medium, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: sp[3] }}>
           {groupRestSeconds != null && (
-            <span>⏱ {formatRestSeconds(groupRestSeconds)} entre rondas</span>
+            <span>⏱ {formatRestSeconds(groupRestSeconds)}</span>
           )}
-          {groupNotes && (
-            <div style={{ marginTop: groupRestSeconds != null ? sp[1] : 0, fontStyle: "italic" }}>
-              {groupNotes}
-            </div>
-          )}
+          {groupNotes && <NoteTooltip text={groupNotes} />}
         </div>
       )}
     </div>
@@ -382,14 +457,34 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
         </div>
         <div style={{ fontSize: font.base, color: "var(--text-secondary)", marginTop: sp[1], display: "flex", alignItems: "center", gap: 0 }}>
           <span>{day.exercises.length} ejercicios</span>
-          {muscleGroups.length > 0 && (
-            <><span style={{ margin: `0 ${sp[3]}px`, opacity: opacity.muted }}>•</span><span style={{ textTransform: "capitalize" }}>{muscleGroups.join(", ")}</span></>
-          )}
           {estimatedMinutes > 0 && (
-            <><span style={{ margin: `0 ${sp[3]}px`, opacity: opacity.muted }}>•</span><span>~{estimatedMinutes} min</span></>
+            <><span style={{ margin: `0 ${sp[3]}px`, opacity: opacity.muted }}>·</span><span>~{estimatedMinutes} min</span></>
           )}
         </div>
+        {muscleGroups.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: sp[2], marginTop: sp[3] }}>
+            {muscleGroups.map(g => (
+              <span key={g} style={{
+                fontSize: font.xs,
+                padding: `${sp[0.5]}px ${sp[3]}px`,
+                borderRadius: radius.lg,
+                background: "var(--border)",
+                color: "var(--text-secondary)",
+                textTransform: "capitalize",
+              }}>{g}</span>
+            ))}
+          </div>
+        )}
       </div>
+      {/* Divider between header and exercises */}
+      {expanded && (
+        <div style={{
+          borderBottom: "1px solid var(--border)",
+          marginLeft: RAIL_PX + 2,
+          marginBottom: sp[5],
+          opacity: 0.5,
+        }} />
+      )}
 
       {expanded && (
         <div>
@@ -397,9 +492,11 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
             const gid = block[0].group_id;
             const color = gid != null ? ssGroupColors.get(gid) || null : null;
             const groupType = block[0].group_type;
+            // Calculate global exercise number for this block
+            const startIdx = blocks.slice(0, i).reduce((sum, b) => sum + b.length, 0) + 1;
             return (
               <div key={i}>
-                <ExerciseBlock exercises={block} ssColor={color} groupType={groupType} />
+                <ExerciseBlock exercises={block} ssColor={color} groupType={groupType} startIndex={startIdx} />
                 {i < blocks.length - 1 && (
                   <div style={{
                     borderBottom: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
