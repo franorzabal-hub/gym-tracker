@@ -393,12 +393,9 @@ function ExerciseRow({ ex, exNum, note, showExerciseRest, isSecondary, typeLabel
       {/* Per-set detail (expanded) */}
       {hasPerSet && expanded && (
         <div style={{
-          marginTop: sp[3],
+          marginTop: sp[2],
           marginLeft: sp[2],
-          padding: `${sp[3]}px ${sp[4]}px`,
-          background: "color-mix(in srgb, var(--bg-secondary) 50%, transparent)",
-          borderRadius: radius.md,
-          border: "1px solid var(--border)",
+          padding: `${sp[2]}px 0`,
         }}>
           {Array.from({ length: ex.target_sets }).map((_, si) => {
             const setReps = ex.target_reps_per_set ? ex.target_reps_per_set[si] : ex.target_reps;
@@ -568,9 +565,8 @@ function ExerciseBlockList({ blocks, ssGroupColors, startNumber }: {
             <ExerciseBlock exercises={block} ssColor={color} groupType={groupType} startIndex={startIdx} collapsible={hasSiblings} />
             {i < blocks.length - 1 && (
               <div style={{
-                borderBottom: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
-                marginLeft: RAIL_PX + 2,
-                marginBottom: sp[5],
+                borderBottom: "1px solid color-mix(in srgb, var(--border) 30%, transparent)",
+                marginBottom: sp[4],
               }} />
             )}
           </div>
@@ -589,13 +585,7 @@ export function SectionCard({ section, ssGroupColors, startNumber }: {
   const blocks = groupIntoBlocks(section.exercises);
 
   return (
-    <div style={{
-      border: "1px solid var(--border)",
-      borderRadius: radius.lg,
-      padding: `${sp[4]}px ${sp[5]}px`,
-      marginBottom: sp[4],
-      background: "color-mix(in srgb, var(--bg-secondary) 50%, transparent)",
-    }}>
+    <div style={{ marginBottom: sp[5] }}>
       <div
         onClick={() => setExpanded(!expanded)}
         style={{
@@ -603,7 +593,7 @@ export function SectionCard({ section, ssGroupColors, startNumber }: {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          marginBottom: expanded ? sp[4] : 0,
+          marginBottom: expanded ? sp[3] : 0,
           userSelect: "none",
         }}
       >
@@ -669,8 +659,7 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
       <div
         style={{
           cursor: canCollapse ? "pointer" : "default",
-          paddingLeft: RAIL_PX + 2,
-          marginBottom: sp[5],
+          marginBottom: sp[4],
         }}
         onClick={canCollapse ? () => setExpanded(!expanded) : undefined}
       >
@@ -704,10 +693,8 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
       {/* Divider between header and exercises */}
       {expanded && (
         <div style={{
-          borderBottom: "1px solid var(--border)",
-          marginLeft: RAIL_PX + 2,
-          marginBottom: sp[5],
-          opacity: 0.5,
+          borderBottom: "1px solid color-mix(in srgb, var(--border) 40%, transparent)",
+          marginBottom: sp[4],
         }} />
       )}
 
@@ -796,9 +783,8 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
                     <ExerciseBlockList blocks={unsectionedBlocks} ssGroupColors={ssGroupColors} startNumber={startNum} />
                     {i < orderedItems.length - 1 && (
                       <div style={{
-                        borderBottom: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
-                        marginLeft: RAIL_PX + 2,
-                        marginBottom: sp[5],
+                        borderBottom: "1px solid color-mix(in srgb, var(--border) 30%, transparent)",
+                        marginBottom: sp[4],
                       }} />
                     )}
                   </div>
