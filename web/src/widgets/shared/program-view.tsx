@@ -443,31 +443,10 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex }: { e
   const groupNotes = isGrouped ? exercises[0].group_notes : null;
   const groupRestSeconds = isGrouped ? exercises[0].group_rest_seconds : null;
 
-  let borderStyle: string;
-  let labelColor: string;
-
-  if (!isGrouped) {
-    borderStyle = "2px solid transparent";
-    labelColor = "var(--text-secondary)";
-  } else if (type === "superset") {
-    borderStyle = `2px solid ${ssColor || "var(--text-secondary)"}`;
-    labelColor = ssColor || "var(--text-secondary)";
-  } else if (type === "paired") {
-    borderStyle = "2px dashed var(--border)";
-    labelColor = "var(--text-secondary)";
-  } else {
-    borderStyle = `4px double ${ssColor || "var(--border)"}`;
-    labelColor = ssColor || "var(--text-secondary)";
-  }
-
   // Solo exercises are never collapsible
   if (!isGrouped) {
     return (
-      <div style={{
-        borderLeft: borderStyle,
-        paddingLeft: RAIL_PX,
-        marginBottom: sp[2],
-      }}>
+      <div style={{ marginBottom: sp[2] }}>
         {exercises.map((ex, i) => {
           const note = cleanNotes(ex.notes, isGrouped, ex.muscle_group, ex.rep_type);
           const showExerciseRest = ex.rest_seconds != null;
@@ -484,14 +463,14 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex }: { e
     );
   }
 
+  // Group type as readable label for the header
+  const groupTypeLabel = (GROUP_LABELS[type] || GROUP_LABELS.superset).label;
+  const headerLabel = groupLabel || groupTypeLabel;
+  const headerDetail = groupLabel ? groupTypeLabel : null;
+
   return (
-    <div style={{
-      borderLeft: borderStyle,
-      borderBottomLeftRadius: radius.md,
-      paddingLeft: RAIL_PX,
-      marginBottom: sp[2],
-    }}>
-      {/* Header: type chip + label + exercise count — clickable to collapse */}
+    <div style={{ marginBottom: sp[2] }}>
+      {/* Header: same style as SectionCard — clickable to collapse */}
       <div
         onClick={() => setExpanded(!expanded)}
         style={{
@@ -507,22 +486,12 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex }: { e
           <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
             {expanded ? "▼" : "▶"}
           </span>
-          <span style={{
-            fontSize: font.xs,
-            fontWeight: weight.semibold,
-            textTransform: "uppercase",
-            letterSpacing: "0.5px",
-            padding: `${sp[1]}px ${sp[3]}px`,
-            borderRadius: radius.lg,
-            background: labelColor,
-            color: "var(--card-bg, var(--bg))",
-            whiteSpace: "nowrap",
-          }}>
-            {(GROUP_LABELS[type] || GROUP_LABELS.superset).label}
+          <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
+            {headerLabel}
           </span>
-          {groupLabel && (
-            <span style={{ fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.medium }}>
-              {groupLabel}
+          {headerDetail && (
+            <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium, fontStyle: "italic" }}>
+              {headerDetail}
             </span>
           )}
           <NoteTooltip text={(GROUP_LABELS[type] || GROUP_LABELS.superset).pattern} />
