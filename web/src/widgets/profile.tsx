@@ -531,7 +531,7 @@ function ProfileWidget() {
   const subtitleSep = <span style={{ opacity: 0.4, margin: "0 1px" }}> · </span>;
 
   return (
-    <div style={{ maxWidth: 600 }}>
+    <div style={{ maxWidth: 600, padding: "0 8px", paddingBottom: 4 }}>
       {/* ── Header: avatar + name + interactive subtitle ── */}
       <div style={{
         display: "flex",
