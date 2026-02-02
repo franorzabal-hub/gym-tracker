@@ -3,8 +3,8 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
-import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
+import { parseJsonArrayParam, escapeIlike } from "../helpers/parse-helpers.js";
+import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerHistoryTool(server: McpServer) {
   server.registerTool("get_history", {
@@ -37,7 +37,7 @@ Examples:
     },
     annotations: { readOnlyHint: true },
   },
-    async ({ period, exercise, program_day, tags: rawTags, session_id, limit: rawLimit, offset: rawOffset, summary_only, include_sets }) => {
+    safeHandler("get_history", async ({ period, exercise, program_day, tags: rawTags, session_id, limit: rawLimit, offset: rawOffset, summary_only, include_sets }) => {
       const tags = parseJsonArrayParam<string>(rawTags);
       const userId = getUserId();
       const effectiveLimit = rawLimit ?? 50;
@@ -191,7 +191,7 @@ Examples:
       let extraWhere = "";
 
       if (exercise) {
-        params.push(`%${exercise}%`);
+        params.push(`%${escapeIlike(exercise)}%`);
         extraWhere += ` AND EXISTS (
           SELECT 1 FROM session_exercises se2
           JOIN exercises e2 ON e2.id = se2.exercise_id
@@ -336,6 +336,6 @@ Examples:
           exercises_count: exerciseSet.size,
         };
       return toolResponse({ sessions, summary });
-    }
+    })
   );
 }

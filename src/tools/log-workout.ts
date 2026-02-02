@@ -9,7 +9,7 @@ import { resolveExercise } from "../helpers/exercise-resolver.js";
 import { checkPRs } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
+import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 import { logSingleExercise, exerciseEntrySchema, type ExerciseEntry } from "../helpers/log-exercise-helper.js";
 
 const overrideSchema = z.object({
@@ -101,7 +101,7 @@ Parameters:
       "openai/toolInvocation/invoking": "Logging workout...",
       "openai/toolInvocation/invoked": "Workout logged",
     },
-  }, async (params) => {
+  }, safeHandler("log_workout", async (params) => {
     const userId = getUserId();
     const tags = parseJsonArrayParam<string>(params.tags);
     const overrides = parseJsonParam<any[]>(params.overrides);
@@ -454,5 +454,5 @@ Parameters:
     } finally {
       client.release();
     }
-  });
+  }));
 }

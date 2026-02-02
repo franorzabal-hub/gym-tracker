@@ -10,7 +10,7 @@ import {
 } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
+import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 const dayExerciseSchema = z.object({
   exercise: z.string(),
@@ -79,8 +79,7 @@ When the user wants to SEE their program visually, call show_program instead (no
       },
       annotations: {},
     },
-    async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames, include_exercises, source_id, program_id }) => {
-      try {
+    safeHandler("manage_program", async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames, include_exercises, source_id, program_id }) => {
       const userId = getUserId();
 
       // Some MCP clients serialize nested arrays as JSON strings
@@ -626,35 +625,45 @@ When the user wants to SEE their program visually, call show_program instead (no
           return toolResponse({ error: "names array required for delete_bulk" }, true);
         }
 
-        const deleted: string[] = [];
-        const not_found: string[] = [];
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          const deleted: string[] = [];
+          const not_found: string[] = [];
 
-        for (const n of namesList) {
-          if (hard_delete) {
-            const { rows } = await pool.query(
-              "DELETE FROM programs WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
-              [userId, n]
-            );
-            if (rows.length === 0) {
-              not_found.push(n);
+          for (const n of namesList) {
+            if (hard_delete) {
+              const { rows } = await client.query(
+                "DELETE FROM programs WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
+                [userId, n]
+              );
+              if (rows.length === 0) {
+                not_found.push(n);
+              } else {
+                deleted.push(rows[0].name);
+              }
             } else {
-              deleted.push(rows[0].name);
-            }
-          } else {
-            const { rows } = await pool.query(
-              "UPDATE programs SET is_active = FALSE WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
-              [userId, n]
-            );
-            if (rows.length === 0) {
-              not_found.push(n);
-            } else {
-              deleted.push(rows[0].name);
+              const { rows } = await client.query(
+                "UPDATE programs SET is_active = FALSE WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
+                [userId, n]
+              );
+              if (rows.length === 0) {
+                not_found.push(n);
+              } else {
+                deleted.push(rows[0].name);
+              }
             }
           }
-        }
 
-        const key = hard_delete ? "deleted" : "deactivated";
-        return toolResponse({ [key]: deleted, not_found: not_found.length > 0 ? not_found : undefined });
+          await client.query("COMMIT");
+          const key = hard_delete ? "deleted" : "deactivated";
+          return toolResponse({ [key]: deleted, not_found: not_found.length > 0 ? not_found : undefined });
+        } catch (err) {
+          await client.query("ROLLBACK").catch((rbErr) => console.error("[delete_bulk] ROLLBACK failed:", rbErr));
+          throw err;
+        } finally {
+          client.release();
+        }
       }
 
       if (action === "history") {
@@ -681,10 +690,6 @@ When the user wants to SEE their program visually, call show_program instead (no
       }
 
       return toolResponse({ error: "Unknown action" }, true);
-      } catch (handlerErr) {
-        console.error(`[manage_program ERROR] action=${action}`, handlerErr instanceof Error ? handlerErr.stack : handlerErr);
-        throw handlerErr;
-      }
-    }
+    })
   );
 }

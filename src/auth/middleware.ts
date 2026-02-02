@@ -1,4 +1,5 @@
 import type { Request } from "express";
+import crypto from "node:crypto";
 import pool from "../db/connection.js";
 
 export class AuthError extends Error {
@@ -16,6 +17,10 @@ interface CachedToken {
 const tokenCache = new Map<string, CachedToken>();
 const TOKEN_CACHE_TTL = 60_000; // 1 minute
 const TOKEN_CACHE_MAX = 1000;
+
+function cacheKey(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
 
 /**
  * Authenticates a Bearer token from the request and returns the internal user ID.
@@ -39,14 +44,14 @@ export async function authenticateToken(req: Request): Promise<number> {
   const token = authHeader.slice(7);
 
   // Check cache
-  const cached = tokenCache.get(token);
+  const cached = tokenCache.get(cacheKey(token));
   if (cached && cached.expiresAt > Date.now()) {
     return cached.userId;
   }
 
   // Cache miss or expired — remove stale entry
   if (cached) {
-    tokenCache.delete(token);
+    tokenCache.delete(cacheKey(token));
   }
 
   // Look up token in database
@@ -88,7 +93,7 @@ export async function authenticateToken(req: Request): Promise<number> {
     }
   }
 
-  tokenCache.set(token, {
+  tokenCache.set(cacheKey(token), {
     userId,
     expiresAt: Date.now() + TOKEN_CACHE_TTL,
   });

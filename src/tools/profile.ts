@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
-import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
+import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerProfileTool(server: McpServer) {
   server.registerTool(
@@ -36,7 +36,7 @@ Example: user says "entreno lunes miercoles y viernes" → update with { "traini
       },
       annotations: {},
     },
-    async ({ action, data }) => {
+    safeHandler("manage_profile", async ({ action, data }) => {
       const userId = getUserId();
 
       if (action === "get") {
@@ -65,6 +65,6 @@ Example: user says "entreno lunes miercoles y viernes" → update with { "traini
 
       const updated = rows[0].data;
       return toolResponse({ profile: updated });
-    }
+    })
   );
 }

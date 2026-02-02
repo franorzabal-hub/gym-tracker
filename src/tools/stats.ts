@@ -6,7 +6,7 @@ import { estimateE1RM } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
+import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerStatsTool(server: McpServer) {
   server.registerTool("get_stats", {
@@ -33,7 +33,7 @@ Examples:
     },
     annotations: { readOnlyHint: true },
   },
-    async ({ exercise, exercises: rawExercises, period, summary_only, max_data_points, by_muscle_group }) => {
+    safeHandler("get_stats", async ({ exercise, exercises: rawExercises, period, summary_only, max_data_points, by_muscle_group }) => {
       const userId = getUserId();
       const effectiveMaxDataPoints = max_data_points ?? 50;
 
@@ -81,7 +81,7 @@ Examples:
         response.muscle_group_volume = muscleGroupVolume;
       }
       return toolResponse(response);
-    }
+    })
   );
 }
 

@@ -69,7 +69,8 @@ export async function inferTodayDay(programId: number, timezone?: string) {
       const localDay = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: timezone }).format(now);
       const dayMap: Record<string, number> = { 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 7 };
       isoWeekday = dayMap[localDay] || (now.getDay() || 7);
-    } catch {
+    } catch (err) {
+      console.warn(`[inferTodayDay] Invalid timezone "${timezone}", falling back to server time:`, err instanceof Error ? err.message : err);
       isoWeekday = new Date().getDay() || 7;
     }
   } else {

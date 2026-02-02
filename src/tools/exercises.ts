@@ -4,7 +4,7 @@ import pool from "../db/connection.js";
 import { resolveExercise, searchExercises } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
+import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerExercisesTool(server: McpServer) {
   server.registerTool(
@@ -197,41 +197,50 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           return toolResponse({ error: "names array required for delete_bulk" }, true);
         }
 
-        const deleted: string[] = [];
-        const not_found: string[] = [];
-        const failed: Array<{ name: string; error: string }> = [];
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          const deleted: string[] = [];
+          const not_found: string[] = [];
+          const failed: Array<{ name: string; error: string }> = [];
 
-        for (const n of namesList) {
-          try {
-            // Check if global
-            const check = await pool.query(
-              `SELECT id, user_id FROM exercises WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2) ORDER BY user_id NULLS LAST LIMIT 1`,
-              [n, userId]
-            );
-            if (check.rows.length === 0) {
-              not_found.push(n);
-              continue;
-            }
-            if (check.rows[0].user_id === null) {
-              failed.push({ name: n, error: "Exercise is global and cannot be deleted" });
-              continue;
-            }
+          for (const n of namesList) {
+            try {
+              const check = await client.query(
+                `SELECT id, user_id FROM exercises WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2) ORDER BY user_id NULLS LAST LIMIT 1`,
+                [n, userId]
+              );
+              if (check.rows.length === 0) {
+                not_found.push(n);
+                continue;
+              }
+              if (check.rows[0].user_id === null) {
+                failed.push({ name: n, error: "Exercise is global and cannot be deleted" });
+                continue;
+              }
 
-            const { rows } = await pool.query(
-              "DELETE FROM exercises WHERE LOWER(name) = LOWER($1) AND user_id = $2 RETURNING name",
-              [n, userId]
-            );
-            if (rows.length === 0) {
-              not_found.push(n);
-            } else {
-              deleted.push(rows[0].name);
+              const { rows } = await client.query(
+                "DELETE FROM exercises WHERE LOWER(name) = LOWER($1) AND user_id = $2 RETURNING name",
+                [n, userId]
+              );
+              if (rows.length === 0) {
+                not_found.push(n);
+              } else {
+                deleted.push(rows[0].name);
+              }
+            } catch (err: any) {
+              failed.push({ name: n, error: err.message || "Unknown error" });
             }
-          } catch (err: any) {
-            failed.push({ name: n, error: err.message || "Unknown error" });
           }
-        }
 
-        return toolResponse({ deleted, not_found: not_found.length > 0 ? not_found : undefined, failed: failed.length > 0 ? failed : undefined });
+          await client.query("COMMIT");
+          return toolResponse({ deleted, not_found: not_found.length > 0 ? not_found : undefined, failed: failed.length > 0 ? failed : undefined });
+        } catch (err) {
+          await client.query("ROLLBACK").catch((rbErr) => console.error("[delete_bulk] ROLLBACK failed:", rbErr));
+          throw err;
+        } finally {
+          client.release();
+        }
       }
 
       if (action === "update_bulk") {
@@ -240,55 +249,64 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           return toolResponse({ error: "exercises array required for update_bulk" }, true);
         }
 
-        const updated: string[] = [];
-        const not_found: string[] = [];
-        const failed: Array<{ name: string; error: string }> = [];
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          const updated: string[] = [];
+          const not_found: string[] = [];
+          const failed: Array<{ name: string; error: string }> = [];
 
-        for (const ex of exercisesList) {
-          try {
-            const updates: string[] = [];
-            const params: any[] = [];
-            if (ex.muscle_group) { params.push(ex.muscle_group); updates.push(`muscle_group = $${params.length}`); }
-            if (ex.equipment) { params.push(ex.equipment); updates.push(`equipment = $${params.length}`); }
-            if (ex.rep_type) { params.push(ex.rep_type); updates.push(`rep_type = $${params.length}`); }
-            if (ex.exercise_type) { params.push(ex.exercise_type); updates.push(`exercise_type = $${params.length}`); }
+          for (const ex of exercisesList) {
+            try {
+              const updates: string[] = [];
+              const params: any[] = [];
+              if (ex.muscle_group) { params.push(ex.muscle_group); updates.push(`muscle_group = $${params.length}`); }
+              if (ex.equipment) { params.push(ex.equipment); updates.push(`equipment = $${params.length}`); }
+              if (ex.rep_type) { params.push(ex.rep_type); updates.push(`rep_type = $${params.length}`); }
+              if (ex.exercise_type) { params.push(ex.exercise_type); updates.push(`exercise_type = $${params.length}`); }
 
-            if (updates.length === 0) {
-              failed.push({ name: ex.name, error: "No fields to update" });
-              continue;
-            }
+              if (updates.length === 0) {
+                failed.push({ name: ex.name, error: "No fields to update" });
+                continue;
+              }
 
-            // Check if global
-            const check = await pool.query(
-              `SELECT id, user_id FROM exercises WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2) ORDER BY user_id NULLS LAST LIMIT 1`,
-              [ex.name, userId]
-            );
-            if (check.rows.length === 0) {
-              not_found.push(ex.name);
-              continue;
-            }
-            if (check.rows[0].user_id === null) {
-              failed.push({ name: ex.name, error: "Exercise is global and cannot be modified" });
-              continue;
-            }
+              const check = await client.query(
+                `SELECT id, user_id FROM exercises WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2) ORDER BY user_id NULLS LAST LIMIT 1`,
+                [ex.name, userId]
+              );
+              if (check.rows.length === 0) {
+                not_found.push(ex.name);
+                continue;
+              }
+              if (check.rows[0].user_id === null) {
+                failed.push({ name: ex.name, error: "Exercise is global and cannot be modified" });
+                continue;
+              }
 
-            params.push(ex.name);
-            params.push(userId);
-            const { rows } = await pool.query(
-              `UPDATE exercises SET ${updates.join(", ")} WHERE LOWER(name) = LOWER($${params.length - 1}) AND user_id = $${params.length} RETURNING name`,
-              params
-            );
-            if (rows.length === 0) {
-              not_found.push(ex.name);
-            } else {
-              updated.push(rows[0].name);
+              params.push(ex.name);
+              params.push(userId);
+              const { rows } = await client.query(
+                `UPDATE exercises SET ${updates.join(", ")} WHERE LOWER(name) = LOWER($${params.length - 1}) AND user_id = $${params.length} RETURNING name`,
+                params
+              );
+              if (rows.length === 0) {
+                not_found.push(ex.name);
+              } else {
+                updated.push(rows[0].name);
+              }
+            } catch (err: any) {
+              failed.push({ name: ex.name, error: err.message || "Unknown error" });
             }
-          } catch (err: any) {
-            failed.push({ name: ex.name, error: err.message || "Unknown error" });
           }
-        }
 
-        return toolResponse({ updated, not_found: not_found.length > 0 ? not_found : undefined, failed: failed.length > 0 ? failed : undefined });
+          await client.query("COMMIT");
+          return toolResponse({ updated, not_found: not_found.length > 0 ? not_found : undefined, failed: failed.length > 0 ? failed : undefined });
+        } catch (err) {
+          await client.query("ROLLBACK").catch((rbErr) => console.error("[update_bulk] ROLLBACK failed:", rbErr));
+          throw err;
+        } finally {
+          client.release();
+        }
       }
 
       if (action === "add_bulk") {
@@ -320,15 +338,15 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
 
             // Insert aliases if provided
             if (ex.aliases && ex.aliases.length > 0) {
-              for (const alias of ex.aliases) {
-                await pool
-                  .query(
+              for (const a of ex.aliases) {
+                try {
+                  await pool.query(
                     "INSERT INTO exercise_aliases (exercise_id, alias) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                    [resolved.id, alias.toLowerCase().trim()]
-                  )
-                  .catch((err) => {
-                    console.error(`Failed to insert alias "${alias}" for exercise ${resolved.id}:`, err instanceof Error ? err.message : err);
-                  });
+                    [resolved.id, a.toLowerCase().trim()]
+                  );
+                } catch (err) {
+                  failed.push({ name: `${ex.name} (alias: ${a})`, error: err instanceof Error ? err.message : "Unknown error" });
+                }
               }
             }
           } catch (err: any) {
@@ -518,20 +536,26 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
 
       const resolved = await resolveExercise(name, muscle_group, equipment, rep_type, exercise_type);
 
+      const failedAliases: string[] = [];
       if (aliases && aliases.length > 0) {
-        for (const alias of aliases) {
-          await pool
-            .query(
+        for (const a of aliases) {
+          try {
+            await pool.query(
               "INSERT INTO exercise_aliases (exercise_id, alias) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-              [resolved.id, alias.toLowerCase().trim()]
-            )
-            .catch((err) => {
-              console.error(`Failed to insert alias "${alias}" for exercise ${resolved.id}:`, err instanceof Error ? err.message : err);
-            });
+              [resolved.id, a.toLowerCase().trim()]
+            );
+          } catch (err) {
+            console.error(`Failed to insert alias "${a}":`, err instanceof Error ? err.message : err);
+            failedAliases.push(a);
+          }
         }
       }
 
-      return toolResponse({ exercise: { id: resolved.id, name: resolved.name }, is_new: resolved.isNew });
+      return toolResponse({
+        exercise: { id: resolved.id, name: resolved.name },
+        is_new: resolved.isNew,
+        ...(failedAliases.length > 0 ? { failed_aliases: failedAliases } : {}),
+      });
     }
   );
 }

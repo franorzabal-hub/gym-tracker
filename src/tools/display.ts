@@ -2,9 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
-import { widgetResponse, registerAppToolWithMeta, APP_CONTEXT } from "../helpers/tool-response.js";
+import { widgetResponse, registerAppToolWithMeta, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 import { getActiveProgram, getProgramDaysWithExercises } from "../helpers/program-helpers.js";
-import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
+import { parseJsonArrayParam, escapeIlike } from "../helpers/parse-helpers.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 
 export function registerDisplayTools(server: McpServer) {
@@ -24,7 +24,7 @@ Without pending_changes: read-only view. With pending_changes: diff view + confi
       "openai/toolInvocation/invoking": "Loading profile...",
       "openai/toolInvocation/invoked": "Profile loaded",
     },
-  }, async ({ pending_changes }: { pending_changes?: Record<string, any> }) => {
+  }, safeHandler("show_profile", async ({ pending_changes }: { pending_changes?: Record<string, any> }) => {
     const userId = getUserId();
     const { rows } = await pool.query(
       "SELECT data FROM user_profile WHERE user_id = $1 LIMIT 1", [userId]
@@ -38,7 +38,7 @@ Without pending_changes: read-only view. With pending_changes: diff view + confi
       llmNote,
       { profile, ...(hasPending ? { pendingChanges: pending_changes } : {}) }
     );
-  });
+  }));
 
   registerAppToolWithMeta(server, "show_programs", {
     title: "My Programs",
@@ -52,7 +52,7 @@ Call this when the user wants to see or review their programs. To edit programs,
       "openai/toolInvocation/invoking": "Loading programs...",
       "openai/toolInvocation/invoked": "Programs loaded",
     },
-  }, async () => {
+  }, safeHandler("show_programs", async () => {
     const userId = getUserId();
 
     // Fetch user's programs with latest version_id
@@ -84,7 +84,7 @@ Call this when the user wants to see or review their programs. To edit programs,
       `Programs list widget displayed. The user can see all their programs visually. Do NOT describe, list, or summarize any program information in text.`,
       { programs: programsWithDays }
     );
-  });
+  }));
 
   registerAppToolWithMeta(server, "show_available_programs", {
     title: "Available Programs",
@@ -103,7 +103,7 @@ After a user clones a program from the widget, follow up with show_program so th
       "openai/toolInvocation/invoking": "Loading programs...",
       "openai/toolInvocation/invoked": "Programs loaded",
     },
-  }, async ({ filter }: { filter?: string[] }) => {
+  }, safeHandler("show_available_programs", async ({ filter }: { filter?: string[] }) => {
     const userId = getUserId();
 
     // Fetch profile
@@ -159,7 +159,7 @@ After a user clones a program from the widget, follow up with show_program so th
       `Available programs widget displayed. The user can browse all templates visually. Do NOT describe, list, or summarize any program information in text. After a clone, follow up with show_program.`,
       { profile, globalPrograms, clonedNames }
     );
-  });
+  }));
 
   const WEEKDAY_NAMES: Record<string, number> = {
     lunes: 1, monday: 1, mon: 1, lu: 1,
@@ -191,7 +191,7 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday").`,
       "openai/toolInvocation/invoking": "Loading program...",
       "openai/toolInvocation/invoked": "Program loaded",
     },
-  }, async ({ name, day, pending_changes }: { name?: string; day?: string; pending_changes?: Record<string, any> }) => {
+  }, safeHandler("show_program", async ({ name, day, pending_changes }: { name?: string; day?: string; pending_changes?: Record<string, any> }) => {
     const userId = getUserId();
 
     const program = name
@@ -250,7 +250,7 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday").`,
         ...(hasPending ? { pendingChanges: pending_changes } : {}),
       }
     );
-  });
+  }));
 
   registerAppToolWithMeta(server, "show_workouts", {
     title: "Workout History",
@@ -277,7 +277,7 @@ Use this when the user wants to see past workouts, training history, or review t
       "openai/toolInvocation/invoking": "Loading workouts...",
       "openai/toolInvocation/invoked": "Workouts loaded",
     },
-  }, async ({ period, exercise, program_day, tags: rawTags, limit: rawLimit, offset: rawOffset }: {
+  }, safeHandler("show_workouts", async ({ period, exercise, program_day, tags: rawTags, limit: rawLimit, offset: rawOffset }: {
     period?: "today" | "week" | "month" | "year" | number;
     exercise?: string;
     program_day?: string;
@@ -317,7 +317,7 @@ Use this when the user wants to see past workouts, training history, or review t
     // Build extra WHERE clauses
     let extraWhere = "";
     if (exercise) {
-      params.push(`%${exercise}%`);
+      params.push(`%${escapeIlike(exercise)}%`);
       extraWhere += ` AND EXISTS (
         SELECT 1 FROM session_exercises se2
         JOIN exercises e2 ON e2.id = se2.exercise_id
@@ -389,5 +389,5 @@ Use this when the user wants to see past workouts, training history, or review t
       `Workout history widget displayed. The user can see all sessions visually. Do NOT describe, list, or summarize any workout information in text.`,
       { sessions, summary, filters }
     );
-  });
+  }));
 }

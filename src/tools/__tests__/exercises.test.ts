@@ -178,13 +178,16 @@ describe("manage_exercises tool", () => {
     });
 
     it("deletes user-owned and reports global as failed", async () => {
-      // First exercise: user-owned
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, user_id: 1 }] });
-      mockQuery.mockResolvedValueOnce({ rows: [{ name: "My Exercise" }] });
-      // Second exercise: global
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 2, user_id: null }] });
-      // Third exercise: not found
-      mockQuery.mockResolvedValueOnce({ rows: [] });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        // First exercise: user-owned
+        .mockResolvedValueOnce({ rows: [{ id: 1, user_id: 1 }] })
+        .mockResolvedValueOnce({ rows: [{ name: "My Exercise" }] })
+        // Second exercise: global
+        .mockResolvedValueOnce({ rows: [{ id: 2, user_id: null }] })
+        // Third exercise: not found
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({
         action: "delete_bulk",
@@ -198,8 +201,11 @@ describe("manage_exercises tool", () => {
     });
 
     it("handles JSON string workaround for names", async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, user_id: 1 }] });
-      mockQuery.mockResolvedValueOnce({ rows: [{ name: "My Exercise" }] });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 1, user_id: 1 }] })
+        .mockResolvedValueOnce({ rows: [{ name: "My Exercise" }] })
+        .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({
         action: "delete_bulk",
@@ -245,11 +251,14 @@ describe("manage_exercises tool", () => {
     });
 
     it("updates user-owned and reports global as failed", async () => {
-      // First: user-owned
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, user_id: 1 }] });
-      mockQuery.mockResolvedValueOnce({ rows: [{ name: "My Exercise" }] });
-      // Second: global
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 2, user_id: null }] });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        // First: user-owned
+        .mockResolvedValueOnce({ rows: [{ id: 1, user_id: 1 }] })
+        .mockResolvedValueOnce({ rows: [{ name: "My Exercise" }] })
+        // Second: global
+        .mockResolvedValueOnce({ rows: [{ id: 2, user_id: null }] })
+        .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({
         action: "update_bulk",
@@ -265,6 +274,10 @@ describe("manage_exercises tool", () => {
     });
 
     it("reports failed when no fields to update", async () => {
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({}); // COMMIT
+
       const result = await toolHandler({
         action: "update_bulk",
         exercises: [{ name: "Bench Press" }],
@@ -275,8 +288,11 @@ describe("manage_exercises tool", () => {
     });
 
     it("handles JSON string workaround for exercises", async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, user_id: 1 }] });
-      mockQuery.mockResolvedValueOnce({ rows: [{ name: "My Exercise" }] });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 1, user_id: 1 }] })
+        .mockResolvedValueOnce({ rows: [{ name: "My Exercise" }] })
+        .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({
         action: "update_bulk",

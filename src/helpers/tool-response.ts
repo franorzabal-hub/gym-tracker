@@ -66,3 +66,22 @@ export function registerAppToolWithMeta(
 
   return (registerAppTool as any)(server, name, enrichedConfig, handler);
 }
+
+/**
+ * Wraps a tool handler with try/catch error handling.
+ * On unexpected errors, returns a structured error response instead of
+ * letting the error propagate to the MCP framework (which produces opaque errors).
+ */
+export function safeHandler<T>(
+  toolName: string,
+  handler: (params: T) => Promise<any>
+): (params: T) => Promise<any> {
+  return async (params: T) => {
+    try {
+      return await handler(params);
+    } catch (err) {
+      console.error(`[${toolName}] Unhandled error:`, err instanceof Error ? err.stack : err);
+      return toolResponse({ error: "Something went wrong. Please try again." }, true);
+    }
+  };
+}

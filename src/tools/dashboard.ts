@@ -2,16 +2,16 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
-import { widgetResponse, registerAppToolWithMeta, APP_CONTEXT } from "../helpers/tool-response.js";
+import { widgetResponse, registerAppToolWithMeta, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 const METRICS = ["streak", "volume", "frequency", "prs", "muscle_groups", "body_weight", "top_exercises"] as const;
 type Metric = (typeof METRICS)[number];
 
-const PERIOD_SQL: Record<string, string> = {
-  month: "INTERVAL '1 month'",
-  "3months": "INTERVAL '3 months'",
-  year: "INTERVAL '1 year'",
-  all: "INTERVAL '100 years'",
+const PERIOD_DAYS: Record<string, number> = {
+  month: 30,
+  "3months": 90,
+  year: 365,
+  all: 36500,
 };
 
 export function registerDashboardTool(server: McpServer) {
@@ -30,21 +30,21 @@ Use the "period" param to control the time range (default: 3months).`,
       "openai/toolInvocation/invoking": "Loading dashboard...",
       "openai/toolInvocation/invoked": "Dashboard loaded",
     },
-  }, async ({ metric, period }: { metric?: Metric; period?: string }) => {
+  }, safeHandler("show_dashboard", async ({ metric, period }: { metric?: Metric; period?: string }) => {
     const userId = getUserId();
     const p = period || "3months";
-    const interval = PERIOD_SQL[p] || PERIOD_SQL["3months"];
+    const days = PERIOD_DAYS[p] || PERIOD_DAYS["3months"];
 
     const shouldFetch = (m: Metric) => !metric || metric === m;
 
     const [streak, volume, frequency, prs, muscleGroups, bodyWeight, topExercises] = await Promise.all([
-      shouldFetch("streak") ? fetchStreak(userId, interval) : null,
-      shouldFetch("volume") ? fetchWeeklyVolume(userId, interval) : null,
-      shouldFetch("frequency") ? fetchFrequency(userId, interval) : null,
+      shouldFetch("streak") ? fetchStreak(userId, days) : null,
+      shouldFetch("volume") ? fetchWeeklyVolume(userId, days) : null,
+      shouldFetch("frequency") ? fetchFrequency(userId, days) : null,
       shouldFetch("prs") ? fetchRecentPRs(userId) : null,
-      shouldFetch("muscle_groups") ? fetchMuscleGroups(userId, interval) : null,
+      shouldFetch("muscle_groups") ? fetchMuscleGroups(userId, days) : null,
       shouldFetch("body_weight") ? fetchBodyWeight(userId) : null,
-      shouldFetch("top_exercises") ? fetchTopExercises(userId, interval) : null,
+      shouldFetch("top_exercises") ? fetchTopExercises(userId, days) : null,
     ]);
 
     const data: Record<string, unknown> = { period: p };
@@ -61,17 +61,17 @@ Use the "period" param to control the time range (default: 3months).`,
       `Dashboard widget displayed. The user can see all metrics visually. Do NOT describe, list, or summarize any dashboard data in text.`,
       data,
     );
-  });
+  }));
 }
 
-async function fetchStreak(userId: number, interval: string) {
+async function fetchStreak(userId: number, days: number) {
   const { rows } = await pool.query(
     `SELECT DATE_TRUNC('week', started_at)::date AS week, COUNT(*) AS cnt
      FROM sessions
      WHERE user_id = $1 AND deleted_at IS NULL
-       AND started_at >= NOW() - ${interval}
+       AND started_at >= NOW() - make_interval(days => $2)
      GROUP BY week ORDER BY week`,
-    [userId],
+    [userId, days],
   );
 
   if (rows.length === 0) {
@@ -127,7 +127,7 @@ async function fetchStreak(userId: number, interval: string) {
   return { current_weeks: current, longest_weeks: longest, this_week: thisWeek, target: 1 };
 }
 
-async function fetchWeeklyVolume(userId: number, interval: string) {
+async function fetchWeeklyVolume(userId: number, days: number) {
   const { rows } = await pool.query(
     `SELECT DATE_TRUNC('week', s.started_at)::date AS week,
             COALESCE(SUM(st.weight * st.reps), 0)::numeric AS volume
@@ -135,21 +135,21 @@ async function fetchWeeklyVolume(userId: number, interval: string) {
      JOIN session_exercises se ON se.session_id = s.id
      JOIN sets st ON st.session_exercise_id = se.id
      WHERE s.user_id = $1 AND s.deleted_at IS NULL
-       AND s.started_at >= NOW() - ${interval}
+       AND s.started_at >= NOW() - make_interval(days => $2)
      GROUP BY week ORDER BY week`,
-    [userId],
+    [userId, days],
   );
   return rows.map((r: any) => ({ week: r.week.toISOString().slice(0, 10), volume: Number(r.volume) }));
 }
 
-async function fetchFrequency(userId: number, interval: string) {
+async function fetchFrequency(userId: number, days: number) {
   const { rows } = await pool.query(
     `SELECT DATE_TRUNC('week', started_at)::date AS week, COUNT(*)::int AS count
      FROM sessions
      WHERE user_id = $1 AND deleted_at IS NULL
-       AND started_at >= NOW() - ${interval}
+       AND started_at >= NOW() - make_interval(days => $2)
      GROUP BY week ORDER BY week`,
-    [userId],
+    [userId, days],
   );
   const weekly = rows.map((r: any) => ({ week: r.week.toISOString().slice(0, 10), count: r.count }));
   const total = weekly.reduce((s: number, w: any) => s + w.count, 0);
@@ -175,7 +175,7 @@ async function fetchRecentPRs(userId: number) {
   }));
 }
 
-async function fetchMuscleGroups(userId: number, interval: string) {
+async function fetchMuscleGroups(userId: number, days: number) {
   const { rows } = await pool.query(
     `SELECT e.muscle_group,
             COALESCE(SUM(st.weight * st.reps), 0)::numeric AS volume,
@@ -185,11 +185,11 @@ async function fetchMuscleGroups(userId: number, interval: string) {
      JOIN exercises e ON e.id = se.exercise_id
      JOIN sets st ON st.session_exercise_id = se.id
      WHERE s.user_id = $1 AND s.deleted_at IS NULL
-       AND s.started_at >= NOW() - ${interval}
+       AND s.started_at >= NOW() - make_interval(days => $2)
        AND e.muscle_group IS NOT NULL
      GROUP BY e.muscle_group
      ORDER BY volume DESC`,
-    [userId],
+    [userId, days],
   );
   return rows.map((r: any) => ({
     muscle_group: r.muscle_group,
@@ -216,7 +216,7 @@ async function fetchBodyWeight(userId: number) {
     }));
 }
 
-async function fetchTopExercises(userId: number, interval: string) {
+async function fetchTopExercises(userId: number, days: number) {
   const { rows } = await pool.query(
     `SELECT e.name AS exercise,
             COALESCE(SUM(st.weight * st.reps), 0)::numeric AS volume,
@@ -226,11 +226,11 @@ async function fetchTopExercises(userId: number, interval: string) {
      JOIN exercises e ON e.id = se.exercise_id
      JOIN sets st ON st.session_exercise_id = se.id
      WHERE s.user_id = $1 AND s.deleted_at IS NULL
-       AND s.started_at >= NOW() - ${interval}
+       AND s.started_at >= NOW() - make_interval(days => $2)
      GROUP BY e.name
      ORDER BY volume DESC
      LIMIT 5`,
-    [userId],
+    [userId, days],
   );
   return rows.map((r: any) => ({
     exercise: r.exercise,

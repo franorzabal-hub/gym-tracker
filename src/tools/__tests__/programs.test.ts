@@ -154,11 +154,12 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({})
         .mockRejectedValueOnce(new Error("DB error"));
 
-      await expect(toolHandler({
+      const result = await toolHandler({
         action: "create", name: "PPL",
         days: [{ day_label: "Push", exercises: [{ exercise: "Bench", sets: 3, reps: 10 }] }],
-      })).rejects.toThrow("DB error");
+      });
 
+      expect(result.isError).toBe(true);
       expect(mockClientQuery).toHaveBeenCalledWith("ROLLBACK");
     });
   });
@@ -257,9 +258,11 @@ describe("manage_program tool", () => {
     });
 
     it("soft-deletes multiple programs", async () => {
-      mockQuery
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ name: "PPL" }] })
-        .mockResolvedValueOnce({ rows: [{ name: "Upper/Lower" }] });
+        .mockResolvedValueOnce({ rows: [{ name: "Upper/Lower" }] })
+        .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({
         action: "delete_bulk",
@@ -271,9 +274,11 @@ describe("manage_program tool", () => {
     });
 
     it("hard-deletes multiple programs", async () => {
-      mockQuery
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ name: "PPL" }] })
-        .mockResolvedValueOnce({ rows: [] });
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({
         action: "delete_bulk",
@@ -287,7 +292,10 @@ describe("manage_program tool", () => {
     });
 
     it("handles JSON string workaround for names", async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ name: "PPL" }] });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ name: "PPL" }] })
+        .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({
         action: "delete_bulk",
@@ -492,11 +500,12 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({}) // BEGIN
         .mockRejectedValueOnce(new Error("DB error")); // DELETE fails
 
-      await expect(toolHandler({
+      const result = await toolHandler({
         action: "patch", program_id: 1,
         days: [{ day_label: "Push", exercises: [{ exercise: "Bench", sets: 3, reps: 10 }] }],
-      })).rejects.toThrow("DB error");
+      });
 
+      expect(result.isError).toBe(true);
       expect(mockClientQuery).toHaveBeenCalledWith("ROLLBACK");
     });
 
@@ -1129,11 +1138,12 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({}) // DELETE
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }); // INSERT day
 
-      await expect(toolHandler({
+      const result = await toolHandler({
         action: "patch", program_id: 1,
         days: [{ day_label: "Push", exercises: [{ exercise: "Unknown", sets: 3, reps: 10 }] }],
-      })).rejects.toThrow("Exercise not found");
+      });
 
+      expect(result.isError).toBe(true);
       expect(mockClientQuery).toHaveBeenCalledWith("ROLLBACK");
       expect(mockClient.release).toHaveBeenCalled();
     });

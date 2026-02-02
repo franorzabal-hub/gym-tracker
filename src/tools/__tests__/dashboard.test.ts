@@ -154,8 +154,9 @@ describe("show_dashboard tool", () => {
     const result = await toolHandlers["show_dashboard"]({ period: "year" });
 
     expect(result.structuredContent.period).toBe("year");
-    // Verify the interval was used in queries (check first query has 'year')
-    expect(mockQuery.mock.calls[0][0]).toContain("1 year");
+    // Verify the days param was used in queries (365 for "year")
+    expect(mockQuery.mock.calls[0][0]).toContain("make_interval(days => $2)");
+    expect(mockQuery.mock.calls[0][1]).toContain(365);
   });
 
   it("returns specific metric with period filter", async () => {

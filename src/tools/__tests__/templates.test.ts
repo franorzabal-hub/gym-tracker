@@ -163,10 +163,12 @@ describe("manage_templates tool", () => {
     });
 
     it("deletes multiple templates and reports not_found", async () => {
-      mockQuery
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ name: "Push Day" }] })
         .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ name: "Leg Day" }] });
+        .mockResolvedValueOnce({ rows: [{ name: "Leg Day" }] })
+        .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({
         action: "delete_bulk",
@@ -180,7 +182,10 @@ describe("manage_templates tool", () => {
     });
 
     it("handles JSON string workaround for names", async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ name: "Push Day" }] });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ name: "Push Day" }] })
+        .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({
         action: "delete_bulk",

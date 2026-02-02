@@ -5,7 +5,7 @@ import { findExercise } from "../helpers/exercise-resolver.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
+import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerEditLogTool(server: McpServer) {
   server.registerTool("edit_log", {
@@ -71,7 +71,7 @@ Parameters:
     },
     annotations: { destructiveHint: true },
   },
-    async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session, restore_session, delete_sessions: rawDeleteSessions }) => {
+    safeHandler("edit_log", async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session, restore_session, delete_sessions: rawDeleteSessions }) => {
       const userId = getUserId();
 
       // --- Restore session mode ---
@@ -198,7 +198,7 @@ Parameters:
       }
 
       return toolResponse(result);
-    }
+    })
   );
 }
 
@@ -225,7 +225,7 @@ async function processSingleEdit(params: {
   let sessionFilter: string;
   if (!session || session === "today") {
     queryParams.push(userDate);
-    sessionFilter = `AND DATE(s.started_at) = $${queryParams.length}::date`;
+    sessionFilter = `AND s.started_at >= $${queryParams.length}::date AND s.started_at < $${queryParams.length}::date + INTERVAL '1 day'`;
   } else if (session === "last") {
     sessionFilter = "";
   } else {
@@ -237,7 +237,7 @@ async function processSingleEdit(params: {
       return { error: "Invalid date. Use a valid YYYY-MM-DD date" };
     }
     queryParams.push(session);
-    sessionFilter = `AND DATE(s.started_at) = $${queryParams.length}`;
+    sessionFilter = `AND s.started_at >= $${queryParams.length}::date AND s.started_at < $${queryParams.length}::date + INTERVAL '1 day'`;
   }
 
   // Get ALL session_exercises for that exercise in that session (handles legacy data with multiple entries)

@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
+import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerTemplatesTool(server: McpServer) {
   server.registerTool("manage_templates", {
@@ -26,7 +26,7 @@ Actions:
       },
     annotations: { destructiveHint: true },
   },
-    async ({ action, name, session_id, date, names: rawNames, limit, offset }) => {
+    safeHandler("manage_templates", async ({ action, name, session_id, date, names: rawNames, limit, offset }) => {
       const userId = getUserId();
 
       if (action === "list") {
@@ -249,28 +249,38 @@ Actions:
           return toolResponse({ error: "names array required for delete_bulk" }, true);
         }
 
-        const deleted: string[] = [];
-        const not_found: string[] = [];
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          const deleted: string[] = [];
+          const not_found: string[] = [];
 
-        for (const n of namesList) {
-          const { rows } = await pool.query(
-            "DELETE FROM session_templates WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
-            [userId, n]
-          );
-          if (rows.length === 0) {
-            not_found.push(n);
-          } else {
-            deleted.push(rows[0].name);
+          for (const n of namesList) {
+            const { rows } = await client.query(
+              "DELETE FROM session_templates WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
+              [userId, n]
+            );
+            if (rows.length === 0) {
+              not_found.push(n);
+            } else {
+              deleted.push(rows[0].name);
+            }
           }
-        }
 
-        return toolResponse({
-          deleted,
-          not_found: not_found.length > 0 ? not_found : undefined,
-        });
+          await client.query("COMMIT");
+          return toolResponse({
+            deleted,
+            not_found: not_found.length > 0 ? not_found : undefined,
+          });
+        } catch (err) {
+          await client.query("ROLLBACK").catch((rbErr) => console.error("[delete_bulk] ROLLBACK failed:", rbErr));
+          throw err;
+        } finally {
+          client.release();
+        }
       }
 
       return toolResponse({ error: "Unknown action" }, true);
-    }
+    })
   );
 }

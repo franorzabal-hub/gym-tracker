@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
-import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
+import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 function escapeCsvValue(val: any): string {
   if (val === null || val === undefined) return "";
@@ -39,7 +39,7 @@ Examples:
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ action, scope: rawScope, period: rawPeriod }) => {
+    safeHandler("export_data", async ({ action, scope: rawScope, period: rawPeriod }) => {
       const userId = getUserId();
       const scope = rawScope || "all";
       const period = rawPeriod || "all";
@@ -193,6 +193,6 @@ Examples:
       const csvOutput = csvParts.join("\n\n");
 
       return { content: [{ type: "text" as const, text: csvOutput || "No data to export" }] };
-    }
+    })
   );
 }

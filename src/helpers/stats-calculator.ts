@@ -88,6 +88,11 @@ export async function checkPRs(
       if (set.reps > currentMaxReps) {
         prMap.set(repsKey, set.reps);
         upserts.push({ type: repsKey, value: set.reps, setId: set.set_id });
+        prs.push({
+          record_type: repsKey,
+          value: set.reps,
+          previous: currentMaxReps || undefined,
+        });
       }
 
       // Check estimated 1RM

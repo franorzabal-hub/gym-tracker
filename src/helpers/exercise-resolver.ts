@@ -1,6 +1,7 @@
 import { PoolClient } from "pg";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
+import { escapeIlike } from "./parse-helpers.js";
 
 const q = (client?: PoolClient) => client || pool;
 
@@ -56,7 +57,7 @@ export async function findExercise(input: string, client?: PoolClient): Promise<
        WHERE a.alias ILIKE $1 AND (e.user_id IS NULL OR e.user_id = $2)
      ) sub
      ORDER BY user_id NULLS LAST LIMIT 1`,
-    [`%${normalized}%`, userId]
+    [`%${escapeIlike(normalized)}%`, userId]
   );
   if (partial.rows.length > 0) {
     return { id: partial.rows[0].id, name: partial.rows[0].name, isNew: false, exerciseType: partial.rows[0].exercise_type };
@@ -125,7 +126,7 @@ export async function resolveExercise(
        WHERE a.alias ILIKE $1 AND (e.user_id IS NULL OR e.user_id = $2)
      ) sub
      ORDER BY user_id NULLS LAST LIMIT 1`,
-    [`%${normalized}%`, userId]
+    [`%${escapeIlike(normalized)}%`, userId]
   );
   if (partial.rows.length > 0) {
     await fillMetadataIfMissing(partial.rows[0], muscleGroup, equipment, repType, exerciseType, client);
@@ -217,7 +218,7 @@ export async function searchExercises(
   const conditions: string[] = ["(e.user_id IS NULL OR e.user_id = $1)"];
 
   if (query) {
-    params.push(`%${query}%`);
+    params.push(`%${escapeIlike(query)}%`);
     conditions.push(
       `(e.name ILIKE $${params.length} OR a.alias ILIKE $${params.length})`
     );

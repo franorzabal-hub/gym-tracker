@@ -20,19 +20,19 @@ function signState(payload: object): string {
 
 function verifyState(state: string): Record<string, any> | null {
   const dotIdx = state.lastIndexOf(".");
-  if (dotIdx === -1) return null;
+  if (dotIdx === -1) { console.warn("[verifyState] Missing dot separator in state"); return null; }
   const data = state.substring(0, dotIdx);
   const sig = state.substring(dotIdx + 1);
   const expected = createHmac("sha256", STATE_SECRET).update(data).digest("base64url");
   const sigBuf = Buffer.from(sig, "base64url");
   const expectedBuf = Buffer.from(expected, "base64url");
-  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
+  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) { console.warn("[verifyState] Signature mismatch"); return null; }
   try {
     const payload = JSON.parse(Buffer.from(data, "base64url").toString());
     // Check TTL: 10 minutes
-    if (payload.created_at && Date.now() - payload.created_at > 10 * 60 * 1000) return null;
+    if (payload.created_at && Date.now() - payload.created_at > 10 * 60 * 1000) { console.warn("[verifyState] State expired (TTL exceeded)"); return null; }
     return payload;
-  } catch { return null; }
+  } catch (err) { console.warn("[verifyState] Failed to parse state payload:", err instanceof Error ? err.message : err); return null; }
 }
 
 // --- Rate limiting (in-memory) ---
@@ -113,7 +113,10 @@ router.post("/register", async (req, res) => {
     if (registrationSecret) {
       const authHeader = req.headers.authorization;
       const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-      if (!token || !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(registrationSecret))) {
+      if (!token || !crypto.timingSafeEqual(
+        crypto.createHash("sha256").update(token).digest(),
+        crypto.createHash("sha256").update(registrationSecret).digest()
+      )) {
         res.status(401).json({ error: "unauthorized", error_description: "Registration requires authorization" });
         return;
       }
@@ -124,6 +127,20 @@ router.post("/register", async (req, res) => {
     if (!redirect_uris || !Array.isArray(redirect_uris) || redirect_uris.length === 0) {
       res.status(400).json({ error: "invalid_client_metadata", error_description: "redirect_uris must be a non-empty array" });
       return;
+    }
+
+    // Validate each URI is a proper http(s) URL
+    for (const uri of redirect_uris) {
+      try {
+        const parsed = new URL(uri);
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+          res.status(400).json({ error: "invalid_client_metadata", error_description: `Invalid redirect_uri scheme: ${parsed.protocol}. Only http and https are allowed.` });
+          return;
+        }
+      } catch {
+        res.status(400).json({ error: "invalid_client_metadata", error_description: `Invalid redirect_uri: ${uri}` });
+        return;
+      }
     }
 
     const clientId = `client_${crypto.randomBytes(16).toString("hex")}`;
@@ -329,7 +346,9 @@ router.post("/token", async (req, res) => {
       .createHash("sha256")
       .update(code_verifier)
       .digest("base64url");
-    if (expectedChallenge !== stored.code_challenge) {
+    const expectedBuf = Buffer.from(expectedChallenge);
+    const storedBuf = Buffer.from(stored.code_challenge);
+    if (expectedBuf.length !== storedBuf.length || !crypto.timingSafeEqual(expectedBuf, storedBuf)) {
       await client.query("ROLLBACK");
       res.status(400).json({ error: "invalid_grant", error_description: "code_verifier mismatch" });
       return;
@@ -355,7 +374,7 @@ router.post("/token", async (req, res) => {
       expires_in: 86400,
     });
   } catch (err) {
-    await client.query("ROLLBACK").catch(() => {});
+    await client.query("ROLLBACK").catch((rbErr) => console.error("[token] ROLLBACK failed:", rbErr));
     console.error("Token exchange error:", err);
     res.status(500).json({ error: "server_error", error_description: "Token exchange failed" });
   } finally {

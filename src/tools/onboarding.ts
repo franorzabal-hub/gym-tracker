@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
-import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
+import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerOnboardingTool(server: McpServer) {
   server.registerTool(
@@ -22,7 +22,7 @@ CRITICAL ROUTING — you MUST follow the "required_next_tool" field in the respo
         "openai/toolInvocation/invoked": "Session initialized",
       },
     },
-    async () => {
+    safeHandler("initialize_gym_session", async () => {
       const userId = getUserId();
 
       // Check profile
@@ -69,6 +69,6 @@ CRITICAL ROUTING — you MUST follow the "required_next_tool" field in the respo
         suggestion,
         required_next_tool,
       });
-    }
+    })
   );
 }

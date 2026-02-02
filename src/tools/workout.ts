@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
-import { widgetResponse, registerAppToolWithMeta, APP_CONTEXT } from "../helpers/tool-response.js";
+import { widgetResponse, registerAppToolWithMeta, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerWorkoutTool(server: McpServer) {
   registerAppToolWithMeta(server, "show_workout", {
@@ -21,7 +21,7 @@ The widget already shows all information visually — do NOT repeat exercises or
       "openai/toolInvocation/invoking": "Loading workout...",
       "openai/toolInvocation/invoked": "Workout loaded",
     },
-  }, async ({ session_id }: { session_id?: number }) => {
+  }, safeHandler("show_workout", async ({ session_id }: { session_id?: number }) => {
     const userId = getUserId();
 
     let rows;
@@ -98,7 +98,7 @@ The widget already shows all information visually — do NOT repeat exercises or
         JOIN sessions s2 ON s2.id = se2.session_id
         JOIN sets st2 ON st2.session_exercise_id = se2.id
         WHERE se2.exercise_id = ce.exercise_id AND s2.user_id = $1
-          AND s2.id != $2 AND s2.deleted_at IS NULL
+          AND s2.id != $2 AND s2.deleted_at IS NULL AND s2.ended_at IS NOT NULL
         GROUP BY s2.id, s2.started_at
         ORDER BY s2.started_at DESC LIMIT 1
       ) sub ON true`,
@@ -150,5 +150,5 @@ The widget already shows all information visually — do NOT repeat exercises or
         ...(isEnded ? { readonly: true } : {}),
       }
     );
-  });
+  }));
 }

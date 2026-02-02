@@ -7,7 +7,12 @@
 export function parseJsonParam<T>(value: unknown): T | null {
   if (value == null) return null;
   if (typeof value === 'string') {
-    try { return JSON.parse(value) as T; } catch { return null; }
+    try {
+      return JSON.parse(value) as T;
+    } catch (err) {
+      console.warn("[parseJsonParam] Failed to parse JSON string:", err instanceof Error ? err.message : err);
+      return null;
+    }
   }
   return value as T;
 }
@@ -31,4 +36,12 @@ export function parseJsonArrayParam<T>(value: unknown): T[] | null {
     }
   }
   return [value as unknown as T];
+}
+
+/**
+ * Escapes PostgreSQL ILIKE special characters (% and _) in user input
+ * to prevent unexpected wildcard matching. Use before wrapping with `%..%`.
+ */
+export function escapeIlike(input: string): string {
+  return input.replace(/%/g, '\\%').replace(/_/g, '\\_');
 }

@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
-import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
+import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerBodyMeasurementsTool(server: McpServer) {
   server.registerTool(
@@ -28,7 +28,7 @@ Examples:
       },
       annotations: {},
     },
-    async ({ action, measurement_type, value, measured_at, notes, period, limit }) => {
+    safeHandler("manage_body_measurements", async ({ action, measurement_type, value, measured_at, notes, period, limit }) => {
       const userId = getUserId();
 
       if (action === "log") {
@@ -165,6 +165,6 @@ Examples:
       );
 
       return toolResponse({ latest: rows });
-    }
+    })
   );
 }

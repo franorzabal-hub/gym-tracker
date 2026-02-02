@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
-import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
+import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerSessionTools(server: McpServer) {
   server.registerTool(
@@ -24,7 +24,7 @@ Optionally add or update tags on the session.`,
         "openai/toolInvocation/invoked": "Session ended",
       },
     },
-    async ({ notes, force, tags: rawTags, summary_only, include_comparison }) => {
+    safeHandler("end_session", async ({ notes, force, tags: rawTags, summary_only, include_comparison }) => {
       const tags = parseJsonArrayParam<string>(rawTags);
       const userId = getUserId();
 
@@ -226,7 +226,7 @@ Optionally add or update tags on the session.`,
         comparison: comparison || undefined,
       };
       return toolResponse(endData);
-    }
+    })
   );
 
   server.registerTool(
@@ -236,7 +236,7 @@ Optionally add or update tags on the session.`,
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
-    async () => {
+    safeHandler("get_active_session", async () => {
       const userId = getUserId();
 
       const { rows } = await pool.query(
@@ -286,6 +286,6 @@ Optionally add or update tags on the session.`,
         exercises: exerciseDetails.map((e: any) => ({ name: e.name, superset_group: e.superset_group, sets: e.sets })),
       };
       return toolResponse(activeData);
-    }
+    })
   );
 }

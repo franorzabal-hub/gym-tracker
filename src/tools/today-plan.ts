@@ -3,7 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getActiveProgram, inferTodayDay } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
-import { toolResponse, APP_CONTEXT } from "../helpers/tool-response.js";
+import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerTodayPlanTool(server: McpServer) {
   server.registerTool(
@@ -20,7 +20,7 @@ Uses the active program + user's timezone to infer which day it is. Returns rest
         "openai/toolInvocation/invoked": "Plan loaded",
       },
     },
-    async ({ include_last_workout }) => {
+    safeHandler("get_today_plan", async ({ include_last_workout }) => {
       const userId = getUserId();
 
       const activeProgram = await getActiveProgram();
@@ -93,6 +93,6 @@ Uses the active program + user's timezone to infer which day it is. Returns rest
       }
 
       return toolResponse(result);
-    }
+    })
   );
 }

@@ -39,6 +39,9 @@ function readWidgetFile(filePath: string) {
     } catch (err: any) {
       if (err?.code === "ENOENT") {
         console.error(`[Widget] File not found: ${filePath}. Run: cd web && npm run build`);
+        if (process.env.NODE_ENV === "production") {
+          return `<!DOCTYPE html><html><body><p style="font-family:system-ui;color:#666;padding:2rem;text-align:center">This feature is temporarily unavailable. Please try again later.</p></body></html>`;
+        }
         return `<!DOCTYPE html><html><body><p>Widget not built. Run: cd web && npm run build</p></body></html>`;
       }
       throw err;
