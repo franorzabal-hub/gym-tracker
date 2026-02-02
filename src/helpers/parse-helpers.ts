@@ -1,3 +1,9 @@
+/**
+ * Parses a JSON string into the target type, or passes through non-string values.
+ * MCP clients sometimes serialize objects/arrays as JSON strings instead of
+ * passing them as structured data. This normalizes both cases.
+ * Returns null if `value` is null/undefined or if JSON parsing fails.
+ */
 export function parseJsonParam<T>(value: unknown): T | null {
   if (value == null) return null;
   if (typeof value === 'string') {
@@ -6,6 +12,12 @@ export function parseJsonParam<T>(value: unknown): T | null {
   return value as T;
 }
 
+/**
+ * Like {@link parseJsonParam} but guarantees an array result.
+ * Plain strings that aren't valid JSON are wrapped in a single-element array
+ * instead of returning null — useful for params like tags or exercise names
+ * where a user might pass "bench press" instead of ["bench press"].
+ */
 export function parseJsonArrayParam<T>(value: unknown): T[] | null {
   if (value == null) return null;
   if (Array.isArray(value)) return value as T[];

@@ -11,6 +11,13 @@ export interface ResolvedExercise {
   exerciseType?: string;
 }
 
+/**
+ * Resolves an exercise name through a 3-step lookup chain:
+ *   1. Exact name match (case-insensitive, user-owned first, then global)
+ *   2. Alias match (via exercise_aliases table)
+ *   3. Partial match (ILIKE on both names and aliases)
+ * Returns null if no match is found — never auto-creates.
+ */
 export async function findExercise(input: string, client?: PoolClient): Promise<ResolvedExercise | null> {
   const normalized = input.trim().toLowerCase();
   const userId = getUserId();
@@ -58,6 +65,18 @@ export async function findExercise(input: string, client?: PoolClient): Promise<
   return null;
 }
 
+/**
+ * Resolves an exercise name through a 4-step lookup chain:
+ *   1. Exact name match (case-insensitive, user-owned first, then global)
+ *   2. Alias match (via exercise_aliases table)
+ *   3. Partial match (ILIKE on both names and aliases)
+ *   4. Auto-create as a user-owned exercise (defaults: rep_type='reps', exercise_type='strength')
+ *
+ * Steps 1-3 also backfill missing metadata (muscle_group, equipment, etc.)
+ * on user-owned exercises when the caller provides it.
+ * On unique-constraint conflict during auto-create (concurrent request race),
+ * falls back to a re-lookup instead of throwing.
+ */
 export async function resolveExercise(
   input: string,
   muscleGroup?: string,
@@ -70,6 +89,7 @@ export async function resolveExercise(
   const userId = getUserId();
 
   // 1. Exact name match (user-owned first, then global)
+  // user_id NULLS LAST: prefer user's custom exercise over the global catalog entry
   const exact = await q(client).query(
     `SELECT id, name, muscle_group, equipment, rep_type, exercise_type, user_id FROM exercises
      WHERE LOWER(name) = $1 AND (user_id IS NULL OR user_id = $2)

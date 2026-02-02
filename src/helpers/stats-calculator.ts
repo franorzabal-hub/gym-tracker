@@ -2,10 +2,14 @@ import { PoolClient } from "pg";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 
+/**
+ * Estimates one-rep max using the Epley formula: weight × (1 + reps/30).
+ * Returns null for invalid inputs. Returns weight directly for single-rep sets.
+ * Result is rounded to one decimal place.
+ */
 export function estimateE1RM(weight: number, reps: number): number | null {
   if (weight <= 0 || reps <= 0) return null;
   if (reps === 1) return weight;
-  // Epley formula
   return Math.round(weight * (1 + reps / 30) * 10) / 10;
 }
 
@@ -23,13 +27,24 @@ export interface PRCheck {
   previous?: number;
 }
 
+/**
+ * Checks and records personal records for a set of new lifts.
+ * Only applies to strength exercises. PR types checked:
+ *   - max_weight: heaviest single lift
+ *   - max_reps_at_{weight}: most reps at a specific weight
+ *   - estimated_1rm: highest estimated one-rep max (Epley formula)
+ *
+ * Uses a PostgreSQL advisory lock (keyed on user_id + exercise_id) to prevent
+ * duplicate PRs from concurrent requests logging the same exercise.
+ * When called within an existing transaction (externalClient), piggybacks
+ * on that transaction's lock scope; otherwise opens its own.
+ */
 export async function checkPRs(
   exerciseId: number,
   newSets: Array<{ reps: number; weight?: number | null; set_id: number }>,
   exerciseType?: string,
   externalClient?: PoolClient
 ): Promise<PRCheck[]> {
-  // Skip PR tracking for non-strength exercises
   if (exerciseType && exerciseType !== 'strength') {
     return [];
   }
@@ -37,7 +52,9 @@ export async function checkPRs(
   const userId = getUserId();
 
   const runInTransaction = async (client: PoolClient): Promise<PRCheck[]> => {
-    // Advisory lock to prevent concurrent PR checks for same user+exercise
+    // Advisory lock: prevents concurrent PR checks for the same user+exercise
+    // from creating duplicate PR history entries (e.g., two bulk-logged sets
+    // racing to claim the same max_weight record)
     await client.query('SELECT pg_advisory_xact_lock($1, $2)', [userId, exerciseId]);
 
     // Pre-load all current PRs in one query

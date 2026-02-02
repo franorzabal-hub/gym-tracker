@@ -1,33 +1,19 @@
 # Gym Tracker
 
-MCP Server that turns Claude into a gym training partner — log workouts, track progress, and manage programs through natural conversation.
+MCP Server that turns Claude (or ChatGPT) into a gym training partner — log workouts, track progress, and manage programs through natural conversation in Spanish or English.
 
-## Features
+Built with Node.js + TypeScript, Express, PostgreSQL, and the [MCP Apps SDK](https://github.com/anthropics/model-context-protocol) for visual widgets.
 
-- **15 MCP tools** for full workout lifecycle (exercises, programs, sessions, stats, templates, body measurements, export)
-- **Multi-tenant** with OAuth 2.1 authentication (WorkOS), PKCE S256 mandatory, per-IP rate limiting
-- **Bulk operations** on exercises, programs, templates, sessions, and stats
-- **PR tracking** with Epley 1RM estimation and full PR history timeline
-- **Session tags**, soft delete, and restore
-- **Body measurements** tracking (weight, body fat, circumferences) with temporal history
-- **Data export** in JSON or CSV with scoped filtering
-- **Exercise types** (strength/mobility/cardio/warmup) with configurable rep types (reps/seconds/meters/calories)
-
-## Prerequisites
-
-- Node.js 22+
-- PostgreSQL (or [Neon](https://neon.tech) serverless Postgres)
-
-## Setup
+## Quick Start
 
 ```bash
-cp .env.example .env
-# Edit .env with your DATABASE_URL (+ WORKOS_* keys for auth)
-npm install
-npm run dev
+npm install && cd web && npm install && cd ..
+cp .env.example .env          # add your Neon DATABASE_URL
+DEV_USER_ID=1 npm run dev     # server on :3001
+cd web && npm run dev:host    # widget test host on :5173
 ```
 
-The server starts on `http://localhost:3001`. Migrations run automatically on startup.
+Migrations run automatically on startup.
 
 ## Scripts
 
@@ -35,23 +21,17 @@ The server starts on `http://localhost:3001`. Migrations run automatically on st
 |---|---|
 | `npm run dev` | Start dev server with tsx |
 | `npm run build` | Compile TypeScript |
-| `npm run serve` | Run compiled JS (production) |
-| `npm run migrate` | Run migrations standalone |
-| `npm test` | Run tests |
-| `npm run test:watch` | Run tests in watch mode |
+| `npm run build:widgets` | Build widget HTML files |
+| `npm test` | Run tests (tsc + vitest) |
 
-## Connect to Claude
+## Connect
 
-1. Go to Claude → Settings → Integrations → Add custom integration
+1. Claude → Settings → Integrations → Add custom integration
 2. URL: `http://localhost:3001/mcp` (or your deployed URL)
 3. Start chatting: "Hice peso muerto 100kg 5x5"
 
-## Architecture
+## Documentation
 
-```
-Claude → HTTPS → Cloud Run (Express + MCP SDK) → Neon Postgres
-```
-
-Auth: WorkOS OAuth 2.1 → Bearer token → AsyncLocalStorage per-request user isolation.
-
-See [CLAUDE.md](./CLAUDE.md) for detailed architecture, schema, tools reference, and code patterns.
+- **[CLAUDE.md](CLAUDE.md)** — Full development context: architecture, 21 MCP tools, schema, auth, deployment
+- **[web/README.md](web/README.md)** — Widget development: architecture, theming, component patterns
+- **[docs/](docs/)** — Product specs: onboarding flow, user journeys, product description

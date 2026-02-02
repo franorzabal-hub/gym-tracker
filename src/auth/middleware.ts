@@ -17,6 +17,19 @@ const tokenCache = new Map<string, CachedToken>();
 const TOKEN_CACHE_TTL = 60_000; // 1 minute
 const TOKEN_CACHE_MAX = 1000;
 
+/**
+ * Authenticates a Bearer token from the request and returns the internal user ID.
+ * Uses a simple in-memory cache (1-min TTL, max 1000 entries) to avoid hitting
+ * the database on every MCP request. On cache miss, looks up the token in
+ * auth_tokens, then upserts the user record.
+ *
+ * Cache eviction: when full, removes the oldest 25% of entries instead of
+ * clearing everything — avoids a thundering herd where all concurrent requests
+ * simultaneously miss the cache and hit the DB.
+ *
+ * The user upsert only updates last_login if it's been stale for >1 hour,
+ * reducing unnecessary DB writes for users making frequent requests.
+ */
 export async function authenticateToken(req: Request): Promise<number> {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {

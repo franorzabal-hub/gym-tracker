@@ -39,6 +39,8 @@ function getAllowedOrigins(): string[] {
 }
 
 const app = express();
+// Cloud Run sits behind a Google load balancer — trust one proxy hop
+// so req.ip reflects the real client IP (used for rate limiting)
 app.set("trust proxy", 1);
 app.use(cors({
   origin: getAllowedOrigins(),
@@ -56,7 +58,9 @@ app.get("/health", (_req, res) => {
 // OAuth routes (before /mcp)
 app.use(oauthRoutes);
 
-// Create a fully configured MCP server instance
+// New McpServer per request: stateless design means no session affinity needed.
+// Each HTTP request gets its own server+transport, so Cloud Run can route
+// requests to any instance without sticky sessions.
 function createConfiguredServer(): McpServer {
   const server = new McpServer(
     { name: "gym-tracker", version: "1.0.0" },
