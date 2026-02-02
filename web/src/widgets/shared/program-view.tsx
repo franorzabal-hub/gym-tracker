@@ -435,7 +435,7 @@ function ExerciseRow({ ex, exNum, note, showExerciseRest, isSecondary, typeLabel
   );
 }
 
-export function ExerciseBlock({ exercises, ssColor, groupType, startIndex }: { exercises: Exercise[]; ssColor: string | null; groupType: string | null; startIndex: number }) {
+export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, collapsible = true }: { exercises: Exercise[]; ssColor: string | null; groupType: string | null; startIndex: number; collapsible?: boolean }) {
   const isGrouped = exercises.length > 1;
   const [expanded, setExpanded] = useState(true);
   const type = groupType || "superset";
@@ -467,25 +467,29 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex }: { e
   const groupTypeLabel = (GROUP_LABELS[type] || GROUP_LABELS.superset).label;
   const headerLabel = groupLabel || groupTypeLabel;
   const headerDetail = groupLabel ? groupTypeLabel : null;
+  const canCollapse = collapsible;
+  const showExercises = canCollapse ? expanded : true;
 
   return (
     <div style={{ marginBottom: sp[2] }}>
-      {/* Header: same style as SectionCard — clickable to collapse */}
+      {/* Header */}
       <div
-        onClick={() => setExpanded(!expanded)}
+        onClick={canCollapse ? () => setExpanded(!expanded) : undefined}
         style={{
-          cursor: "pointer",
+          cursor: canCollapse ? "pointer" : "default",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          marginBottom: expanded ? sp[3] : 0,
+          marginBottom: showExercises ? sp[3] : 0,
           userSelect: "none",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
-          <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
-            {expanded ? "▼" : "▶"}
-          </span>
+          {canCollapse && (
+            <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
+              {expanded ? "▼" : "▶"}
+            </span>
+          )}
           <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
             {headerLabel}
           </span>
@@ -496,41 +500,47 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex }: { e
           )}
           <NoteTooltip text={(GROUP_LABELS[type] || GROUP_LABELS.superset).pattern} />
         </div>
-        <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
-          {exercises.length} ej.
-        </span>
+        {canCollapse && (
+          <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
+            {exercises.length} ej.
+          </span>
+        )}
       </div>
-      {/* Exercises */}
-      {expanded && exercises.map((ex, i) => {
-        const note = cleanNotes(ex.notes, isGrouped, ex.muscle_group, ex.rep_type);
-        const showExerciseRest = false;
-        const isSecondary = (ex as any).exercise_type === "warmup" || (ex as any).exercise_type === "mobility" || (ex as any).exercise_type === "cardio";
-        const typeLabel = EXERCISE_TYPE_LABELS[(ex as any).exercise_type || ""] || null;
-        const hasMetaLine = ex.target_rpe != null;
-        const exNum = startIndex + i;
-        const hasPerSet = ex.target_reps_per_set != null || ex.target_weight_per_set != null;
-        return (
-          <ExerciseRow
-            key={i}
-            ex={ex}
-            exNum={exNum}
-            note={note}
-            showExerciseRest={showExerciseRest}
-            isSecondary={isSecondary}
-            typeLabel={typeLabel}
-            hasMetaLine={hasMetaLine}
-            hasPerSet={hasPerSet}
-            isLast={i >= exercises.length - 1}
-          />
-        );
-      })}
-      {/* Footer: group rest + notes */}
-      {expanded && (groupRestSeconds != null || groupNotes) && (
-        <div style={{ marginTop: sp[3], fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.medium, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: sp[3] }}>
-          {groupRestSeconds != null && (
-            <span>⏱ {formatRestSeconds(groupRestSeconds)}</span>
+      {/* Exercises — indented under the group header */}
+      {showExercises && (
+        <div style={{ paddingLeft: sp[5] }}>
+          {exercises.map((ex, i) => {
+            const note = cleanNotes(ex.notes, isGrouped, ex.muscle_group, ex.rep_type);
+            const showExerciseRest = false;
+            const isSecondary = (ex as any).exercise_type === "warmup" || (ex as any).exercise_type === "mobility" || (ex as any).exercise_type === "cardio";
+            const typeLabel = EXERCISE_TYPE_LABELS[(ex as any).exercise_type || ""] || null;
+            const hasMetaLine = ex.target_rpe != null;
+            const exNum = startIndex + i;
+            const hasPerSet = ex.target_reps_per_set != null || ex.target_weight_per_set != null;
+            return (
+              <ExerciseRow
+                key={i}
+                ex={ex}
+                exNum={exNum}
+                note={note}
+                showExerciseRest={showExerciseRest}
+                isSecondary={isSecondary}
+                typeLabel={typeLabel}
+                hasMetaLine={hasMetaLine}
+                hasPerSet={hasPerSet}
+                isLast={i >= exercises.length - 1}
+              />
+            );
+          })}
+          {/* Footer: group rest + notes */}
+          {(groupRestSeconds != null || groupNotes) && (
+            <div style={{ marginTop: sp[3], fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.medium, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: sp[3] }}>
+              {groupRestSeconds != null && (
+                <span>⏱ {formatRestSeconds(groupRestSeconds)}</span>
+              )}
+              {groupNotes && <NoteTooltip text={groupNotes} />}
+            </div>
           )}
-          {groupNotes && <NoteTooltip text={groupNotes} />}
         </div>
       )}
     </div>
@@ -552,9 +562,10 @@ function ExerciseBlockList({ blocks, ssGroupColors, startNumber }: {
         const groupType = block[0].group_type;
         const startIdx = currentIdx;
         currentIdx += block.length;
+        const hasSiblings = blocks.length > 1;
         return (
           <div key={i}>
-            <ExerciseBlock exercises={block} ssColor={color} groupType={groupType} startIndex={startIdx} />
+            <ExerciseBlock exercises={block} ssColor={color} groupType={groupType} startIndex={startIdx} collapsible={hasSiblings} />
             {i < blocks.length - 1 && (
               <div style={{
                 borderBottom: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
