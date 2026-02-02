@@ -109,28 +109,12 @@ const sampleData: Record<string, { content?: Array<{ type: string; text: string 
     })}],
   },
   programs: {
-    content: [{ type: "text", text: JSON.stringify({
+    structuredContent: {
       initialDayIdx: 0,
-      exerciseCatalog: [
-        { name: "Bench Press", muscle_group: "chest" },
-        { name: "Incline Bench Press", muscle_group: "chest" },
-        { name: "Overhead Press", muscle_group: "shoulders" },
-        { name: "Cable Fly", muscle_group: "chest" },
-        { name: "Lateral Raise", muscle_group: "shoulders" },
-        { name: "Tricep Pushdown", muscle_group: "triceps" },
-        { name: "Squat", muscle_group: "legs" },
-        { name: "Romanian Deadlift", muscle_group: "legs" },
-        { name: "Deadlift", muscle_group: "back" },
-        { name: "Barbell Row", muscle_group: "back" },
-        { name: "Pull-Up", muscle_group: "back" },
-        { name: "Bicep Curl", muscle_group: "arms" },
-        { name: "Face Pull", muscle_group: "shoulders" },
-        { name: "Leg Press", muscle_group: "legs" },
-        { name: "Leg Curl", muscle_group: "legs" },
-        { name: "Calf Raise", muscle_group: "legs" },
-      ],
+      pendingChanges: { name: "Push Pull Legs v2", description: "Updated 6-day PPL split" },
       program: {
         id: 1, name: "Push Pull Legs", description: "6-day PPL split for hypertrophy", version: 2,
+        is_active: true,
         days: [
           { day_label: "Push A", weekdays: [1, 4], exercises: [
             { exercise_name: "Bench Press", target_sets: 4, target_reps: 6, target_weight: 85, target_rpe: 8, superset_group: null, group_type: null, rest_seconds: 120, notes: null, muscle_group: "chest" },
@@ -141,7 +125,7 @@ const sampleData: Record<string, { content?: Array<{ type: string; text: string 
           ]},
         ],
       },
-    })}],
+    },
   },
   templates: {
     content: [{ type: "text", text: JSON.stringify({
@@ -155,22 +139,6 @@ const sampleData: Record<string, { content?: Array<{ type: string; text: string 
   },
   "programs-list": {
     content: [{ type: "text", text: JSON.stringify({
-      exerciseCatalog: [
-        { name: "Bench Press", muscle_group: "chest" },
-        { name: "Barbell Row", muscle_group: "back" },
-        { name: "Squat", muscle_group: "legs" },
-        { name: "Deadlift", muscle_group: "back" },
-        { name: "Overhead Press", muscle_group: "shoulders" },
-        { name: "Pull-Up", muscle_group: "back" },
-        { name: "Lateral Raise", muscle_group: "shoulders" },
-        { name: "Face Pull", muscle_group: "shoulders" },
-        { name: "Tricep Pushdown", muscle_group: "arms" },
-        { name: "Bicep Curl", muscle_group: "arms" },
-        { name: "Romanian Deadlift", muscle_group: "legs" },
-        { name: "Leg Curl", muscle_group: "legs" },
-        { name: "Leg Press", muscle_group: "legs" },
-        { name: "Calf Raise", muscle_group: "legs" },
-      ],
       programs: [
         { id: 1, name: "Upper/Lower 4x", is_active: true, description: "4 days/week upper/lower split", version: 2, days: [
           { day_label: "Upper A", weekdays: [1], exercises: [
@@ -327,18 +295,6 @@ const sampleData: Record<string, { content?: Array<{ type: string; text: string 
           },
         ],
       },
-      exerciseCatalog: [
-        { name: "Bench Press", muscle_group: "chest", rep_type: "reps", exercise_type: "strength" },
-        { name: "Incline DB Press", muscle_group: "chest", rep_type: "reps", exercise_type: "strength" },
-        { name: "Cable Fly", muscle_group: "chest", rep_type: "reps", exercise_type: "strength" },
-        { name: "Overhead Press", muscle_group: "shoulders", rep_type: "reps", exercise_type: "strength" },
-        { name: "Lateral Raise", muscle_group: "shoulders", rep_type: "reps", exercise_type: "strength" },
-        { name: "Tricep Pushdown", muscle_group: "triceps", rep_type: "reps", exercise_type: "strength" },
-        { name: "Squat", muscle_group: "legs", rep_type: "reps", exercise_type: "strength" },
-        { name: "Deadlift", muscle_group: "back", rep_type: "reps", exercise_type: "strength" },
-        { name: "Barbell Row", muscle_group: "back", rep_type: "reps", exercise_type: "strength" },
-        { name: "Pull-Up", muscle_group: "back", rep_type: "reps", exercise_type: "strength" },
-      ],
     })}],
   },
   workouts: {

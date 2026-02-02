@@ -43,11 +43,11 @@ Without pending_changes: read-only view. With pending_changes: diff view + confi
 
   registerAppToolWithMeta(server, "show_programs", {
     title: "My Programs",
-    description: `${APP_CONTEXT}Display the user's programs as an editable carousel widget. Each program page supports inline editing (name, description, days, exercises, sets, reps, weight, RPE, rest) with auto-save and drag-and-drop reordering.
+    description: `${APP_CONTEXT}Display the user's programs as a read-only list widget. Shows each program with days, exercises, and status.
 The widget already shows all information visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps.
-Call this when the user wants to see, edit, or manage their programs. For browsing global templates, use show_available_programs instead.`,
+Call this when the user wants to see or review their programs. To edit programs, use manage_program. For browsing global templates, use show_available_programs instead.`,
     inputSchema: {},
-    annotations: { readOnlyHint: false },
+    annotations: { readOnlyHint: true },
     _meta: {
       ui: { resourceUri: "ui://gym-tracker/programs-list.html" },
       "openai/toolInvocation/invoking": "Loading programs...",
@@ -81,20 +81,9 @@ Call this when the user wants to see, edit, or manage their programs. For browsi
       }))
     );
 
-    // Fetch exercise catalog for autocomplete in the widget
-    const { rows: exerciseRows } = await pool.query(
-      `SELECT name, muscle_group FROM exercises
-       WHERE user_id IS NULL OR user_id = $1
-       ORDER BY user_id NULLS LAST, name`,
-      [userId]
-    );
-
     return widgetResponse(
-      `Programs carousel widget displayed showing ${programsWithDays.length} user program(s) with inline editing. Do NOT repeat this information — the user can see it in the widget.`,
-      {
-        programs: programsWithDays,
-        exerciseCatalog: exerciseRows.map((r: any) => ({ name: r.name, muscle_group: r.muscle_group })),
-      }
+      `Programs list widget displayed showing ${programsWithDays.length} user program(s). Do NOT repeat this information — the user can see it in the widget.`,
+      { programs: programsWithDays }
     );
   });
 
@@ -185,13 +174,17 @@ After a user clones a program from the widget, follow up with show_program so th
 
   registerAppToolWithMeta(server, "show_program", {
     title: "Show Program",
-    description: `${APP_CONTEXT}Display a workout program as a visual widget with inline editing. All fields (name, description, days, exercises, sets, reps, weight, RPE, rest) are editable in-place with auto-save. The widget shows the full program structure — do NOT repeat exercises or program details in your response. Just confirm it's displayed or offer next steps.
-Use this whenever the user asks to see/show/edit their program, routine, or plan.
+    description: `${APP_CONTEXT}Display a workout program as a read-only visual widget. Shows the full program structure with days, exercises, sets, reps, weight, RPE, and rest — do NOT repeat exercises or program details in your response. Just confirm it's displayed or offer next steps.
+To propose metadata changes (name, description), pass pending_changes. The widget shows a visual diff and a "Confirm" button. Wait for the user to confirm.
+For structural changes (days, exercises, sets), use manage_program then re-render with show_program.
+Use this whenever the user asks to see/show their program, routine, or plan.
 Defaults to the active program. Pass a name to show a specific program.
-Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday"). The widget always receives all days for editing.`,
+Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday").`,
     inputSchema: {
       name: z.string().optional().describe("Program name. Omit for active program."),
       day: z.string().optional().describe("Scroll to a specific day. Accepts day label (e.g. 'Dia 1'), weekday name (e.g. 'lunes', 'monday'), or weekday number (1=Mon..7=Sun)."),
+      pending_changes: z.record(z.any()).optional()
+        .describe("Fields to propose changing (name, description). Widget shows visual diff with confirm button. Omit for read-only view."),
     },
     annotations: { readOnlyHint: false },
     _meta: {
@@ -199,7 +192,7 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday"). The wi
       "openai/toolInvocation/invoking": "Loading program...",
       "openai/toolInvocation/invoked": "Program loaded",
     },
-  }, async ({ name, day }: { name?: string; day?: string }) => {
+  }, async ({ name, day, pending_changes }: { name?: string; day?: string; pending_changes?: Record<string, any> }) => {
     const userId = getUserId();
 
     const program = name
@@ -240,16 +233,13 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday"). The wi
 
     const totalExercises = days.reduce((sum: number, d: any) => sum + d.exercises.length, 0);
 
-    // Fetch exercise catalog for autocomplete in the widget
-    const { rows: exerciseRows } = await pool.query(
-      `SELECT name, muscle_group FROM exercises
-       WHERE user_id IS NULL OR user_id = $1
-       ORDER BY user_id NULLS LAST, name`,
-      [userId]
-    );
+    const hasPending = pending_changes && Object.keys(pending_changes).length > 0;
+    const llmNote = hasPending
+      ? `Program widget displayed showing "${program.name}" with proposed changes. Wait for the user to confirm or reject in the widget. Do NOT repeat the data.`
+      : `Program widget displayed showing "${program.name}" (v${program.version_number}, ${days.length} day${days.length > 1 ? "s" : ""}, ${totalExercises} exercises). Do NOT repeat this information — the user can see it in the widget.`;
 
     return widgetResponse(
-      `Program widget displayed showing "${program.name}" (v${program.version_number}, ${days.length} day${days.length > 1 ? "s" : ""}, ${totalExercises} exercises). The widget supports inline editing — do NOT repeat this information.`,
+      llmNote,
       {
         program: {
           id: program.id,
@@ -260,7 +250,7 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday"). The wi
           days,
         },
         initialDayIdx,
-        exerciseCatalog: exerciseRows.map((r: any) => ({ name: r.name, muscle_group: r.muscle_group })),
+        ...(hasPending ? { pendingChanges: pending_changes } : {}),
       }
     );
   });

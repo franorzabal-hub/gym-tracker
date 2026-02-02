@@ -7,14 +7,15 @@ import { widgetResponse, registerAppToolWithMeta, APP_CONTEXT } from "../helpers
 export function registerWorkoutTool(server: McpServer) {
   registerAppToolWithMeta(server, "show_workout", {
     title: "Active Workout",
-    description: `${APP_CONTEXT}Display an interactive workout session widget. Shows a session with exercises and sets — all editable inline (add/remove exercises, add/remove/edit sets, change reps/weight/RPE).
-If session_id is provided, shows that specific session (read-only if ended). Otherwise shows the most recent session (active or ended).
-The widget handles mutations via log_workout and edit_log calls. If no sessions exist and no session_id given, shows a "no sessions" message.
+    description: `${APP_CONTEXT}Display a read-only workout session widget. Shows a session with exercises, sets, previous workout comparison, and PRs.
+If session_id is provided, shows that specific session. Otherwise shows the most recent session (active or ended).
+If no sessions exist and no session_id given, shows a "no sessions" message.
+To edit sets, use edit_log. To log new exercises/sets, use log_workout.
 The widget already shows all information visually — do NOT repeat exercises or set details in your response. Just confirm it's displayed or offer next steps.`,
     inputSchema: {
       session_id: z.number().optional().describe("Optional session ID to view a specific (possibly ended) session in read-only mode"),
     },
-    annotations: {},
+    annotations: { readOnlyHint: true },
     _meta: {
       ui: { resourceUri: "ui://gym-tracker/workout.html" },
       "openai/toolInvocation/invoking": "Loading workout...",
@@ -125,20 +126,12 @@ The widget already shows all information visually — do NOT repeat exercises or
       prMap.get(row.name)![row.record_type] = parseFloat(row.value);
     }
 
-    // Fetch exercise catalog for autocomplete
-    const { rows: exerciseRows } = await pool.query(
-      `SELECT name, muscle_group, rep_type, exercise_type FROM exercises
-       WHERE user_id IS NULL OR user_id = $1
-       ORDER BY user_id NULLS LAST, name`,
-      [userId]
-    );
-
     const exerciseCount = exerciseDetails.length;
     const totalSets = exerciseDetails.reduce((sum: number, e: any) => sum + (Array.isArray(e.sets) ? e.sets.length : 0), 0);
 
-    const readonlyLabel = isEnded ? " (read-only, session ended)" : "";
+    const statusLabel = isEnded ? "past" : "active";
     return widgetResponse(
-      `Workout widget displayed showing ${isEnded ? "past" : "active"} session (${durationMinutes} min, ${exerciseCount} exercises, ${totalSets} sets${programDay ? `, ${programDay}` : ""})${readonlyLabel}. The widget ${isEnded ? "is read-only" : "supports inline editing"} — do NOT repeat this information.`,
+      `Workout widget displayed showing ${statusLabel} session (${durationMinutes} min, ${exerciseCount} exercises, ${totalSets} sets${programDay ? `, ${programDay}` : ""}). Do NOT repeat this information — the user can see it in the widget.`,
       {
         session: {
           session_id: session.id,
@@ -159,12 +152,6 @@ The widget already shows all information visually — do NOT repeat exercises or
           })),
         },
         ...(isEnded ? { readonly: true } : {}),
-        exerciseCatalog: exerciseRows.map((r: any) => ({
-          name: r.name,
-          muscle_group: r.muscle_group,
-          rep_type: r.rep_type,
-          exercise_type: r.exercise_type,
-        })),
       }
     );
   });

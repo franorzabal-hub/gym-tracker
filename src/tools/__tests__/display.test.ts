@@ -115,17 +115,16 @@ describe("show_programs display tool", () => {
       "show_programs",
       expect.objectContaining({
         title: "My Programs",
-        annotations: { readOnlyHint: false },
+        annotations: { readOnlyHint: true },
         _meta: expect.objectContaining({ ui: { resourceUri: "ui://gym-tracker/programs-list.html" } }),
       }),
       expect.any(Function)
     );
   });
 
-  it("returns programs with full days and exerciseCatalog", async () => {
+  it("returns programs with full days", async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL", is_active: true, description: "Push Pull Legs", version_id: 10, version_number: 2 }] })
-      .mockResolvedValueOnce({ rows: [{ name: "Bench Press", muscle_group: "chest" }, { name: "Squat", muscle_group: "legs" }] });
+      .mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL", is_active: true, description: "Push Pull Legs", version_id: 10, version_number: 2 }] });
 
     mockGetProgramDaysWithExercises
       .mockResolvedValueOnce([
@@ -140,20 +139,19 @@ describe("show_programs display tool", () => {
     expect(result.structuredContent.programs[0].version).toBe(2);
     expect(result.structuredContent.programs[0].days).toHaveLength(1);
     expect(result.structuredContent.programs[0].days[0].exercises).toHaveLength(1);
-    expect(result.structuredContent.exerciseCatalog).toHaveLength(2);
+    expect(result.structuredContent.exerciseCatalog).toBeUndefined();
     expect(result.content[0].text).toContain("Do NOT repeat");
     expect(mockGetProgramDaysWithExercises).toHaveBeenCalledWith(10);
   });
 
   it("returns empty programs when user has none", async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ name: "Bench Press", muscle_group: "chest" }] });
+      .mockResolvedValueOnce({ rows: [] });
 
     const result = await toolHandlers["show_programs"]();
 
     expect(result.structuredContent.programs).toHaveLength(0);
-    expect(result.structuredContent.exerciseCatalog).toHaveLength(1);
+    expect(result.structuredContent.exerciseCatalog).toBeUndefined();
   });
 });
 
@@ -270,13 +268,14 @@ describe("show_program display tool", () => {
       expect.objectContaining({
         title: "Show Program",
         annotations: { readOnlyHint: false },
+        inputSchema: expect.objectContaining({ pending_changes: expect.anything() }),
         _meta: expect.objectContaining({ ui: { resourceUri: "ui://gym-tracker/programs.html" } }),
       }),
       expect.any(Function)
     );
   });
 
-  it("returns active program with id, days, exercises, initialDayIdx, and exerciseCatalog", async () => {
+  it("returns active program with id, days, exercises, and initialDayIdx", async () => {
     mockGetActiveProgram.mockResolvedValueOnce({
       id: 1, name: "PPL", description: "Push Pull Legs",
       version_id: 10, version_number: 2,
@@ -285,9 +284,6 @@ describe("show_program display tool", () => {
       { day_label: "Push", exercises: [{ exercise_name: "Bench Press", target_sets: 4, target_reps: 8 }] },
       { day_label: "Pull", exercises: [{ exercise_name: "Barbell Row", target_sets: 4, target_reps: 8 }] },
     ]);
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ name: "Bench Press", muscle_group: "chest" }, { name: "Squat", muscle_group: "legs" }],
-    });
 
     const result = await toolHandlers["show_program"]({});
 
@@ -296,8 +292,8 @@ describe("show_program display tool", () => {
     expect(result.structuredContent.program.version).toBe(2);
     expect(result.structuredContent.program.days).toHaveLength(2);
     expect(result.structuredContent.initialDayIdx).toBe(0);
-    expect(result.structuredContent.exerciseCatalog).toHaveLength(2);
-    expect(result.content[0].text).toContain("inline editing");
+    expect(result.structuredContent.exerciseCatalog).toBeUndefined();
+    expect(result.content[0].text).toContain("Do NOT repeat");
   });
 
   it("returns null program when none found", async () => {
@@ -313,9 +309,6 @@ describe("show_program display tool", () => {
     mockQuery
       .mockResolvedValueOnce({
         rows: [{ id: 2, name: "Full Body", description: null, version_id: 5, version_number: 1 }],
-      })
-      .mockResolvedValueOnce({
-        rows: [{ name: "Squat", muscle_group: "legs" }],
       });
     mockGetProgramDaysWithExercises.mockResolvedValueOnce([
       { day_label: "Day A", exercises: [{ exercise_name: "Squat", target_sets: 3, target_reps: 8 }] },
@@ -326,6 +319,38 @@ describe("show_program display tool", () => {
     expect(result.structuredContent.program.id).toBe(2);
     expect(result.structuredContent.program.name).toBe("Full Body");
     expect(result.structuredContent.program.days).toHaveLength(1);
-    expect(result.structuredContent.exerciseCatalog).toHaveLength(1);
+    expect(result.structuredContent.exerciseCatalog).toBeUndefined();
+  });
+
+  it("includes pendingChanges when pending_changes provided", async () => {
+    mockGetActiveProgram.mockResolvedValueOnce({
+      id: 1, name: "PPL", description: "Push Pull Legs",
+      version_id: 10, version_number: 2,
+    });
+    mockGetProgramDaysWithExercises.mockResolvedValueOnce([
+      { day_label: "Push", exercises: [{ exercise_name: "Bench Press", target_sets: 4, target_reps: 8 }] },
+    ]);
+
+    const result = await toolHandlers["show_program"]({
+      pending_changes: { name: "PPL v2", description: "Updated split" },
+    });
+
+    expect(result.structuredContent.pendingChanges).toEqual({ name: "PPL v2", description: "Updated split" });
+    expect(result.content[0].text).toContain("proposed changes");
+  });
+
+  it("omits pendingChanges when pending_changes is empty object", async () => {
+    mockGetActiveProgram.mockResolvedValueOnce({
+      id: 1, name: "PPL", description: "Push Pull Legs",
+      version_id: 10, version_number: 2,
+    });
+    mockGetProgramDaysWithExercises.mockResolvedValueOnce([
+      { day_label: "Push", exercises: [{ exercise_name: "Bench Press", target_sets: 4, target_reps: 8 }] },
+    ]);
+
+    const result = await toolHandlers["show_program"]({ pending_changes: {} });
+
+    expect(result.structuredContent.pendingChanges).toBeUndefined();
+    expect(result.content[0].text).toContain("Do NOT repeat");
   });
 });
