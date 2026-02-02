@@ -1,22 +1,26 @@
 import { createRoot } from "react-dom/client";
 import { useState, useRef, useCallback } from "react";
-import { useToolOutput, useCallTool } from "../hooks.js";
+import { useToolOutput } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
 import "../styles.css";
 import {
-  ProgramEditor,
-  type Program,
-  type ExerciseSuggestion,
-  type ProgramMenuItem,
-} from "./shared/program-editor.js";
+  type Day,
+  WeekdayPills,
+  DayCard,
+  DayCarousel,
+} from "./shared/program-view.js";
 
-interface UserProgram extends Program {
+interface UserProgram {
+  id: number;
+  name: string;
+  description: string | null;
+  version: number;
+  days: Day[];
   is_active: boolean;
 }
 
 interface ProgramsListData {
   programs: UserProgram[];
-  exerciseCatalog?: ExerciseSuggestion[];
 }
 
 // ── Dot indicators ──
@@ -67,17 +71,58 @@ function useSwipe(onSwipe: (dir: -1 | 1) => void) {
   return { onTouchStart, onTouchEnd };
 }
 
+// ── Read-only program card ──
+
+function ProgramCard({ program }: { program: UserProgram }) {
+  const [viewingIdx, setViewingIdx] = useState(0);
+
+  const goTo = useCallback((idx: number) => {
+    setViewingIdx(Math.max(0, Math.min(idx, program.days.length - 1)));
+  }, [program.days.length]);
+
+  const totalExercises = program.days.reduce((sum, d) => sum + d.exercises.length, 0);
+  const viewingWeekdays = program.days[viewingIdx]?.weekdays || [];
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+          <div className="title" style={{ marginBottom: 0 }}>{program.name}</div>
+          {program.is_active
+            ? <span className="badge badge-success">Active</span>
+            : <span className="badge badge-muted">Inactive</span>
+          }
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {program.description && (
+            <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{program.description}</span>
+          )}
+          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+            {program.days.length} days &middot; {totalExercises} exercises
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+          <WeekdayPills days={program.days} viewingWeekdays={viewingWeekdays} onWeekdayClick={goTo} />
+        </div>
+      </div>
+
+      {/* Days */}
+      {program.days.length === 1
+        ? <DayCard day={program.days[0]} alwaysExpanded />
+        : <DayCarousel days={program.days} activeIdx={viewingIdx} goTo={goTo} />
+      }
+    </div>
+  );
+}
+
 // ── Root widget ──
 
 function ProgramsListWidget() {
   const data = useToolOutput<ProgramsListData>();
-  const { callTool, loading } = useCallTool();
   const [activeIdx, setActiveIdx] = useState(0);
-  const [activatingName, setActivatingName] = useState<string | null>(null);
-  const [localPrograms, setLocalPrograms] = useState<UserProgram[] | null>(null);
 
-  const programs = localPrograms ?? data?.programs ?? [];
-  const catalog = data?.exerciseCatalog ?? [];
+  const programs = data?.programs ?? [];
 
   const goTo = useCallback((idx: number) => {
     setActiveIdx(Math.max(0, Math.min(idx, programs.length - 1)));
@@ -97,68 +142,23 @@ function ProgramsListWidget() {
     );
   }
 
-  const handleActivate = async (programName: string) => {
-    setActivatingName(programName);
-    const result = await callTool("manage_program", { action: "activate", name: programName });
-    setActivatingName(null);
-    if (result && !result.error) {
-      setLocalPrograms(programs.map((p) => ({ ...p, is_active: p.name === programName })));
-    }
-  };
-
-  const handleDelete = async (programName: string) => {
-    const result = await callTool("manage_program", { action: "delete", name: programName });
-    if (result && !result.error) {
-      const remaining = programs.filter((p) => p.name !== programName);
-      setLocalPrograms(remaining);
-      if (activeIdx >= remaining.length) setActiveIdx(Math.max(0, remaining.length - 1));
-    }
-  };
-
   return (
     <div style={{ maxWidth: 600 }} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       {/* Grid stacks all programs in the same cell — container takes the tallest height */}
       <div style={{ display: "grid" }}>
-        {programs.map((prog, i) => {
-          const menu: ProgramMenuItem[] = [];
-          if (!prog.is_active) {
-            menu.push({
-              label: loading && activatingName === prog.name ? "Activating..." : "Activate",
-              icon: "✦",
-              disabled: loading && activatingName === prog.name,
-              onClick: () => handleActivate(prog.name),
-            });
-          }
-          menu.push({
-            label: "Delete",
-            icon: "×",
-            danger: true,
-            onClick: () => handleDelete(prog.name),
-          });
-
-          return (
-            <div
-              key={prog.id}
-              style={{
-                gridRow: 1,
-                gridColumn: 1,
-                visibility: i === activeIdx ? "visible" : "hidden",
-                pointerEvents: i === activeIdx ? "auto" : "none",
-              }}
-            >
-              <ProgramEditor
-                program={prog}
-                exerciseCatalog={catalog}
-                badge={
-                  prog.is_active
-                    ? <span className="badge badge-success">Active</span>
-                    : <span className="badge badge-muted">Inactive</span>
-                }
-                menuItems={menu}
-              />
-            </div>
-          );
-        })}
+        {programs.map((prog, i) => (
+          <div
+            key={prog.id}
+            style={{
+              gridRow: 1,
+              gridColumn: 1,
+              visibility: i === activeIdx ? "visible" : "hidden",
+              pointerEvents: i === activeIdx ? "auto" : "none",
+            }}
+          >
+            <ProgramCard program={prog} />
+          </div>
+        ))}
       </div>
 
       <DotIndicator total={programs.length} active={activeIdx} onDot={goTo} />
