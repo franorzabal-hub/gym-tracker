@@ -44,6 +44,7 @@ Uses the active program + user's timezone to infer which day it is. Returns rest
       const { rows: exercises } = await pool.query(
         `SELECT e.name, e.rep_type, e.exercise_type,
            pde.target_sets, pde.target_reps, pde.target_weight, pde.target_rpe,
+           pde.target_reps_per_set, pde.target_weight_per_set,
            pde.rest_seconds, pde.notes, pde.group_id,
            peg.group_type, peg.label as group_label, peg.notes as group_notes, peg.rest_seconds as group_rest_seconds,
            pde.section_id, ps.label as section_label, ps.notes as section_notes

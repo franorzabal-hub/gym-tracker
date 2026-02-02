@@ -50,6 +50,8 @@ export async function getProgramDaysWithExercises(versionId: number) {
            'section_notes', ps.notes,
            'notes', pde.notes,
            'rest_seconds', pde.rest_seconds,
+           'target_reps_per_set', pde.target_reps_per_set,
+           'target_weight_per_set', pde.target_weight_per_set,
            'rep_type', e.rep_type,
            'exercise_type', e.exercise_type,
            'muscle_group', e.muscle_group
@@ -161,11 +163,12 @@ export async function cloneVersion(
       for (const ex of sourceExercises) {
         await client.query(
           `INSERT INTO program_day_exercises
-             (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+             (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id, target_reps_per_set, target_weight_per_set)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
           [newDay.id, ex.exercise_id, ex.target_sets, ex.target_reps, ex.target_weight, ex.target_rpe,
            ex.sort_order, ex.group_id ? (groupMap.get(ex.group_id) ?? null) : null, ex.rest_seconds, ex.notes,
-           ex.section_id ? (sectionMap.get(ex.section_id) ?? null) : null]
+           ex.section_id ? (sectionMap.get(ex.section_id) ?? null) : null,
+           ex.target_reps_per_set || null, ex.target_weight_per_set || null]
         );
       }
     }

@@ -103,7 +103,8 @@ Examples:
         const { rows } = await pool.query(
           `SELECT p.name as program_name, p.is_active,
             pv.version_number, pd.day_label, pd.weekdays,
-            e.name as exercise_name, pde.target_sets, pde.target_reps, pde.target_weight, pde.target_rpe, pde.rest_seconds,
+            e.name as exercise_name, pde.target_sets, pde.target_reps, pde.target_weight, pde.target_rpe,
+            pde.target_reps_per_set, pde.target_weight_per_set, pde.rest_seconds,
             peg.group_type, peg.label as group_label,
             ps.label as section_label, ps.notes as section_notes
            FROM programs p
@@ -176,10 +177,12 @@ Examples:
       }
 
       if (data.programs && data.programs.length > 0) {
-        const headers = ["program_name", "is_active", "version_number", "day_label", "weekdays", "exercise_name", "target_sets", "target_reps", "target_weight", "target_rpe", "rest_seconds", "group_type", "group_label", "section_label", "section_notes"];
+        const headers = ["program_name", "is_active", "version_number", "day_label", "weekdays", "exercise_name", "target_sets", "target_reps", "target_weight", "target_rpe", "target_reps_per_set", "target_weight_per_set", "rest_seconds", "group_type", "group_label", "section_label", "section_notes"];
         const programRows = data.programs.map((r: any) => ({
           ...r,
           weekdays: r.weekdays ? r.weekdays.join(";") : "",
+          target_reps_per_set: r.target_reps_per_set ? r.target_reps_per_set.join(";") : "",
+          target_weight_per_set: r.target_weight_per_set ? r.target_weight_per_set.join(";") : "",
         }));
         csvParts.push("### PROGRAMS ###\n" + toCsv(headers, programRows));
       }

@@ -17,8 +17,8 @@ import { insertSection, cloneSections } from "../helpers/section-helpers.js";
 const soloExerciseSchema = z.object({
   exercise: z.string(),
   sets: z.number().int().min(1).default(3),
-  reps: z.number().int().min(1).default(10),
-  weight: z.number().nullable().optional(),
+  reps: z.union([z.number().int().min(1), z.array(z.number().int().min(1))]).default(10),
+  weight: z.union([z.number(), z.array(z.number())]).nullable().optional(),
   rpe: z.number().min(1).max(10).nullable().optional(),
   rest_seconds: z.number().int().nullable().optional(),
   notes: z.string().nullable().optional(),
@@ -73,12 +73,22 @@ async function insertSoloExercise(
   if (resolved.isNew) createdExercises.add(resolved.name);
   else existingExercises.add(resolved.name);
 
+  // Handle per-set arrays for reps and weight
+  const repsIsArray = Array.isArray(ex.reps);
+  const targetReps = repsIsArray ? (ex.reps as number[])[0] : (ex.reps as number);
+  const targetRepsPerSet = repsIsArray ? (ex.reps as number[]) : null;
+
+  const weightIsArray = Array.isArray(ex.weight);
+  const targetWeight = weightIsArray ? (ex.weight as number[])[0] : (ex.weight || null);
+  const targetWeightPerSet = weightIsArray ? (ex.weight as number[]) : null;
+
   await client.query(
     `INSERT INTO program_day_exercises
-       (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-    [dayId, resolved.id, ex.sets, ex.reps, ex.weight || null, ex.rpe || null,
-     sortOrder, groupId, groupId ? null : (ex.rest_seconds || null), ex.notes || null, sectionId]
+       (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id, target_reps_per_set, target_weight_per_set)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    [dayId, resolved.id, ex.sets, targetReps, targetWeight, ex.rpe || null,
+     sortOrder, groupId, groupId ? null : (ex.rest_seconds || null), ex.notes || null, sectionId,
+     targetRepsPerSet, targetWeightPerSet]
   );
 }
 
@@ -202,10 +212,9 @@ The exercises array accepts three types of items:
    - exercises: array of solo exercises and/or groups (no nested sections)
    - Sections are optional collapsible containers. Exercises without a section render directly.
 Discriminator: if the item has "exercise" (string) it's solo; if it has "group_type" + "exercises" (array) it's a group; if it has "section" (string) + "exercises" (array) it's a section.
-Each exercise needs: sets (number), reps (number — use the FIRST set's rep count), weight (optional, in kg).
-If the rep scheme varies per set (e.g. pyramid 12/10/8), set reps to the first set's value (12) and put the full scheme in notes as "reps: 12/10/8". The widget displays it as "3×(12/10/8)" automatically.
-If there's a progression instruction, append it in notes (e.g. "reps: 12/10/8 con progresión").
-Do NOT put redundant rep info — either use a flat reps number OR put the varying scheme in notes, never both.
+Each exercise needs: sets (number), reps (number or array of numbers), weight (optional, number or array of numbers, in kg).
+If reps or weight vary per set (e.g. pyramid), pass an array: reps: [12, 10, 8], weight: [80, 85, 90]. Array length must equal sets.
+If uniform, pass a single number: reps: 10, weight: 80. The widget shows variable schemes as "3×(12/10/8) · 80→90kg" with expandable per-set detail.
 For "clone", pass source_id (the id of the program to clone, typically a global template).
 For "update" with days, also pass change_description explaining what changed.
 For "update" metadata only, pass new_name and/or description (no days needed).
@@ -452,8 +461,8 @@ When the user wants to SEE their program visually, call show_program instead (no
               const ex = day.exercises[j];
               await client.query(
                 `INSERT INTO program_day_exercises
-                   (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                   (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id, target_reps_per_set, target_weight_per_set)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
                 [
                   newDay.id,
                   ex.exercise_id,
@@ -466,6 +475,8 @@ When the user wants to SEE their program visually, call show_program instead (no
                   ex.rest_seconds || null,
                   ex.notes || null,
                   ex.section_id ? (sectionMap.get(ex.section_id) ?? null) : null,
+                  ex.target_reps_per_set || null,
+                  ex.target_weight_per_set || null,
                 ]
               );
             }

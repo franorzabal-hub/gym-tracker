@@ -9,6 +9,8 @@ export interface Exercise {
   target_reps: number;
   target_weight: number | null;
   target_rpe: number | null;
+  target_reps_per_set: number[] | null;
+  target_weight_per_set: number[] | null;
   group_id: number | null;
   group_type: "superset" | "paired" | "circuit" | null;
   group_label: string | null;
@@ -21,6 +23,7 @@ export interface Exercise {
   notes: string | null;
   muscle_group: string | null;
   rep_type: "reps" | "seconds" | "meters" | "calories" | null;
+  exercise_type?: string | null;
 }
 
 export interface Section {
@@ -190,46 +193,45 @@ export function cleanNotes(notes: string | null, isGrouped: boolean, muscleGroup
   return cleaned || null;
 }
 
-/** Extract rep scheme from notes (e.g. "reps: 12/10/8") and remaining text */
+/** Extract rep scheme from notes (e.g. "reps: 12/10/8") — legacy, used by program-editor */
 export function parseNoteReps(note: string | null): { repScheme: string | null; progression: string | null; rest: string | null } {
   if (!note) return { repScheme: null, progression: null, rest: null };
-
   let repScheme: string | null = null;
   let remaining = note;
-
   const repMatch = remaining.match(/(?:principal\s*-?\s*)?reps?:\s*([\d]+(?:\/[\d]+)+)/i);
   if (repMatch) {
     repScheme = repMatch[1];
     remaining = remaining.replace(repMatch[0], "").trim();
   }
-
   let progression: string | null = null;
-  const progPatterns = [
-    /con\s+progresi[oó]n.*/i,
-    /\d+\s*a\s*\d+\s*reps?.*/i,
-  ];
+  const progPatterns = [/con\s+progresi[oó]n.*/i, /\d+\s*a\s*\d+\s*reps?.*/i];
   for (const pat of progPatterns) {
     const match = remaining.match(pat);
-    if (match) {
-      progression = match[0].trim();
-      remaining = remaining.replace(match[0], "").trim();
-      break;
-    }
+    if (match) { progression = match[0].trim(); remaining = remaining.replace(match[0], "").trim(); break; }
   }
-
   const altMatch = remaining.match(/o\s*([\d]+(?:\/[\d]+)+)/i);
-  if (altMatch && repScheme) {
-    repScheme += ` o ${altMatch[1]}`;
-    remaining = remaining.replace(altMatch[0], "").trim();
-  }
-
+  if (altMatch && repScheme) { repScheme += ` o ${altMatch[1]}`; remaining = remaining.replace(altMatch[0], "").trim(); }
   remaining = remaining.replace(/^[\s\-·]+|[\s\-·]+$/g, "").trim();
+  return { repScheme, progression, rest: remaining || null };
+}
 
-  return {
-    repScheme,
-    progression,
-    rest: remaining || null,
-  };
+/** Format per-set reps as compact string: "12/10/8" */
+function formatPerSetReps(repsPerSet: number[]): string {
+  return repsPerSet.join("/");
+}
+
+/** Format per-set weight as compact range: "80→90" or "80/85/90" */
+function formatPerSetWeight(weightPerSet: number[]): string {
+  if (weightPerSet.length === 0) return "";
+  const first = weightPerSet[0];
+  const last = weightPerSet[weightPerSet.length - 1];
+  // If monotonic (all ascending or descending), show range
+  const allSame = weightPerSet.every(w => w === first);
+  if (allSame) return String(first);
+  const ascending = weightPerSet.every((w, i) => i === 0 || w >= weightPerSet[i - 1]);
+  const descending = weightPerSet.every((w, i) => i === 0 || w <= weightPerSet[i - 1]);
+  if (ascending || descending) return `${first}→${last}`;
+  return weightPerSet.join("/");
 }
 
 function formatRestSeconds(seconds: number): string {
@@ -302,6 +304,137 @@ const EXERCISE_TYPE_LABELS: Record<string, string> = {
   cardio: "Cardio",
 };
 
+function ExerciseRow({ ex, exNum, note, showExerciseRest, isSecondary, typeLabel, hasMetaLine, hasPerSet, isLast }: {
+  ex: Exercise; exNum: number; note: string | null; showExerciseRest: boolean;
+  isSecondary: boolean; typeLabel: string | null; hasMetaLine: boolean; hasPerSet: boolean; isLast: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const repsDisplay = ex.target_reps_per_set
+    ? `(${formatPerSetReps(ex.target_reps_per_set)})`
+    : String(ex.target_reps);
+  const weightDisplay = ex.target_weight_per_set
+    ? formatPerSetWeight(ex.target_weight_per_set)
+    : ex.target_weight != null ? String(ex.target_weight) : null;
+
+  return (
+    <div style={{ marginBottom: isLast ? 0 : sp[4] }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: hasMetaLine ? "center" : "baseline",
+          justifyContent: "space-between",
+          gap: sp[3],
+          cursor: hasPerSet ? "pointer" : "default",
+        }}
+        onClick={hasPerSet ? () => setExpanded(!expanded) : undefined}
+      >
+        {/* Left: number + name + type tag + note */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: sp[3], minWidth: 0 }}>
+          <span style={{ fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.muted, minWidth: "1.2em", textAlign: "right", flexShrink: 0 }}>{exNum}</span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: sp[2] }}>
+              <span style={{
+                fontWeight: isSecondary ? weight.normal : weight.medium,
+                fontSize: font.lg,
+                opacity: isSecondary ? opacity.high : 1,
+              }}>{ex.exercise_name}</span>
+              {typeLabel && (
+                <span style={{
+                  fontSize: font.xs,
+                  color: "var(--text-secondary)",
+                  opacity: opacity.medium,
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}>{typeLabel}</span>
+              )}
+              {note && <NoteTooltip text={note} />}
+              {hasPerSet && (
+                <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
+                  {expanded ? "▲" : "▼"}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        {/* Right: data lines stacked */}
+        <div style={{ flexShrink: 0, textAlign: "right" }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "flex-end", gap: sp[1], fontSize: font.md, whiteSpace: "nowrap" }}>
+            <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{ex.target_sets}</span>
+            <span style={{ opacity: opacity.muted }}>×</span>
+            <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>
+              {repsDisplay}
+            </span>
+            {ex.rep_type && REP_UNIT[ex.rep_type] && (
+              <span style={{ opacity: 0.5, fontSize: font.sm }}>{REP_UNIT[ex.rep_type]}</span>
+            )}
+            {weightDisplay != null && (
+              <>
+                <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>
+                <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{weightDisplay}</span>
+                <span style={{ opacity: 0.5, fontSize: font.sm }}>kg</span>
+              </>
+            )}
+          </div>
+          {hasMetaLine && (
+            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "baseline", gap: sp[1], fontSize: font.sm, color: "var(--text-secondary)", marginTop: sp[0.5] }}>
+              {ex.target_rpe != null && <RpeBadge rpe={ex.target_rpe} />}
+              {showExerciseRest && (
+                <>
+                  {ex.target_rpe != null && <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>}
+                  <span style={{ opacity: opacity.medium }}>
+                    ⏱ {formatRestSeconds(ex.rest_seconds!)}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Per-set detail (expanded) */}
+      {hasPerSet && expanded && (
+        <div style={{
+          marginTop: sp[3],
+          marginLeft: "2.4em",
+          padding: `${sp[3]}px ${sp[4]}px`,
+          background: "color-mix(in srgb, var(--bg-secondary) 50%, transparent)",
+          borderRadius: radius.md,
+          border: "1px solid var(--border)",
+        }}>
+          {Array.from({ length: ex.target_sets }).map((_, si) => {
+            const setReps = ex.target_reps_per_set ? ex.target_reps_per_set[si] : ex.target_reps;
+            const setWeight = ex.target_weight_per_set ? ex.target_weight_per_set[si] : ex.target_weight;
+            const repUnit = ex.rep_type && REP_UNIT[ex.rep_type] ? REP_UNIT[ex.rep_type] : "r";
+            return (
+              <div key={si} style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+                padding: `${sp[1]}px 0`,
+                fontSize: font.sm,
+                color: "var(--text-secondary)",
+                borderBottom: si < ex.target_sets - 1 ? "1px solid color-mix(in srgb, var(--border) 30%, transparent)" : "none",
+              }}>
+                <span>Serie {si + 1}</span>
+                <span>
+                  <span style={{ fontWeight: weight.medium, color: "var(--text)" }}>{setReps}</span>
+                  <span style={{ opacity: 0.5 }}> {repUnit}</span>
+                  {setWeight != null && (
+                    <>
+                      <span style={{ opacity: 0.35, margin: `0 ${sp[2]}px` }}>·</span>
+                      <span style={{ fontWeight: weight.medium, color: "var(--text)" }}>{setWeight}</span>
+                      <span style={{ opacity: 0.5 }}> kg</span>
+                    </>
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ExerciseBlock({ exercises, ssColor, groupType, startIndex }: { exercises: Exercise[]; ssColor: string | null; groupType: string | null; startIndex: number }) {
   const isGrouped = exercises.length > 1;
   const type = groupType || "superset";
@@ -365,78 +498,25 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex }: { e
       {/* Exercises */}
       {exercises.map((ex, i) => {
         const note = cleanNotes(ex.notes, isGrouped, ex.muscle_group, ex.rep_type);
-        const { repScheme } = parseNoteReps(note);
-        const noteDisplay = note?.replace(/(?:principal\s*-?\s*)?reps?:\s*[\d]+(?:\/[\d]+)+\s*/i, "").trim() || null;
         const showExerciseRest = !isGrouped && ex.rest_seconds != null;
-        const isSecondary = ex.exercise_type === "warmup" || ex.exercise_type === "mobility" || ex.exercise_type === "cardio";
-        const typeLabel = EXERCISE_TYPE_LABELS[ex.exercise_type || ""] || null;
+        const isSecondary = (ex as any).exercise_type === "warmup" || (ex as any).exercise_type === "mobility" || (ex as any).exercise_type === "cardio";
+        const typeLabel = EXERCISE_TYPE_LABELS[(ex as any).exercise_type || ""] || null;
         const hasMetaLine = ex.target_rpe != null || showExerciseRest;
         const exNum = startIndex + i;
+        const hasPerSet = ex.target_reps_per_set != null || ex.target_weight_per_set != null;
         return (
-          <div key={i} style={{
-            display: "flex",
-            alignItems: hasMetaLine ? "center" : "baseline",
-            justifyContent: "space-between",
-            gap: sp[3],
-            marginBottom: i < exercises.length - 1 ? sp[4] : 0,
-          }}>
-            {/* Left: number + name + type tag + note */}
-            <div style={{ display: "flex", alignItems: "baseline", gap: sp[3], minWidth: 0 }}>
-              <span style={{ fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.muted, minWidth: "1.2em", textAlign: "right", flexShrink: 0 }}>{exNum}</span>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: sp[2] }}>
-                  <span style={{
-                    fontWeight: isSecondary ? weight.normal : weight.medium,
-                    fontSize: font.lg,
-                    opacity: isSecondary ? opacity.high : 1,
-                  }}>{ex.exercise_name}</span>
-                  {typeLabel && (
-                    <span style={{
-                      fontSize: font.xs,
-                      color: "var(--text-secondary)",
-                      opacity: opacity.medium,
-                      whiteSpace: "nowrap",
-                      flexShrink: 0,
-                    }}>{typeLabel}</span>
-                  )}
-                  {noteDisplay && <NoteTooltip text={noteDisplay} />}
-                </div>
-              </div>
-            </div>
-            {/* Right: data lines stacked */}
-            <div style={{ flexShrink: 0, textAlign: "right" }}>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "flex-end", gap: sp[1], fontSize: font.md, whiteSpace: "nowrap" }}>
-                <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{ex.target_sets}</span>
-                <span style={{ opacity: opacity.muted }}>×</span>
-                <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>
-                  {repScheme ? `(${repScheme})` : ex.target_reps}
-                </span>
-                {ex.rep_type && REP_UNIT[ex.rep_type] && (
-                  <span style={{ opacity: 0.5, fontSize: font.sm }}>{REP_UNIT[ex.rep_type]}</span>
-                )}
-                {ex.target_weight != null && (
-                  <>
-                    <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>
-                    <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{ex.target_weight}</span>
-                    <span style={{ opacity: 0.5, fontSize: font.sm }}>kg</span>
-                  </>
-                )}
-              </div>
-              {hasMetaLine && (
-                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "baseline", gap: sp[1], fontSize: font.sm, color: "var(--text-secondary)", marginTop: sp[0.5] }}>
-                  {ex.target_rpe != null && <RpeBadge rpe={ex.target_rpe} />}
-                  {showExerciseRest && (
-                    <>
-                      {ex.target_rpe != null && <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>}
-                      <span style={{ opacity: opacity.medium }}>
-                        ⏱ {formatRestSeconds(ex.rest_seconds!)}
-                      </span>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          <ExerciseRow
+            key={i}
+            ex={ex}
+            exNum={exNum}
+            note={note}
+            showExerciseRest={showExerciseRest}
+            isSecondary={isSecondary}
+            typeLabel={typeLabel}
+            hasMetaLine={hasMetaLine}
+            hasPerSet={hasPerSet}
+            isLast={i >= exercises.length - 1}
+          />
         );
       })}
       {/* Footer: group rest + notes */}

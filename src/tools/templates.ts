@@ -51,6 +51,8 @@ Actions:
                  'target_reps', ste.target_reps,
                  'target_weight', ste.target_weight,
                  'target_rpe', ste.target_rpe,
+                 'target_reps_per_set', ste.target_reps_per_set,
+                 'target_weight_per_set', ste.target_weight_per_set,
                  'group_id', ste.group_id,
                  'group_type', teg.group_type,
                  'group_label', teg.label,
