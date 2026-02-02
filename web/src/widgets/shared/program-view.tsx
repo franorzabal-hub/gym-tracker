@@ -1,4 +1,7 @@
 import { useState, useRef, useCallback } from "react";
+import { sp, radius, font, weight, opacity } from "../../tokens.js";
+
+export { WeekdayPills } from "./weekday-pills.js";
 
 export interface Exercise {
   exercise_name: string;
@@ -30,7 +33,7 @@ export const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"]; // Mon-Sun
 export const WEEKDAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
 // Superset color palette — distinct, works in both light/dark
-export const SS_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
+export const SS_COLORS = ["var(--primary)", "#10b981", "var(--warning)", "var(--danger)", "#8b5cf6", "#ec4899"];
 
 // Consistent left padding for the content rail
 export const RAIL_PX = 18;
@@ -41,66 +44,22 @@ export const GROUP_LABELS: Record<string, { icon: string; label: string }> = {
   circuit: { icon: "🔄", label: "Circuit" },
 };
 
-export function WeekdayPills({ days, viewingWeekdays, onWeekdayClick }: { days: Day[]; viewingWeekdays?: number[]; onWeekdayClick?: (dayIdx: number) => void }) {
-  // Map each weekday number → first day index that uses it
-  const weekdayToDayIdx = new Map<number, number>();
-  days.forEach((d, idx) => d.weekdays?.forEach(w => {
-    if (!weekdayToDayIdx.has(w)) weekdayToDayIdx.set(w, idx);
-  }));
-  const viewingSet = new Set(viewingWeekdays || []);
-
-  return (
-    <div style={{ display: "flex", gap: 3 }}>
-      {WEEKDAY_LABELS.map((label, i) => {
-        const dayNum = i + 1;
-        const active = weekdayToDayIdx.has(dayNum);
-        const viewing = viewingSet.has(dayNum);
-        const clickable = active && onWeekdayClick;
-        return (
-          <div
-            key={i}
-            onClick={clickable ? () => onWeekdayClick(weekdayToDayIdx.get(dayNum)!) : undefined}
-            style={{
-              width: 22,
-              height: 22,
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 10,
-              fontWeight: 600,
-              background: active ? "var(--primary)" : "var(--bg-secondary)",
-              color: active ? "white" : "var(--text-secondary)",
-              border: active ? "none" : "1px solid var(--border)",
-              boxShadow: viewing ? "0 0 0 2px var(--bg), 0 0 0 4px var(--primary)" : "none",
-              cursor: clickable ? "pointer" : "default",
-              transition: "transform 0.1s",
-            }}
-          >
-            {label}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 export function MuscleGroupTags({ exercises }: { exercises: Exercise[] }) {
   const groups = [...new Set(exercises.map(e => e.muscle_group).filter(Boolean))] as string[];
   if (!groups.length) return null;
 
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: sp[2], marginTop: sp[3] }}>
       {groups.map(g => (
         <span key={g} style={{
-          fontSize: 12,
-          padding: "2px 10px",
-          borderRadius: 12,
+          fontSize: font.base,
+          padding: `${sp[1]}px ${sp[5]}px`,
+          borderRadius: radius.lg,
           background: "var(--border)",
           color: "var(--text)",
           textTransform: "capitalize",
-          fontWeight: 500,
-          opacity: 0.7,
+          fontWeight: weight.medium,
+          opacity: opacity.subtle,
         }}>
           {g}
         </span>
@@ -113,10 +72,10 @@ export function RpeBadge({ rpe }: { rpe: number }) {
   const color = rpe >= 9 ? "var(--danger)" : rpe >= 8 ? "var(--warning)" : "var(--success)";
   return (
     <span style={{
-      fontSize: 11,
-      fontWeight: 600,
+      fontSize: font.sm,
+      fontWeight: weight.semibold,
       color,
-      marginLeft: 4,
+      marginLeft: sp[2],
     }}>
       RPE {rpe}
     </span>
@@ -148,16 +107,16 @@ export function groupIntoBlocks(exercises: Exercise[]): Exercise[][] {
 export function MuscleChip({ group }: { group: string }) {
   return (
     <span style={{
-      fontSize: 10,
-      padding: "1px 7px",
-      borderRadius: 8,
+      fontSize: font.xs,
+      padding: `${sp[0.5]}px ${sp[4]}px`,
+      borderRadius: radius.md,
       background: "var(--border)",
       color: "var(--text)",
       textTransform: "capitalize",
-      fontWeight: 500,
-      marginLeft: 6,
+      fontWeight: weight.medium,
+      marginLeft: sp[3],
       whiteSpace: "nowrap",
-      opacity: 0.7,
+      opacity: opacity.subtle,
     }}>
       {group}
     </span>
@@ -243,24 +202,24 @@ export function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Ex
   return (
     <div style={{
       borderLeft: borderStyle,
-      borderBottomLeftRadius: isGrouped ? 8 : 0,
+      borderBottomLeftRadius: isGrouped ? radius.md : 0,
       paddingLeft: RAIL_PX,
-      marginBottom: 4,
+      marginBottom: sp[2],
     }}>
       {isGrouped && (
         <div style={{
-          fontSize: 10,
-          fontWeight: 600,
+          fontSize: font.xs,
+          fontWeight: weight.semibold,
           textTransform: "uppercase",
           color: labelColor,
-          marginBottom: 4,
+          marginBottom: sp[2],
           letterSpacing: "0.5px",
-          opacity: 0.8,
+          opacity: opacity.high,
           display: "flex",
           alignItems: "center",
-          gap: 3,
+          gap: sp[1.5],
         }}>
-          <span style={{ fontSize: 12 }}>{(GROUP_LABELS[type] || GROUP_LABELS.superset).icon}</span>
+          <span style={{ fontSize: font.base }}>{(GROUP_LABELS[type] || GROUP_LABELS.superset).icon}</span>
           {(GROUP_LABELS[type] || GROUP_LABELS.superset).label}
         </div>
       )}
@@ -269,33 +228,33 @@ export function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Ex
         const { repScheme, progression, rest: noteText } = parseNoteReps(note);
         return (
           <div key={i} style={{
-            marginBottom: i < exercises.length - 1 ? 8 : 0,
+            marginBottom: i < exercises.length - 1 ? sp[4] : 0,
           }}>
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: "0 8px" }}>
-              <div style={{ fontWeight: 500, fontSize: 14 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: `0 ${sp[4]}px` }}>
+              <div style={{ fontWeight: weight.medium, fontSize: font.lg }}>
                 {ex.exercise_name}
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 2, fontSize: 13, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
-                <span style={{ fontWeight: 700, color: "var(--text)" }}>{ex.target_sets}</span>
-                <span style={{ opacity: 0.4 }}>×</span>
-                <span style={{ fontWeight: 700, color: "var(--text)" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: sp[1], fontSize: font.md, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{ex.target_sets}</span>
+                <span style={{ opacity: opacity.muted }}>×</span>
+                <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>
                   {repScheme ? `(${repScheme})` : ex.target_reps}
                 </span>
                 {ex.rep_type && REP_UNIT[ex.rep_type] && (
-                  <span style={{ opacity: 0.5, fontSize: 11 }}>{REP_UNIT[ex.rep_type]}</span>
+                  <span style={{ opacity: 0.5, fontSize: font.sm }}>{REP_UNIT[ex.rep_type]}</span>
                 )}
                 {ex.target_weight != null && (
                   <>
-                    <span style={{ opacity: 0.35, margin: "0 2px" }}>·</span>
-                    <span style={{ fontWeight: 700, color: "var(--text)" }}>{ex.target_weight}</span>
-                    <span style={{ opacity: 0.5, fontSize: 11 }}>kg</span>
+                    <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>
+                    <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{ex.target_weight}</span>
+                    <span style={{ opacity: 0.5, fontSize: font.sm }}>kg</span>
                   </>
                 )}
-                {ex.target_rpe != null && <><span style={{ opacity: 0.35, margin: "0 2px" }}>·</span><RpeBadge rpe={ex.target_rpe} /></>}
+                {ex.target_rpe != null && <><span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span><RpeBadge rpe={ex.target_rpe} /></>}
                 {ex.rest_seconds != null && (
                   <>
-                    <span style={{ opacity: 0.25, margin: "0 3px" }}>|</span>
-                    <span style={{ opacity: 0.6, fontSize: 11 }}>
+                    <span style={{ opacity: 0.25, margin: `0 ${sp[1.5]}px` }}>|</span>
+                    <span style={{ opacity: opacity.medium, fontSize: font.sm }}>
                       ⏱ {ex.rest_seconds >= 60 ? `${Math.floor(ex.rest_seconds / 60)}′${ex.rest_seconds % 60 ? `${ex.rest_seconds % 60}″` : ""}` : `${ex.rest_seconds}″`}
                     </span>
                   </>
@@ -306,14 +265,14 @@ export function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Ex
               <span style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 3,
-                fontSize: 11,
-                color: "#b45309",
-                fontWeight: 500,
-                marginTop: 3,
-                padding: "1px 8px",
-                borderRadius: 10,
-                background: "rgba(245, 158, 11, 0.1)",
+                gap: sp[1.5],
+                fontSize: font.sm,
+                color: "var(--color-progression)",
+                fontWeight: weight.medium,
+                marginTop: sp[1.5],
+                padding: `${sp[0.5]}px ${sp[4]}px`,
+                borderRadius: radius.lg,
+                background: "var(--color-progression-bg)",
               }}>
                 📈 {progression}
               </span>
@@ -325,7 +284,7 @@ export function ExerciseBlock({ exercises, ssColor, groupType }: { exercises: Ex
                 if (noteSecs === ex.target_reps || noteSecs === ex.rest_seconds) return null;
               }
               return (
-                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 1, opacity: 0.7 }}>
+                <div style={{ fontSize: font.sm, color: "var(--text-secondary)", marginTop: sp[0.5], opacity: opacity.subtle }}>
                   {/^\d+\s*seg/i.test(noteText) ? `⏳ ${noteText}` : noteText}
                 </div>
               );
@@ -369,31 +328,28 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
   const muscleGroups = [...new Set(day.exercises.map(e => e.muscle_group).filter(Boolean))] as string[];
 
   return (
-    <div style={{
-      maxHeight: alwaysExpanded ? "70vh" : undefined,
-      overflowY: alwaysExpanded ? "auto" : undefined,
-    }}>
+    <div>
       <div
         style={{
           cursor: canCollapse ? "pointer" : "default",
           paddingLeft: RAIL_PX + 2,
-          marginBottom: 10,
+          marginBottom: sp[5],
         }}
         onClick={canCollapse ? () => setExpanded(!expanded) : undefined}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontWeight: 600, fontSize: 15 }}>{titleLabel}</div>
+          <div style={{ fontWeight: weight.semibold, fontSize: font.xl }}>{titleLabel}</div>
           {canCollapse && (
-            <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>{expanded ? "▲" : "▼"}</span>
+            <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>{expanded ? "▲" : "▼"}</span>
           )}
         </div>
-        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2, display: "flex", alignItems: "center", gap: 0 }}>
+        <div style={{ fontSize: font.base, color: "var(--text-secondary)", marginTop: sp[1], display: "flex", alignItems: "center", gap: 0 }}>
           <span>{day.exercises.length} ejercicios</span>
           {muscleGroups.length > 0 && (
-            <><span style={{ margin: "0 5px", opacity: 0.4 }}>•</span><span style={{ textTransform: "capitalize" }}>{muscleGroups.join(", ")}</span></>
+            <><span style={{ margin: `0 ${sp[3]}px`, opacity: opacity.muted }}>•</span><span style={{ textTransform: "capitalize" }}>{muscleGroups.join(", ")}</span></>
           )}
           {estimatedMinutes > 0 && (
-            <><span style={{ margin: "0 5px", opacity: 0.4 }}>•</span><span>~{estimatedMinutes} min</span></>
+            <><span style={{ margin: `0 ${sp[3]}px`, opacity: opacity.muted }}>•</span><span>~{estimatedMinutes} min</span></>
           )}
         </div>
       </div>
@@ -411,7 +367,7 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
                   <div style={{
                     borderBottom: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
                     marginLeft: RAIL_PX + 2,
-                    marginBottom: 10,
+                    marginBottom: sp[5],
                   }} />
                 )}
               </div>

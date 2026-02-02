@@ -2,10 +2,17 @@ import { createRoot } from "react-dom/client";
 import { useState, useCallback } from "react";
 import { useToolOutput, useCallTool } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
+import { WeekdayPills } from "./shared/weekday-pills.js";
 import "../styles.css";
 
-const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
 const DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+
+/** Convert day name strings to weekday numbers (1=Mon ... 7=Sun) */
+function dayNamesToNumbers(names: string[]): number[] {
+  return names
+    .map(n => DAYS_OF_WEEK.indexOf(n.toLowerCase()) + 1)
+    .filter(n => n > 0);
+}
 const EMPTY_INJURY = /^(nada|ninguna|ninguno|none|no|n\/a|-|—)$/i;
 
 interface ProfileData {
@@ -246,37 +253,39 @@ function MetricsRow({ profile, pending }: { profile: Record<string, any>; pendin
   );
 }
 
-// ── DayDots ──
+// ── TrainingDays ──
 
-function DayDots({ profile, pending }: { profile: Record<string, any>; pending?: Record<string, any> }) {
+function TrainingDays({ profile, pending }: { profile: Record<string, any>; pending?: Record<string, any> }) {
   const currentDays: string[] = profile.available_days || [];
   const changed = pending && hasFieldChange(profile, pending, "available_days");
   const pendingDays: string[] = changed ? (pending!.available_days || []) : currentDays;
 
-  const currentSet = new Set(currentDays);
-  const pendingSet = new Set(pendingDays);
+  const currentNums = dayNamesToNumbers(currentDays);
+  const pendingNums = dayNamesToNumbers(pendingDays);
+
+  const currentSet = new Set(currentNums);
+  const pendingSet = new Set(pendingNums);
+
+  // In diff mode, compute added/removed; active = unchanged (in both)
+  const activeDays = changed
+    ? currentNums.filter(n => pendingSet.has(n))
+    : currentNums;
+  const addedDays = changed
+    ? pendingNums.filter(n => !currentSet.has(n))
+    : undefined;
+  const removedDays = changed
+    ? currentNums.filter(n => !pendingSet.has(n))
+    : undefined;
 
   return (
     <div className="profile-section">
       <div className="profile-section-label">TRAINING DAYS</div>
-      <div className="profile-day-dots">
-        {WEEKDAY_LABELS.map((label, i) => {
-          const dayName = DAYS_OF_WEEK[i];
-          const wasCurrent = currentSet.has(dayName);
-          const isPending = pendingSet.has(dayName);
-
-          let cls = "profile-day-dot";
-          if (changed) {
-            if (isPending && wasCurrent) cls += " active";
-            else if (isPending && !wasCurrent) cls += " diff-added";
-            else if (!isPending && wasCurrent) cls += " diff-removed";
-          } else {
-            if (wasCurrent) cls += " active";
-          }
-
-          return <div key={i} className={cls}>{label}</div>;
-        })}
-      </div>
+      <WeekdayPills
+        activeDays={activeDays}
+        addedDays={addedDays}
+        removedDays={removedDays}
+        size="md"
+      />
     </div>
   );
 }
@@ -360,7 +369,7 @@ function ProfileWidget() {
     <div className="profile-card">
       <ProfileHeader profile={profile} pending={hasPending ? pending : undefined} />
       <MetricsRow profile={profile} pending={hasPending ? pending : undefined} />
-      <DayDots profile={profile} pending={hasPending ? pending : undefined} />
+      <TrainingDays profile={profile} pending={hasPending ? pending : undefined} />
 
       {pendingGoals ? (
         <ChipListWithDiff label="GOALS" current={goals} pending={pendingGoals} variant="primary" />

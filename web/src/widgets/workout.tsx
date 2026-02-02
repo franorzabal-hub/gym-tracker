@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { useToolOutput } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
 import { ExerciseIcon, MUSCLE_COLOR } from "./shared/exercise-icons.js";
+import { sp, radius, font, weight, opacity, maxWidth } from "../tokens.js";
 import "../styles.css";
 
 // ── Types ──
@@ -131,10 +132,10 @@ function SetTypeBadge({ type }: { type: string }) {
   return (
     <span
       style={{
-        fontSize: 10,
-        fontWeight: 600,
+        fontSize: font.xs,
+        fontWeight: weight.semibold,
         color: SET_TYPE_COLORS[type] || "var(--text-secondary)",
-        opacity: 0.8,
+        opacity: opacity.high,
         width: 18,
         textAlign: "center",
       }}
@@ -155,16 +156,16 @@ function SetRow({ set, prevSet, prLabel }: {
     <div style={{
       display: "flex",
       alignItems: "center",
-      gap: 6,
+      gap: sp[3],
       minHeight: 28,
-      padding: "2px 0",
+      padding: `${sp[1]}px 0`,
     }}>
       {/* Set number */}
       <span style={{
-        width: 20, height: 20, borderRadius: "50%",
+        width: sp[10], height: sp[10], borderRadius: radius.full,
         background: "var(--bg)", border: "1px solid var(--border)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 10, fontWeight: 600, color: "var(--text-secondary)",
+        fontSize: font.xs, fontWeight: weight.semibold, color: "var(--text-secondary)",
         flexShrink: 0,
       }}>
         {set.set_number}
@@ -174,13 +175,13 @@ function SetRow({ set, prevSet, prLabel }: {
       <SetTypeBadge type={set.set_type || "working"} />
 
       {/* Reps × Weight */}
-      <span style={{ fontWeight: 600, fontSize: 13 }}>
+      <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
         {set.reps}
         {set.weight != null && (
           <>
-            <span style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 2px" }}>×</span>
+            <span style={{ fontSize: font.base, color: "var(--text-secondary)", margin: `0 ${sp[1]}px` }}>×</span>
             {set.weight}
-            <span style={{ fontSize: 10, color: "var(--text-secondary)", marginLeft: 1 }}>kg</span>
+            <span style={{ fontSize: font.xs, color: "var(--text-secondary)", marginLeft: sp[0.5] }}>kg</span>
           </>
         )}
       </span>
@@ -188,7 +189,7 @@ function SetRow({ set, prevSet, prLabel }: {
       {/* RPE */}
       {set.rpe != null && (
         <span style={{
-          fontSize: 12,
+          fontSize: font.base,
           color: set.rpe >= 9 ? "var(--danger)" : set.rpe >= 8 ? "var(--warning)" : "var(--success)",
         }}>
           @{set.rpe}
@@ -199,7 +200,7 @@ function SetRow({ set, prevSet, prLabel }: {
 
       {/* Previous ref */}
       {prevSet && prevSet.weight != null && (
-        <span style={{ fontSize: 10, color: "var(--text-secondary)", opacity: 0.6, whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium, whiteSpace: "nowrap" }}>
           prev: {prevSet.weight}×{prevSet.reps}
         </span>
       )}
@@ -207,9 +208,9 @@ function SetRow({ set, prevSet, prLabel }: {
       {/* PR badge */}
       {prLabel && (
         <span style={{
-          fontSize: 9, fontWeight: 700, color: "var(--warning)",
-          background: "light-dark(#fef3c7, #451a03)",
-          padding: "1px 5px", borderRadius: 4,
+          fontSize: font["2xs"], fontWeight: weight.bold, color: "var(--warning)",
+          background: "var(--pr-badge-bg)",
+          padding: `${sp[0.5]}px ${sp[3]}px`, borderRadius: radius.sm,
           whiteSpace: "nowrap",
         }}>
           PR
@@ -238,8 +239,8 @@ function ExerciseAccordionRow({ exercise, expanded, onToggle }: {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 8,
-          padding: "10px 12px",
+          gap: sp[4],
+          padding: `${sp[5]}px ${sp[6]}px`,
           cursor: "pointer",
           userSelect: "none",
           transition: "background 0.1s",
@@ -248,15 +249,16 @@ function ExerciseAccordionRow({ exercise, expanded, onToggle }: {
       >
         <ExerciseIcon name={exercise.name} color={muscleColor} size={18} />
 
-        <span style={{ fontWeight: 600, fontSize: 13, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ fontWeight: weight.semibold, fontSize: font.md, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {exercise.name}
         </span>
 
         {exercise.muscle_group && (
           <span style={{
-            fontSize: 9, padding: "1px 5px", borderRadius: 4,
-            background: muscleColor + "18", color: muscleColor,
-            fontWeight: 500, textTransform: "capitalize",
+            fontSize: font["2xs"], padding: `${sp[0.5]}px ${sp[3]}px`, borderRadius: radius.sm,
+            background: `color-mix(in srgb, ${muscleColor} 9%, transparent)`,
+            color: muscleColor,
+            fontWeight: weight.medium, textTransform: "capitalize",
             whiteSpace: "nowrap", flexShrink: 0,
           }}>
             {exercise.muscle_group}
@@ -265,23 +267,23 @@ function ExerciseAccordionRow({ exercise, expanded, onToggle }: {
 
         {hasPRs && (
           <span style={{
-            fontSize: 9, fontWeight: 700, color: "var(--warning)",
-            background: "light-dark(#fef3c7, #451a03)",
-            padding: "1px 5px", borderRadius: 4,
+            fontSize: font["2xs"], fontWeight: weight.bold, color: "var(--warning)",
+            background: "var(--pr-badge-bg)",
+            padding: `${sp[0.5]}px ${sp[3]}px`, borderRadius: radius.sm,
             whiteSpace: "nowrap", flexShrink: 0,
           }}>
             PR
           </span>
         )}
 
-        <span style={{ fontSize: 11, color: "var(--text-secondary)", whiteSpace: "nowrap", flexShrink: 0 }}>
+        <span style={{ fontSize: font.sm, color: "var(--text-secondary)", whiteSpace: "nowrap", flexShrink: 0 }}>
           {exercise.sets.length} set{exercise.sets.length !== 1 ? "s" : ""}
           {" · "}
           {weightRange(exercise.sets)}
         </span>
 
         <span style={{
-          fontSize: 11, color: "var(--text-secondary)",
+          fontSize: font.sm, color: "var(--text-secondary)",
           transition: "transform 0.15s",
           transform: expanded ? "rotate(90deg)" : "none",
           flexShrink: 0,
@@ -292,10 +294,10 @@ function ExerciseAccordionRow({ exercise, expanded, onToggle }: {
 
       {/* Expanded detail */}
       {expanded && (
-        <div style={{ padding: "4px 12px 10px" }}>
+        <div style={{ padding: `${sp[2]}px ${sp[6]}px ${sp[5]}px` }}>
           {/* Previous workout summary */}
           {exercise.previous && (
-            <div style={{ fontSize: 10, color: "var(--text-secondary)", opacity: 0.6, marginBottom: 6 }}>
+            <div style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium, marginBottom: sp[3] }}>
               Previous ({new Date(exercise.previous.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}):
               {" "}{exercise.previous.sets.map((s) =>
                 s.weight != null ? `${s.weight}×${s.reps}` : `${s.reps}r`
@@ -332,13 +334,13 @@ function SupersetWrapper({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
       borderLeft: "3px solid var(--primary)",
-      paddingLeft: 8,
-      marginLeft: 2,
+      paddingLeft: sp[4],
+      marginLeft: sp[1],
     }}>
-      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--primary)", marginBottom: 2, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+      <div style={{ fontSize: font.xs, fontWeight: weight.semibold, color: "var(--primary)", marginBottom: sp[1], textTransform: "uppercase", letterSpacing: "0.5px" }}>
         Superset
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: sp[2] }}>
         {children}
       </div>
     </div>
@@ -354,9 +356,9 @@ function WorkoutWidget() {
 
   if (!data.session) {
     return (
-      <div className="empty" style={{ padding: 32 }}>
-        <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8 }}>No workouts yet</div>
-        <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+      <div className="empty" style={{ padding: sp[16] }}>
+        <div style={{ fontSize: font["2xl"], fontWeight: weight.medium, marginBottom: sp[4] }}>No workouts yet</div>
+        <div style={{ fontSize: font.md, color: "var(--text-secondary)" }}>
           Start your first session to begin tracking your exercises here.
         </div>
       </div>
@@ -393,30 +395,30 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
   const exerciseGroups = useMemo(() => groupExercises(session.exercises), [session.exercises]);
 
   return (
-    <div style={{ maxWidth: 600 }}>
+    <div style={{ maxWidth: maxWidth.widget }}>
       {/* Header */}
-      <div style={{ marginBottom: 10 }}>
+      <div style={{ marginBottom: sp[5] }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-            <span style={{ fontWeight: 600, fontSize: 15 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: sp[4], minWidth: 0 }}>
+            <span style={{ fontWeight: weight.semibold, fontSize: font.xl }}>
               {isActive ? "Active Workout" : "Workout"}
             </span>
             {session.program_day && (
-              <span className="badge badge-primary" style={{ fontSize: 10 }}>{session.program_day}</span>
+              <span className="badge badge-primary" style={{ fontSize: font.xs }}>{session.program_day}</span>
             )}
             {!isActive && session.ended_at && (
-              <span className="badge" style={{ background: "var(--bg-secondary)", color: "var(--text-secondary)", fontSize: 10 }}>
+              <span className="badge" style={{ background: "var(--bg-secondary)", color: "var(--text-secondary)", fontSize: font.xs }}>
                 Completed
               </span>
             )}
           </div>
-          <span style={{ fontWeight: 600, fontSize: 14, color: isActive ? "var(--primary)" : "var(--text-secondary)" }}>
+          <span style={{ fontWeight: weight.semibold, fontSize: font.lg, color: isActive ? "var(--primary)" : "var(--text-secondary)" }}>
             {formatDuration(minutes)}
           </span>
         </div>
 
         {/* Summary stats + muscle groups + tags */}
-        <div style={{ display: "flex", gap: 12, marginTop: 4, fontSize: 11, color: "var(--text-secondary)", flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: sp[6], marginTop: sp[2], fontSize: font.sm, color: "var(--text-secondary)", flexWrap: "wrap", alignItems: "center" }}>
           {!isActive && session.ended_at && (
             <span>{new Date(session.started_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
           )}
@@ -428,9 +430,10 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
             const c = MUSCLE_COLOR[mg.toLowerCase()] || "var(--text-secondary)";
             return (
               <span key={mg} style={{
-                fontSize: 9, padding: "1px 5px", borderRadius: 4,
-                background: c + "18", color: c,
-                fontWeight: 500, textTransform: "capitalize",
+                fontSize: font["2xs"], padding: `${sp[0.5]}px ${sp[3]}px`, borderRadius: radius.sm,
+                background: `color-mix(in srgb, ${c} var(--muscle-chip-alpha, 9%), transparent)`,
+                color: c,
+                fontWeight: weight.medium, textTransform: "capitalize",
               }}>
                 {mg}
               </span>
@@ -438,7 +441,7 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
           })}
 
           {session.tags.map((tag) => (
-            <span key={tag} className="badge badge-success" style={{ fontSize: 9 }}>
+            <span key={tag} className="badge badge-success" style={{ fontSize: font["2xs"] }}>
               {tag}
             </span>
           ))}
@@ -446,7 +449,7 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
       </div>
 
       {/* Exercise accordion */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: sp[2] }}>
         {exerciseGroups.map((group, gi) => {
           if (group.supersetGroup != null && group.exercises.length > 1) {
             return (

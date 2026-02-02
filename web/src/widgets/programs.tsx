@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { useState, useCallback } from "react";
 import { useToolOutput, useCallTool } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
+import { sp, font, weight } from "../tokens.js";
 import "../styles.css";
 import {
   type Day,
@@ -102,10 +103,10 @@ function ProgramsWidget() {
   const pending = data.pendingChanges;
 
   return (
-    <div style={{ maxWidth: 600 }}>
+    <div className="profile-card">
       {/* Header */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+      <div style={{ marginBottom: sp[6] }}>
+        <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginBottom: sp[1] }}>
           <div className="title" style={{ marginBottom: 0 }}>
             {hasPending && pending?.name
               ? <DiffValue current={program.name} pending={pending.name} />
@@ -116,20 +117,20 @@ function ProgramsWidget() {
             : <span className="badge badge-muted">Inactive</span>
           }
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: sp[4], flexWrap: "wrap" }}>
           {(hasPending && pending?.description !== undefined) ? (
-            <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+            <span style={{ fontSize: font.md, color: "var(--text-secondary)" }}>
               <DiffValue current={program.description} pending={pending.description} />
             </span>
           ) : program.description ? (
-            <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{program.description}</span>
+            <span style={{ fontSize: font.md, color: "var(--text-secondary)" }}>{program.description}</span>
           ) : null}
-          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+          <span style={{ fontSize: font.base, color: "var(--text-secondary)" }}>
             {program.days.length} days &middot; {totalExercises} exercises
           </span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-          <WeekdayPills days={program.days} viewingWeekdays={viewingWeekdays} onWeekdayClick={goTo} />
+        <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginTop: sp[4] }}>
+          <WeekdayPills days={program.days} highlightedDays={viewingWeekdays} onDayClick={goTo} />
         </div>
       </div>
 
