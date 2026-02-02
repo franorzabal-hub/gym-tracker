@@ -394,7 +394,7 @@ function ExerciseRow({ ex, exNum, note, showExerciseRest, isSecondary, typeLabel
       {hasPerSet && expanded && (
         <div style={{
           marginTop: sp[3],
-          marginLeft: "2.4em",
+          marginLeft: sp[2],
           padding: `${sp[3]}px ${sp[4]}px`,
           background: "color-mix(in srgb, var(--bg-secondary) 50%, transparent)",
           borderRadius: radius.md,
