@@ -7,11 +7,25 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { McpUiResourceMeta } from "@modelcontextprotocol/ext-apps";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = path.join(__dirname, "../../web/dist");
 
 /** MIME type for OpenAI/ChatGPT widget resources */
 const OPENAI_MIME = "text/html+skybridge";
+
+/** MCP Apps UI metadata (Claude Desktop / claude.ai) */
+const MCP_UI_META: McpUiResourceMeta = {
+  csp: {},
+  domain: "gym-tracker",
+};
+
+/** OpenAI widget metadata (ChatGPT) — flat "openai/" prefixed keys */
+const OAI_META: Record<string, unknown> = {
+  "openai/widgetCSP": { connect_domains: [], resource_domains: [] },
+  "openai/widgetDomain": "gym-tracker",
+};
 
 /** Widget definitions mapping resource URIs to built HTML files */
 const WIDGETS: Array<{ name: string; uri: string; file: string; description: string }> = [
@@ -69,6 +83,7 @@ export function registerWidgetResources(server: McpServer) {
       {
         mimeType: RESOURCE_MIME_TYPE,
         description: widget.description,
+        _meta: { ui: MCP_UI_META },
       },
       async () => {
         const html = await getHtml();
@@ -89,7 +104,7 @@ export function registerWidgetResources(server: McpServer) {
     server.resource(
       `${widget.name}-oai`,
       oaiUri,
-      { mimeType: OPENAI_MIME, description: widget.description },
+      { mimeType: OPENAI_MIME, description: widget.description, _meta: OAI_META },
       async () => {
         const html = await getHtml();
         return {
@@ -98,6 +113,7 @@ export function registerWidgetResources(server: McpServer) {
               uri: oaiUri,
               mimeType: OPENAI_MIME,
               text: html,
+              _meta: OAI_META,
             },
           ],
         };
