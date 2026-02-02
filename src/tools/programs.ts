@@ -62,7 +62,8 @@ Exercises with the same superset_group number in a day are grouped together. Alw
 For "clone", pass source_id (the id of the program to clone, typically a global template).
 For "update" with days, also pass change_description explaining what changed.
 For "update" metadata only, pass new_name and/or description (no days needed).
-For "activate", pass the program name.`,
+For "activate", pass the program name.
+When the user wants to SEE their program visually, call show_program instead (not manage_program with action "get").`,
       inputSchema: {
         action: z.enum(["list", "get", "create", "clone", "update", "patch", "activate", "delete", "delete_bulk", "history"]),
         name: z.string().optional(),
