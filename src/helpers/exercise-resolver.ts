@@ -2,6 +2,7 @@ import { PoolClient } from "pg";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { escapeIlike } from "./parse-helpers.js";
+import type { ExerciseType } from "../db/types.js";
 
 const q = (client?: PoolClient) => client || pool;
 
@@ -9,7 +10,7 @@ export interface ResolvedExercise {
   id: number;
   name: string;
   isNew: boolean;
-  exerciseType?: string;
+  exerciseType?: ExerciseType;
 }
 
 /**

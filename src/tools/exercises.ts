@@ -5,6 +5,16 @@ import { resolveExercise, searchExercises } from "../helpers/exercise-resolver.j
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
+import type { RepType, ExerciseType } from "../db/types.js";
+
+interface BulkExerciseEntry {
+  name: string;
+  muscle_group?: string;
+  equipment?: string;
+  aliases?: string[];
+  rep_type?: RepType;
+  exercise_type?: ExerciseType;
+}
 
 export function registerExercisesTool(server: McpServer) {
   server.registerTool(
@@ -67,7 +77,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
         const effectiveOffset = offset ?? 0;
 
         // Build conditions
-        const params: any[] = [userId];
+        const params: (number | string)[] = [userId];
         const conditions: string[] = ["(e.user_id IS NULL OR e.user_id = $1)"];
 
         if (muscle_group) {
@@ -109,7 +119,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           return toolResponse({ error: "Name required" }, true);
         }
         const updates: string[] = [];
-        const params: any[] = [];
+        const params: (string | number)[] = [];
         if (muscle_group) {
           params.push(muscle_group);
           updates.push(`muscle_group = $${params.length}`);
@@ -244,7 +254,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
       }
 
       if (action === "update_bulk") {
-        const exercisesList = parseJsonParam<any[]>(exercises);
+        const exercisesList = parseJsonParam<BulkExerciseEntry[]>(exercises);
         if (!exercisesList || !Array.isArray(exercisesList) || exercisesList.length === 0) {
           return toolResponse({ error: "exercises array required for update_bulk" }, true);
         }
@@ -259,7 +269,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           for (const ex of exercisesList) {
             try {
               const updates: string[] = [];
-              const params: any[] = [];
+              const params: (string | number)[] = [];
               if (ex.muscle_group) { params.push(ex.muscle_group); updates.push(`muscle_group = $${params.length}`); }
               if (ex.equipment) { params.push(ex.equipment); updates.push(`equipment = $${params.length}`); }
               if (ex.rep_type) { params.push(ex.rep_type); updates.push(`rep_type = $${params.length}`); }
@@ -311,7 +321,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
 
       if (action === "add_bulk") {
         // Some MCP clients serialize nested arrays as JSON strings
-        const exercisesList = parseJsonParam<any[]>(exercises);
+        const exercisesList = parseJsonParam<BulkExerciseEntry[]>(exercises);
         if (!exercisesList || !Array.isArray(exercisesList) || exercisesList.length === 0) {
           return toolResponse({ error: "exercises array required for add_bulk" }, true);
         }
@@ -367,7 +377,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
            WHERE LOWER(e.name) = LOWER($1) AND (e.user_id IS NULL OR e.user_id = $2)`,
           [name, userId]
         );
-        return toolResponse({ exercise: name, aliases: rows.map((r: any) => r.alias) });
+        return toolResponse({ exercise: name, aliases: rows.map((r: { alias: string }) => r.alias) });
       }
 
       if (action === "add_alias") {

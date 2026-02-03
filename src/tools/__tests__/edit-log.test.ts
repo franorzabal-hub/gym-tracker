@@ -152,10 +152,8 @@ describe("edit_workout tool", () => {
     });
 
     it("soft-deletes multiple workouts and reports not_found", async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [{ id: 1 }] })
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ id: 3 }] });
+      // Single batch query returns only the IDs that were actually deleted
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1 }, { id: 3 }] });
 
       const result = await toolHandler({ delete_workouts: [1, 2, 3] });
       const parsed = JSON.parse(result.content[0].text);

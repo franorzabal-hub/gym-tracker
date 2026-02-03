@@ -1,6 +1,10 @@
 import { PoolClient } from "pg";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
+import type { ExerciseType, SetType, PRCheck } from "../db/types.js";
+
+// Re-export PRCheck from db/types for backwards compatibility
+export type { PRCheck } from "../db/types.js";
 
 /**
  * Estimates one-rep max using the Epley formula: weight × (1 + reps/30).
@@ -14,17 +18,11 @@ export function estimateE1RM(weight: number, reps: number): number | null {
 }
 
 export function calculateVolume(
-  sets: Array<{ weight?: number | null; reps: number; set_type?: string }>
+  sets: Array<{ weight?: number | null; reps: number; set_type?: SetType }>
 ): number {
   return sets
     .filter((s) => s.set_type !== "warmup")
     .reduce((sum, s) => sum + (s.weight || 0) * s.reps, 0);
-}
-
-export interface PRCheck {
-  record_type: string;
-  value: number;
-  previous?: number;
 }
 
 /**
@@ -42,7 +40,7 @@ export interface PRCheck {
 export async function checkPRs(
   exerciseId: number,
   newSets: Array<{ reps: number; weight?: number | null; set_id: number }>,
-  exerciseType?: string,
+  exerciseType?: ExerciseType | string,
   externalClient?: PoolClient
 ): Promise<PRCheck[]> {
   if (exerciseType && exerciseType !== 'strength') {

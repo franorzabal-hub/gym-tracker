@@ -13,6 +13,32 @@ import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response
 import { logSingleExercise, exerciseEntrySchema, type ExerciseEntry } from "../helpers/log-exercise-helper.js";
 import { cloneGroups } from "../helpers/group-helpers.js";
 import { cloneSections } from "../helpers/section-helpers.js";
+import type { ExerciseOverride, PRCheck, ExerciseType, ProgramDayRow } from "../db/types.js";
+
+/** Logged exercise result for routine exercises */
+interface RoutineResult {
+  exercise: string;
+  sets: number;
+  reps: number;
+  weight?: number;
+  rpe?: number;
+}
+
+/** Day exercise row with joined exercise info */
+interface DayExerciseRow {
+  id: number;
+  exercise_id: number;
+  exercise_name: string;
+  exercise_type: ExerciseType;
+  target_sets: number;
+  target_reps: number;
+  target_weight: number | null;
+  target_rpe: number | null;
+  rest_seconds: number | null;
+  sort_order: number;
+  group_id: number | null;
+  section_id: number | null;
+}
 
 const overrideSchema = z.object({
   exercise: z.string(),
@@ -104,7 +130,7 @@ Parameters:
   }, safeHandler("log_workout", async (params) => {
     const userId = getUserId();
     const tags = parseJsonArrayParam<string>(params.tags);
-    const overrides = parseJsonParam<any[]>(params.overrides);
+    const overrides = parseJsonParam<ExerciseOverride[]>(params.overrides);
     const skip = parseJsonArrayParam<string>(params.skip);
     const exercisesList = parseJsonParam<ExerciseEntry[]>(params.exercises);
 
@@ -116,8 +142,8 @@ Parameters:
     // --- 1. Resolve program day if needed ---
     let programVersionId: number | null = null;
     let programDayId: number | null = null;
-    let dayInfo: any = null;
-    let dayExercises: any[] = [];
+    let dayInfo: ProgramDayRow | null = null;
+    let dayExercises: DayExerciseRow[] = [];
 
     const activeProgram = await getActiveProgram();
 
@@ -236,19 +262,19 @@ Parameters:
       }
 
       // --- 4. Log program day exercises ---
-      const routineResults: any[] = [];
+      const routineResults: RoutineResult[] = [];
       let totalRoutineSets = 0;
       let totalRoutineVolume = 0;
-      const allPRs: any[] = [];
+      const allPRs: Array<{ exercise: string; prs: PRCheck[] }> = [];
 
-      if (hasProgramDay && dayExercises.length > 0) {
+      if (hasProgramDay && dayExercises.length > 0 && dayInfo) {
         // Build skip set
         const skipSet = new Set(
           (skip || []).map((s: string) => s.toLowerCase().trim())
         );
 
         // Build override map
-        const overrideMap = new Map<string, any>();
+        const overrideMap = new Map<string, ExerciseOverride>();
         for (const o of overrides || []) {
           const resolved = await resolveExercise(o.exercise, undefined, undefined, undefined, undefined, client);
           overrideMap.set(resolved.name.toLowerCase(), o);
@@ -333,13 +359,17 @@ Parameters:
       }
 
       // --- 5. Log explicit exercises ---
-      const explicitResults: any[] = [];
+      const explicitResults: Array<Record<string, unknown>> = [];
 
       if (hasBulkExercises) {
         for (const entry of exercisesList!) {
           const result = await logSingleExercise(sessionId, entry, client, sessionValidated);
           explicitResults.push(result);
-          if (result.new_prs) allPRs.push(...result.new_prs.map((pr: any) => ({ exercise: result.exercise_name, ...pr })));
+          if (result.new_prs) {
+            for (const pr of result.new_prs) {
+              allPRs.push({ exercise: result.exercise_name, prs: [pr] });
+            }
+          }
         }
       } else if (hasExplicitExercise) {
         if (!params.reps) {
@@ -364,7 +394,11 @@ Parameters:
           exercise_type: params.exercise_type,
         }, client, sessionValidated);
         explicitResults.push(result);
-        if (result.new_prs) allPRs.push(...result.new_prs.map((pr: any) => ({ exercise: result.exercise_name, ...pr })));
+        if (result.new_prs) {
+          for (const pr of result.new_prs) {
+            allPRs.push({ exercise: result.exercise_name, prs: [pr] });
+          }
+        }
       }
 
       // --- 6. COMMIT ---
@@ -372,7 +406,7 @@ Parameters:
 
       // --- 7. Session-only mode: return plan + last workout ---
       if (routineResults.length === 0 && explicitResults.length === 0) {
-        const result: any = {
+        const result: Record<string, unknown> = {
           session_id: sessionId,
           session_created: sessionCreated,
         };
@@ -417,7 +451,18 @@ Parameters:
                  ORDER BY se.sort_order`,
                 [lastSession[0].id]
               );
-              const lastExercisesWithSummary = lastExercises.map((ex: any) => {
+              interface LastExerciseSet {
+                set_number: number;
+                reps: number;
+                weight: number | null;
+                rpe: number | null;
+                set_type: string | null;
+              }
+              interface LastExercise {
+                name: string;
+                sets: LastExerciseSet[];
+              }
+              const lastExercisesWithSummary = (lastExercises as LastExercise[]).map((ex) => {
                 const groups: Record<string, { count: number; reps: number[]; weight: number | null }> = {};
                 for (const s of ex.sets || []) {
                   const key = `${s.set_type || 'working'}_${s.weight || 'bw'}`;
@@ -456,7 +501,7 @@ Parameters:
         });
       }
 
-      const response: any = { session_id: sessionId };
+      const response: Record<string, unknown> = { session_id: sessionId };
 
       if (routineResults.length > 0) {
         response.day_label = dayInfo?.day_label;

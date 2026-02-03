@@ -7,6 +7,7 @@ import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
+import type { EditParams, PRCheck, SetRow, ExerciseType } from "../db/types.js";
 
 export function registerEditLogTool(server: McpServer) {
   server.registerTool("edit_workout", {
@@ -112,10 +113,10 @@ Parameters:
           [workoutId]
         );
 
-        const allPRs: any[] = [];
+        const allPRs: Array<{ exercise: string; prs: PRCheck[] }> = [];
         for (const se of workoutExercises) {
           // Get all sets for this workout exercise
-          const { rows: sets } = await pool.query(
+          const { rows: sets } = await pool.query<{ id: number; reps: number; weight: number | null }>(
             `SELECT id, reps, weight FROM sets WHERE session_exercise_id = $1`,
             [se.id]
           );
@@ -123,12 +124,12 @@ Parameters:
           if (sets.length > 0) {
             const prs = await checkPRs(
               se.exercise_id,
-              sets.map((s: any) => ({
+              sets.map((s) => ({
                 reps: s.reps,
                 weight: s.weight ?? null,
                 set_id: s.id,
               })),
-              se.exercise_type
+              se.exercise_type as ExerciseType
             );
             if (prs.length > 0) {
               allPRs.push({ exercise: se.exercise_name, prs });
@@ -174,21 +175,23 @@ Parameters:
           return toolResponse({ error: "delete_workouts requires an array of workout IDs" }, true);
         }
 
-        const deleted: number[] = [];
-        const not_found: number[] = [];
-
-        for (const wid of workoutIds) {
-          const id = Number(wid);
-          const { rows } = await pool.query(
-            "UPDATE sessions SET deleted_at = NOW() WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL RETURNING id",
-            [id, userId]
-          );
-          if (rows.length === 0) {
-            not_found.push(id);
-          } else {
-            deleted.push(id);
-          }
+        // Convert to numbers and filter invalid
+        const numericIds = workoutIds.map(id => Number(id)).filter(id => !Number.isNaN(id));
+        if (numericIds.length === 0) {
+          return toolResponse({ error: "No valid workout IDs provided" }, true);
         }
+
+        // Single batch query for better performance
+        const { rows } = await pool.query(
+          `UPDATE sessions SET deleted_at = NOW()
+           WHERE id = ANY($1::int[]) AND user_id = $2 AND deleted_at IS NULL
+           RETURNING id`,
+          [numericIds, userId]
+        );
+
+        const deleted = rows.map((r: { id: number }) => r.id);
+        const deletedSet = new Set(deleted);
+        const not_found = numericIds.filter(id => !deletedSet.has(id));
 
         return toolResponse({
           deleted,
@@ -272,17 +275,7 @@ Parameters:
   );
 }
 
-async function processSingleEdit(params: {
-  userId: number;
-  exercise: string;
-  workout?: string;
-  action: string;
-  updates?: { reps?: number; weight?: number; rpe?: number; set_type?: string; notes?: string };
-  set_numbers?: number[];
-  set_ids?: number[];
-  set_type_filter?: string;
-  userDate: string;
-}): Promise<Record<string, any>> {
+async function processSingleEdit(params: EditParams): Promise<Record<string, unknown>> {
   const { userId, exercise, workout, action, updates, set_numbers, set_ids, set_type_filter, userDate } = params;
 
   const resolved = await findExercise(exercise);
@@ -291,7 +284,7 @@ async function processSingleEdit(params: {
   }
 
   // Find the workout
-  const queryParams: any[] = [resolved.id, userId];
+  const queryParams: (number | string)[] = [resolved.id, userId];
   let workoutFilter: string;
   if (!workout || workout === "today") {
     queryParams.push(userDate);
@@ -327,12 +320,12 @@ async function processSingleEdit(params: {
   // Collect all session_exercise IDs (for the most recent workout)
   const targetSessionId = workoutExercises[0].session_id;
   const seIds = workoutExercises
-    .filter((se: any) => se.session_id === targetSessionId)
-    .map((se: any) => se.id);
+    .filter((se: { session_id: number }) => se.session_id === targetSessionId)
+    .map((se: { id: number }) => se.id);
 
   if (action === "delete") {
     for (const seId of seIds) {
-      const deleteParams: any[] = [seId];
+      const deleteParams: (number | number[] | string)[] = [seId];
       const conditions: string[] = ["session_exercise_id = $1"];
 
       if (set_ids && set_ids.length > 0) {
@@ -384,11 +377,19 @@ async function processSingleEdit(params: {
   }
 
   let totalUpdated = 0;
-  const allUpdatedSets: any[] = [];
+  const allUpdatedSets: Array<{
+    set_id: number;
+    set_number: number;
+    reps: number;
+    weight: number | null;
+    rpe: number | null;
+    set_type: string;
+    notes: string | null;
+  }> = [];
 
   for (const seId of seIds) {
     const setClauses: string[] = [];
-    const updateParams: any[] = [seId];
+    const updateParams: (number | number[] | string | null)[] = [seId];
 
     if (updates.reps !== undefined) {
       updateParams.push(updates.reps);

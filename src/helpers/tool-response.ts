@@ -68,20 +68,59 @@ export function registerAppToolWithMeta(
 }
 
 /**
+ * Classifies an error and returns a user-friendly message.
+ * Helps users understand whether to retry, fix their input, or report a bug.
+ */
+function classifyError(err: unknown): { message: string; retryable: boolean } {
+  if (!(err instanceof Error)) {
+    return { message: "An unexpected error occurred. Please try again.", retryable: true };
+  }
+
+  const msg = err.message.toLowerCase();
+  const code = (err as { code?: string }).code;
+
+  // Database errors
+  if (code === '23505') {
+    return { message: "A duplicate entry already exists.", retryable: false };
+  }
+  if (code === '23503') {
+    return { message: "Referenced record not found.", retryable: false };
+  }
+  if (code === '23502') {
+    return { message: "Required field is missing.", retryable: false };
+  }
+  if (msg.includes('timeout') || msg.includes('timed out')) {
+    return { message: "The operation timed out. Please try again.", retryable: true };
+  }
+  if (msg.includes('connection') || msg.includes('econnrefused') || msg.includes('enotfound')) {
+    return { message: "Connection error. Please try again in a moment.", retryable: true };
+  }
+
+  // Validation errors
+  if (msg.includes('invalid') || msg.includes('must be') || msg.includes('required')) {
+    return { message: err.message, retryable: false };
+  }
+
+  // Default
+  return { message: "Something went wrong. Please try again.", retryable: true };
+}
+
+/**
  * Wraps a tool handler with try/catch error handling.
- * On unexpected errors, returns a structured error response instead of
- * letting the error propagate to the MCP framework (which produces opaque errors).
+ * On unexpected errors, returns a structured error response with actionable messages
+ * instead of letting the error propagate to the MCP framework (which produces opaque errors).
  */
 export function safeHandler<T>(
   toolName: string,
-  handler: (params: T) => Promise<any>
-): (params: T) => Promise<any> {
+  handler: (params: T) => Promise<ReturnType<typeof toolResponse>>
+): (params: T) => Promise<ReturnType<typeof toolResponse>> {
   return async (params: T) => {
     try {
       return await handler(params);
     } catch (err) {
       console.error(`[${toolName}] Unhandled error:`, err instanceof Error ? err.stack : err);
-      return toolResponse({ error: "Something went wrong. Please try again." }, true);
+      const { message, retryable } = classifyError(err);
+      return toolResponse({ error: message, retryable }, true);
     }
   };
 }

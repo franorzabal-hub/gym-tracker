@@ -1,3 +1,8 @@
+/** Result of a JSON parse operation with error context */
+export type ParseResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: string };
+
 /**
  * Parses a JSON string into the target type, or passes through non-string values.
  * MCP clients sometimes serialize objects/arrays as JSON strings instead of
@@ -15,6 +20,25 @@ export function parseJsonParam<T>(value: unknown): T | null {
     }
   }
   return value as T;
+}
+
+/**
+ * Like {@link parseJsonParam} but returns a discriminated union with error info.
+ * Use this when you need to provide specific error feedback to the user.
+ */
+export function parseJsonParamSafe<T>(value: unknown, paramName: string): ParseResult<T> {
+  if (value == null) {
+    return { success: false, error: `${paramName} is required` };
+  }
+  if (typeof value === 'string') {
+    try {
+      return { success: true, data: JSON.parse(value) as T };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      return { success: false, error: `Invalid JSON in ${paramName}: ${msg}` };
+    }
+  }
+  return { success: true, data: value as T };
 }
 
 /**
