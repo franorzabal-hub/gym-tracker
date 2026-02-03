@@ -380,6 +380,7 @@ function ExerciseRow({ ex, exNum, showExerciseRest, isSecondary, hasMetaLine, ha
   return (
     <div style={{ marginBottom: isLast ? 0 : sp[4] }}>
       <div
+        className={hasPerSet ? "tappable exercise-row" : "exercise-row"}
         style={{
           display: "flex",
           alignItems: "baseline",
@@ -392,7 +393,7 @@ function ExerciseRow({ ex, exNum, showExerciseRest, isSecondary, hasMetaLine, ha
         {/* Left: number + name + type tag */}
         <div style={{ display: "flex", alignItems: "baseline", gap: sp[3], minWidth: 0 }}>
           <span style={{ fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.muted, minWidth: "1.2em", textAlign: "right", flexShrink: 0 }}>{exNum}</span>
-          <span style={{
+          <span className="exercise-name" style={{
             fontWeight: isSecondary ? weight.normal : weight.medium,
             fontSize: font.lg,
             opacity: isSecondary ? opacity.high : 1,
@@ -402,7 +403,7 @@ function ExerciseRow({ ex, exNum, showExerciseRest, isSecondary, hasMetaLine, ha
           }}>{ex.exercise_name}</span>
         </div>
         {/* Right: sets × reps · weight */}
-        <div style={{ flexShrink: 0, display: "flex", alignItems: "baseline", gap: sp[1], fontSize: font.md, whiteSpace: "nowrap" }}>
+        <div className="exercise-metrics" style={{ flexShrink: 0, display: "flex", alignItems: "baseline", gap: sp[1], fontSize: font.md, whiteSpace: "nowrap" }}>
           <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{ex.target_sets}</span>
           <span style={{ opacity: opacity.muted }}>×</span>
           <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>
@@ -425,30 +426,21 @@ function ExerciseRow({ ex, exNum, showExerciseRest, isSecondary, hasMetaLine, ha
         <div style={{
           display: "flex",
           justifyContent: "flex-end",
-          alignItems: "baseline",
-          gap: sp[1],
-          fontSize: font.sm,
-          color: "var(--text-secondary)",
-          marginTop: sp[0.5],
+          alignItems: "center",
+          gap: sp[2],
+          marginTop: sp[1],
         }}>
           {ex.target_rpe != null && <RpeBadge rpe={ex.target_rpe} />}
           {showExerciseRest && (
-            <>
-              {ex.target_rpe != null && <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>}
-              <span style={{ opacity: opacity.medium }}>
-                ⏱ {formatRestSeconds(ex.rest_seconds!)}
-              </span>
-            </>
+            <span className="rest-badge">
+              ⏱ {formatRestSeconds(ex.rest_seconds!)}
+            </span>
           )}
         </div>
       )}
       {/* Per-set detail (expanded on row click) */}
       {hasPerSet && expanded && (
-        <div style={{
-          marginTop: sp[2],
-          marginLeft: sp[2],
-          padding: `${sp[2]}px 0`,
-        }}>
+        <div className="per-set-detail">
           {Array.from({ length: ex.target_sets }).map((_, si) => {
             const setReps = ex.target_reps_per_set ? ex.target_reps_per_set[si] : ex.target_reps;
             const setWeight = ex.target_weight_per_set ? ex.target_weight_per_set[si] : ex.target_weight;
@@ -518,6 +510,7 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, colla
     <div style={{ marginBottom: sp[2] }}>
       {/* Header */}
       <div
+        className={canCollapse ? "tappable section-header" : undefined}
         onClick={canCollapse ? () => setExpanded(!expanded) : undefined}
         style={{
           cursor: canCollapse ? "pointer" : "default",
@@ -530,8 +523,8 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, colla
       >
         <div style={{ display: "flex", alignItems: "center", gap: sp[2] }}>
           {canCollapse && (
-            <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
-              {expanded ? "▼" : "▶"}
+            <span style={{ fontSize: font.sm, color: "var(--text-secondary)", transition: "transform 0.15s", transform: expanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
+              ▼
             </span>
           )}
           <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
@@ -569,9 +562,9 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, colla
           })}
           {/* Footer: group rest + notes */}
           {(groupRestSeconds != null || groupNotes) && (
-            <div style={{ marginTop: sp[3], fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.medium, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: sp[3] }}>
+            <div style={{ marginTop: sp[3], display: "flex", alignItems: "center", justifyContent: "flex-end", gap: sp[3] }}>
               {groupRestSeconds != null && (
-                <span>⏱ {formatRestSeconds(groupRestSeconds)}</span>
+                <span className="rest-badge">⏱ {formatRestSeconds(groupRestSeconds)}</span>
               )}
               {groupNotes && <NoteTooltip text={groupNotes} />}
             </div>
@@ -625,9 +618,9 @@ export function SectionCard({ section, ssGroupColors, startNumber }: {
   return (
     <div style={{ marginBottom: sp[5] }}>
       <div
+        className="tappable section-header"
         onClick={() => setExpanded(!expanded)}
         style={{
-          cursor: "pointer",
           marginBottom: expanded ? sp[3] : 0,
           userSelect: "none",
         }}
@@ -635,8 +628,8 @@ export function SectionCard({ section, ssGroupColors, startNumber }: {
         {/* Line 1: chevron + label + count */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
-            <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
-              {expanded ? "▼" : "▶"}
+            <span style={{ fontSize: font.sm, color: "var(--text-secondary)", transition: "transform 0.15s", transform: expanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
+              ▼
             </span>
             <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
               {section.label}
@@ -844,6 +837,23 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
   );
 }
 
+function PaginationDots({ total, active, onDotClick }: { total: number; active: number; onDotClick?: (idx: number) => void }) {
+  if (total <= 1) return null;
+  return (
+    <div className="pagination-dots">
+      {Array.from({ length: total }).map((_, i) => (
+        <button
+          key={i}
+          className={`pagination-dot${i === active ? " active" : ""}`}
+          onClick={() => onDotClick?.(i)}
+          aria-label={`Go to day ${i + 1}`}
+          style={{ border: "none", padding: 0, cursor: onDotClick ? "pointer" : "default" }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function DayCarousel({ days, activeIdx, goTo }: { days: Day[]; activeIdx: number; goTo: (idx: number) => void }) {
   const touchRef = useRef<{ startX: number; startY: number } | null>(null);
 
@@ -867,6 +877,7 @@ export function DayCarousel({ days, activeIdx, goTo }: { days: Day[]; activeIdx:
       onTouchEnd={onTouchEnd}
     >
       <DayCard day={days[activeIdx]} alwaysExpanded />
+      <PaginationDots total={days.length} active={activeIdx} onDotClick={goTo} />
     </div>
   );
 }

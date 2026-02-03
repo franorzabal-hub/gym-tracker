@@ -1,8 +1,8 @@
 import { createRoot } from "react-dom/client";
-import { useState, useCallback } from "react";
-import { useToolOutput, useCallTool } from "../hooks.js";
+import { useState, useCallback, useRef, KeyboardEvent } from "react";
+import { useToolOutput, useCallTool, useWidgetState } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
-import { sp, radius, font, weight } from "../tokens.js";
+import { sp, font, weight } from "../tokens.js";
 import "../styles.css";
 import {
   type Day,
@@ -11,38 +11,73 @@ import {
   DayCarousel,
 } from "./shared/program-view.js";
 
-/** Day navigation tabs — always visible when multiple days exist */
+/** Day navigation tabs with accessibility and keyboard support */
 function DayTabs({ days, activeIdx, goTo }: { days: Day[]; activeIdx: number; goTo: (idx: number) => void }) {
+  const tabsRef = useRef<HTMLDivElement>(null);
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const len = days.length;
+    switch (e.key) {
+      case "ArrowRight":
+        e.preventDefault();
+        goTo((activeIdx + 1) % len);
+        break;
+      case "ArrowLeft":
+        e.preventDefault();
+        goTo((activeIdx - 1 + len) % len);
+        break;
+      case "Home":
+        e.preventDefault();
+        goTo(0);
+        break;
+      case "End":
+        e.preventDefault();
+        goTo(len - 1);
+        break;
+    }
+  };
+
   return (
-    <div style={{
-      display: "flex",
-      gap: sp[2],
-      overflowX: "auto",
-      WebkitOverflowScrolling: "touch",
-      scrollbarWidth: "none",
-      paddingBottom: sp[2],
-    }}>
+    <div
+      ref={tabsRef}
+      role="tablist"
+      aria-label="Program days"
+      onKeyDown={handleKeyDown}
+      style={{
+        display: "flex",
+        borderBottom: "1px solid var(--border)",
+        overflowX: "auto",
+        scrollbarWidth: "none",
+        gap: sp[1],
+      }}
+    >
       {days.map((day, i) => {
         const isActive = i === activeIdx;
         // Extract short label: "Día 1" from "Día 1 — Peso Muerto + Push Pecho"
         const shortLabel = day.day_label.split(/\s*[—–-]\s*/)[0] || `Day ${i + 1}`;
+
         return (
           <button
             key={i}
+            role="tab"
+            aria-selected={isActive}
+            aria-controls={`day-panel-${i}`}
+            tabIndex={isActive ? 0 : -1}
             onClick={() => goTo(i)}
+            className="day-tab"
             style={{
-              padding: `${sp[3]}px ${sp[6]}px`,
-              minHeight: 44,
-              borderRadius: radius.lg,
-              border: isActive ? "1.5px solid var(--primary)" : "1.5px solid var(--border)",
-              background: isActive ? "var(--primary)" : "transparent",
-              color: isActive ? "var(--card-bg, var(--bg))" : "var(--text-secondary)",
               fontSize: font.sm,
-              fontWeight: isActive ? weight.semibold : weight.normal,
+              fontWeight: isActive ? weight.semibold : weight.medium,
+              marginBottom: "-1px",
+              background: "transparent",
+              border: "none",
+              borderBottomWidth: "2px",
+              borderBottomStyle: "solid",
+              borderBottomColor: isActive ? "var(--primary)" : "transparent",
+              color: isActive ? "var(--primary)" : "var(--text-secondary)",
               cursor: "pointer",
               whiteSpace: "nowrap",
               flexShrink: 0,
-              transition: "all 0.15s ease",
             }}
           >
             {shortLabel}
@@ -86,20 +121,22 @@ function ConfirmBar({ onConfirm, confirming, confirmed }: {
   confirmed: boolean;
 }) {
   return (
-    <div className="profile-confirm-bar">
-      {confirmed ? (
-        <span className="profile-confirm-flash">Updated</span>
-      ) : (
-        <button
-          className="btn btn-primary"
-          onClick={onConfirm}
-          disabled={confirming}
-          role="button"
-          aria-label="Confirm program changes"
-        >
-          {confirming ? "Saving..." : "Confirm Changes"}
-        </button>
-      )}
+    <div className="confirm-bar-sticky">
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        {confirmed ? (
+          <span className="profile-confirm-flash">Updated</span>
+        ) : (
+          <button
+            className="btn btn-primary"
+            onClick={onConfirm}
+            disabled={confirming}
+            role="button"
+            aria-label="Confirm program changes"
+          >
+            {confirming ? "Saving..." : "Confirm Changes"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -107,12 +144,18 @@ function ConfirmBar({ onConfirm, confirming, confirmed }: {
 function ProgramsWidget() {
   const data = useToolOutput<ToolData>();
   const { callTool } = useCallTool();
-  const [viewingIdx, setViewingIdx] = useState(data?.initialDayIdx || 0);
+
+  // Persist selected day across re-renders
+  const [widgetState, setWidgetState] = useWidgetState(() => ({
+    selectedDay: data?.initialDayIdx ?? 0
+  }));
+
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [localProgram, setLocalProgram] = useState<ProgramData | null>(null);
 
   const daysLen = data?.program?.days?.length ?? 0;
+  const viewingIdx = widgetState.selectedDay;
 
   const handleConfirm = useCallback(async () => {
     if (!data?.pendingChanges || !data.program) return;
@@ -130,8 +173,9 @@ function ProgramsWidget() {
   }, [data, callTool]);
 
   const goTo = useCallback((idx: number) => {
-    setViewingIdx(Math.max(0, Math.min(idx, daysLen - 1)));
-  }, [daysLen]);
+    const clampedIdx = Math.max(0, Math.min(idx, daysLen - 1));
+    setWidgetState(prev => ({ ...prev, selectedDay: clampedIdx }));
+  }, [daysLen, setWidgetState]);
 
   if (!data) return <div className="loading">Loading...</div>;
   if (!data.program) return <div className="empty">No program found</div>;
@@ -172,23 +216,29 @@ function ProgramsWidget() {
             {program.days.length} days &middot; {totalExercises} exercises
           </span>
         </div>
-        {hasAnyWeekdays && (
-          <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginTop: sp[4] }}>
-            <WeekdayPills days={program.days} highlightedDays={viewingWeekdays} onDayClick={goTo} />
-          </div>
-        )}
+        {/* Day navigation: WeekdayPills if weekdays exist, otherwise DayTabs */}
         {program.days.length > 1 && (
           <div style={{ marginTop: sp[4] }}>
-            <DayTabs days={program.days} activeIdx={viewingIdx} goTo={goTo} />
+            {hasAnyWeekdays ? (
+              <WeekdayPills days={program.days} highlightedDays={viewingWeekdays} onDayClick={goTo} />
+            ) : (
+              <DayTabs days={program.days} activeIdx={viewingIdx} goTo={goTo} />
+            )}
           </div>
         )}
       </div>
 
-      {/* Days */}
-      {program.days.length === 1
-        ? <DayCard day={program.days[0]} alwaysExpanded />
-        : <DayCarousel days={program.days} activeIdx={viewingIdx} goTo={goTo} />
-      }
+      {/* Day content panel */}
+      <div
+        role="tabpanel"
+        id={`day-panel-${viewingIdx}`}
+        aria-labelledby={`day-tab-${viewingIdx}`}
+      >
+        {program.days.length === 1
+          ? <DayCard day={program.days[0]} alwaysExpanded />
+          : <DayCarousel days={program.days} activeIdx={viewingIdx} goTo={goTo} />
+        }
+      </div>
 
       {/* Confirm bar */}
       {hasPending && (
