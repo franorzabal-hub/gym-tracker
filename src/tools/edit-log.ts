@@ -7,39 +7,134 @@ import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
-import type { EditParams, PRCheck, SetRow, ExerciseType } from "../db/types.js";
+import type { EditParams, PRCheck, ExerciseType } from "../db/types.js";
+
+// Workout selector type: ID, "today", "last", "yesterday", or YYYY-MM-DD date
+type WorkoutSelector = number | "today" | "last" | "yesterday" | string;
+
+/**
+ * Resolves a workout selector to a session ID and metadata.
+ * Supports: numeric ID, "today", "last", "yesterday", or YYYY-MM-DD date string.
+ */
+async function resolveWorkoutSelector(
+  selector: WorkoutSelector,
+  userId: number,
+  userDate: string,
+  options: { includeDeleted?: boolean } = {}
+): Promise<{ session_id: number; started_at: Date; is_validated: boolean; deleted_at: Date | null } | null> {
+  const { includeDeleted = false } = options;
+  const deletedFilter = includeDeleted ? "" : "AND deleted_at IS NULL";
+
+  // Numeric ID - direct lookup
+  const numericId = Number(selector);
+  if (!Number.isNaN(numericId) && String(selector).match(/^\d+$/)) {
+    const { rows } = await pool.query(
+      `SELECT id as session_id, started_at, is_validated, deleted_at
+       FROM sessions WHERE id = $1 AND user_id = $2 ${deletedFilter}`,
+      [numericId, userId]
+    );
+    return rows[0] || null;
+  }
+
+  // Semantic selectors
+  let dateFilter: string;
+  const params: (number | string)[] = [userId];
+
+  switch (selector) {
+    case "today":
+      params.push(userDate);
+      dateFilter = `AND started_at >= $2::date AND started_at < $2::date + INTERVAL '1 day'`;
+      break;
+    case "yesterday": {
+      const yesterday = new Date(userDate);
+      yesterday.setDate(yesterday.getDate() - 1);
+      params.push(yesterday.toISOString().split("T")[0]);
+      dateFilter = `AND started_at >= $2::date AND started_at < $2::date + INTERVAL '1 day'`;
+      break;
+    }
+    case "last":
+      dateFilter = ""; // No filter, just get most recent
+      break;
+    default:
+      // YYYY-MM-DD date string
+      if (typeof selector !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(selector)) {
+        return null;
+      }
+      const parsed = new Date(selector + "T00:00:00Z");
+      if (isNaN(parsed.getTime())) {
+        return null;
+      }
+      params.push(selector);
+      dateFilter = `AND started_at >= $2::date AND started_at < $2::date + INTERVAL '1 day'`;
+  }
+
+  const { rows } = await pool.query(
+    `SELECT id as session_id, started_at, is_validated, deleted_at
+     FROM sessions
+     WHERE user_id = $1 ${deletedFilter} ${dateFilter}
+     ORDER BY started_at DESC
+     LIMIT 1`,
+    params
+  );
+
+  return rows[0] || null;
+}
+
+/**
+ * Resolves negative set numbers to positive ones.
+ * -1 = last set, -2 = second to last, etc.
+ */
+async function resolveSetNumbers(
+  setNumbers: number[],
+  seIds: number[]
+): Promise<number[]> {
+  if (!setNumbers.some((n) => n < 0)) {
+    return setNumbers;
+  }
+
+  // Get max set number across all session_exercises
+  const { rows } = await pool.query(
+    `SELECT MAX(set_number) as max_set FROM sets WHERE session_exercise_id = ANY($1)`,
+    [seIds]
+  );
+  const maxSet = rows[0]?.max_set || 0;
+
+  // Resolve negative indices
+  return setNumbers.map((n) => (n < 0 ? maxSet + n + 1 : n)).filter((n) => n > 0);
+}
 
 export function registerEditLogTool(server: McpServer) {
   server.registerTool("edit_workout", {
-    description: `${APP_CONTEXT}Edit or delete previously logged sets, or delete entire workouts.
+    description: `${APP_CONTEXT}Edit or delete previously logged sets, update session metadata, or manage entire workouts.
 
 Examples:
 - "No, eran 80kg" → update weight on the last logged exercise
-- "Borrá el último set" → delete specific sets
-- "Corregí el press banca de hoy: 4x10 con 70kg" → update all sets of an exercise in today's workout
+- "Borrá el último set" → delete specific sets (supports negative indices: -1 = last)
+- "Corregí el press banca de hoy: 4x10 con 70kg" → update all sets of an exercise
 - "Borrá todos los warmup de press banca" → delete sets filtered by type
 - "Corregí press banca y sentadilla de hoy" → bulk edit multiple exercises
-- "Borrá el workout 42" → soft-delete an entire workout
-- "Restaurá el workout 42" → restore a soft-deleted workout
-- "Validá el workout 42" → validate a pending workout (recalculates PRs)
+- "Borrá el workout de hoy" → soft-delete today's workout
+- "Validá el workout de ayer" → validate yesterday's workout (recalculates PRs)
+- "Agregá una nota al workout" → update session metadata
 
 Parameters:
-- exercise: name or alias (required for single mode, ignored if bulk or delete_workout is used)
-- workout: "today" (default), "last", or a date string
+- exercise: name or alias (required for single mode)
+- workout: "today" (default), "last", "yesterday", or YYYY-MM-DD date
 - action: "update" or "delete"
 - updates: { reps?, weight?, rpe?, set_type?, notes? } — fields to change
-- set_numbers: specific set numbers to edit (if omitted, edits all sets)
+- set_numbers: specific set numbers to edit. Supports negative indices: -1 = last set, -2 = second to last
 - set_ids: specific set IDs to edit directly (alternative to set_numbers)
 - set_type_filter: filter sets by type ("warmup", "working", "drop", "failure")
-- bulk: array of { exercise, action?, set_numbers?, set_ids?, set_type_filter?, updates? } for multi-exercise edits
-- delete_workout: workout ID to soft-delete (sets deleted_at timestamp, can be restored)
-- restore_workout: workout ID to restore (clears deleted_at timestamp)
-- delete_workouts: array of workout IDs for bulk soft-delete. Returns { deleted, not_found }.
-- validate_workout: workout ID to validate. Marks as validated and recalculates PRs.`,
+- bulk: array of { exercise, action?, set_numbers?, set_ids?, set_type_filter?, updates? }
+- update_session: { notes?, append_notes?, tags?, add_tags?, remove_tags? } — update session metadata
+- delete_workout: workout selector ("today", "last", "yesterday", ID, or date) to soft-delete
+- restore_workout: workout ID or date to restore from soft-delete
+- delete_workouts: array of workout IDs for bulk soft-delete
+- validate_workout: workout selector ("today", "last", "yesterday", ID, or date) to validate`,
     inputSchema: {
       exercise: z.string().optional(),
       workout: z
-        .union([z.enum(["today", "last"]), z.string()])
+        .union([z.enum(["today", "last", "yesterday"]), z.string()])
         .optional()
         .default("today"),
       action: z.enum(["update", "delete"]).optional(),
@@ -52,7 +147,7 @@ Parameters:
           notes: z.string().optional(),
         })
         .optional(),
-      set_numbers: z.array(z.number().int()).optional(),
+      set_numbers: z.array(z.number().int()).optional().describe("Set numbers to edit. Supports negative indices: -1 = last set"),
       set_ids: z.array(z.number().int()).optional(),
       set_type_filter: z.enum(["warmup", "working", "drop", "failure"]).optional(),
       bulk: z.array(z.object({
@@ -69,39 +164,93 @@ Parameters:
           notes: z.string().optional(),
         }).optional(),
       })).optional(),
-      delete_workout: z.union([z.number().int(), z.string()]).optional().describe("Workout ID to soft-delete. Sets deleted_at timestamp; can be restored later."),
-      restore_workout: z.union([z.number().int(), z.string()]).optional().describe("Workout ID to restore from soft-delete. Clears the deleted_at timestamp."),
-      delete_workouts: z.union([z.array(z.number().int()), z.string()]).optional().describe("Array of workout IDs for bulk soft-delete."),
-      validate_workout: z.union([z.number().int(), z.string()]).optional().describe("Workout ID to validate. Marks as validated and recalculates PRs."),
+      update_session: z.object({
+        notes: z.string().optional().describe("Replace session notes"),
+        append_notes: z.string().optional().describe("Append to existing notes"),
+        tags: z.array(z.string()).optional().describe("Replace all tags"),
+        add_tags: z.array(z.string()).optional().describe("Add tags to existing"),
+        remove_tags: z.array(z.string()).optional().describe("Remove specific tags"),
+      }).optional().describe("Update session metadata (notes, tags)"),
+      delete_workout: z.union([z.number().int(), z.string()]).optional().describe("Workout selector to soft-delete: ID, 'today', 'last', 'yesterday', or YYYY-MM-DD"),
+      restore_workout: z.union([z.number().int(), z.string()]).optional().describe("Workout ID or date to restore from soft-delete"),
+      delete_workouts: z.union([z.array(z.number().int()), z.string()]).optional().describe("Array of workout IDs for bulk soft-delete"),
+      validate_workout: z.union([z.number().int(), z.string()]).optional().describe("Workout selector to validate: ID, 'today', 'last', 'yesterday', or YYYY-MM-DD"),
     },
     annotations: { destructiveHint: true },
   },
-    safeHandler("edit_workout", async ({ exercise, workout, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_workout, restore_workout, delete_workouts: rawDeleteWorkouts, validate_workout }) => {
+    safeHandler("edit_workout", async ({ exercise, workout, action, updates, set_numbers, set_ids, set_type_filter, bulk, update_session, delete_workout, restore_workout, delete_workouts: rawDeleteWorkouts, validate_workout }) => {
       const userId = getUserId();
+      const userDate = await getUserCurrentDate();
+
+      // --- Update session metadata mode ---
+      if (update_session) {
+        const resolved = await resolveWorkoutSelector(workout || "today", userId, userDate);
+        if (!resolved) {
+          return toolResponse({ error: `No workout found for "${workout || "today"}"` }, true);
+        }
+
+        const setClauses: string[] = [];
+        const params: (number | string | string[] | null)[] = [resolved.session_id, userId];
+
+        if (update_session.notes !== undefined) {
+          params.push(update_session.notes);
+          setClauses.push(`notes = $${params.length}`);
+        }
+        if (update_session.append_notes !== undefined) {
+          params.push(update_session.append_notes);
+          setClauses.push(`notes = COALESCE(notes || E'\\n' || $${params.length}, $${params.length})`);
+        }
+        if (update_session.tags !== undefined) {
+          params.push(update_session.tags);
+          setClauses.push(`tags = $${params.length}`);
+        }
+        if (update_session.add_tags !== undefined && update_session.add_tags.length > 0) {
+          params.push(update_session.add_tags);
+          setClauses.push(`tags = array_cat(tags, $${params.length}::text[])`);
+        }
+        if (update_session.remove_tags !== undefined && update_session.remove_tags.length > 0) {
+          params.push(update_session.remove_tags);
+          setClauses.push(`tags = array(SELECT unnest(tags) EXCEPT SELECT unnest($${params.length}::text[]))`);
+        }
+
+        if (setClauses.length === 0) {
+          return toolResponse({ error: "No updates provided in update_session" }, true);
+        }
+
+        const { rows } = await pool.query(
+          `UPDATE sessions SET ${setClauses.join(", ")}
+           WHERE id = $1 AND user_id = $2
+           RETURNING id, notes, tags, started_at`,
+          params
+        );
+
+        return toolResponse({
+          updated_session: true,
+          session_id: rows[0].id,
+          workout_date: rows[0].started_at.toISOString().split("T")[0],
+          notes: rows[0].notes,
+          tags: rows[0].tags,
+        });
+      }
 
       // --- Validate workout mode ---
       if (validate_workout !== undefined && validate_workout !== null) {
-        const workoutId = Number(validate_workout);
-        if (Number.isNaN(workoutId)) {
-          return toolResponse({ error: "Invalid workout ID" }, true);
+        const resolved = await resolveWorkoutSelector(validate_workout, userId, userDate);
+        if (!resolved) {
+          return toolResponse({ error: `Workout "${validate_workout}" not found` }, true);
         }
-
-        // Get workout and verify ownership
-        const { rows: workoutRows } = await pool.query(
-          "SELECT id, started_at, is_validated FROM sessions WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",
-          [workoutId, userId]
-        );
-        if (workoutRows.length === 0) {
-          return toolResponse({ error: `Workout ${validate_workout} not found` }, true);
-        }
-        if (workoutRows[0].is_validated) {
-          return toolResponse({ message: "Workout is already validated", workout_id: workoutId });
+        if (resolved.is_validated) {
+          return toolResponse({
+            message: "Workout is already validated",
+            session_id: resolved.session_id,
+            workout_date: resolved.started_at.toISOString().split("T")[0],
+          });
         }
 
         // Mark workout as validated
         await pool.query(
           "UPDATE sessions SET is_validated = true WHERE id = $1 AND user_id = $2",
-          [workoutId, userId]
+          [resolved.session_id, userId]
         );
 
         // Recalculate PRs for all exercises in this workout
@@ -110,12 +259,11 @@ Parameters:
            FROM session_exercises se
            JOIN exercises e ON e.id = se.exercise_id
            WHERE se.session_id = $1`,
-          [workoutId]
+          [resolved.session_id]
         );
 
         const allPRs: Array<{ exercise: string; prs: PRCheck[] }> = [];
         for (const se of workoutExercises) {
-          // Get all sets for this workout exercise
           const { rows: sets } = await pool.query<{ id: number; reps: number; weight: number | null }>(
             `SELECT id, reps, weight FROM sets WHERE session_exercise_id = $1`,
             [se.id]
@@ -139,32 +287,28 @@ Parameters:
 
         return toolResponse({
           validated: true,
-          workout_id: workoutId,
-          started_at: workoutRows[0].started_at,
+          session_id: resolved.session_id,
+          workout_date: resolved.started_at.toISOString().split("T")[0],
+          exercises_count: workoutExercises.length,
           new_prs: allPRs.length > 0 ? allPRs : undefined,
         });
       }
 
       // --- Restore workout mode ---
       if (restore_workout !== undefined && restore_workout !== null) {
-        const workoutId = Number(restore_workout);
-        if (Number.isNaN(workoutId)) {
-          return toolResponse({ error: "Invalid workout ID" }, true);
+        const resolved = await resolveWorkoutSelector(restore_workout, userId, userDate, { includeDeleted: true });
+        if (!resolved) {
+          return toolResponse({ error: `Workout "${restore_workout}" not found` }, true);
         }
-        const { rows: workoutRows } = await pool.query(
-          "SELECT id, started_at, deleted_at FROM sessions WHERE id = $1 AND user_id = $2",
-          [workoutId, userId]
-        );
-        if (workoutRows.length === 0) {
-          return toolResponse({ error: `Workout ${restore_workout} not found` }, true);
+        if (!resolved.deleted_at) {
+          return toolResponse({ error: `Workout is not deleted`, session_id: resolved.session_id }, true);
         }
-        if (!workoutRows[0].deleted_at) {
-          return toolResponse({ error: `Workout ${restore_workout} is not deleted` }, true);
-        }
-        await pool.query("UPDATE sessions SET deleted_at = NULL WHERE id = $1 AND user_id = $2", [workoutId, userId]);
+
+        await pool.query("UPDATE sessions SET deleted_at = NULL WHERE id = $1 AND user_id = $2", [resolved.session_id, userId]);
+
         return toolResponse({
-          restored_workout: workoutId,
-          started_at: workoutRows[0].started_at,
+          restored_workout: resolved.session_id,
+          workout_date: resolved.started_at.toISOString().split("T")[0],
         });
       }
 
@@ -175,23 +319,24 @@ Parameters:
           return toolResponse({ error: "delete_workouts requires an array of workout IDs" }, true);
         }
 
-        // Convert to numbers and filter invalid
         const numericIds = workoutIds.map(id => Number(id)).filter(id => !Number.isNaN(id));
         if (numericIds.length === 0) {
           return toolResponse({ error: "No valid workout IDs provided" }, true);
         }
 
-        // Single batch query for better performance
         const { rows } = await pool.query(
           `UPDATE sessions SET deleted_at = NOW()
            WHERE id = ANY($1::int[]) AND user_id = $2 AND deleted_at IS NULL
-           RETURNING id`,
+           RETURNING id, started_at`,
           [numericIds, userId]
         );
 
-        const deleted = rows.map((r: { id: number }) => r.id);
-        const deletedSet = new Set(deleted);
-        const not_found = numericIds.filter(id => !deletedSet.has(id));
+        const deleted = rows.map((r: { id: number; started_at: Date }) => ({
+          session_id: r.id,
+          workout_date: r.started_at.toISOString().split("T")[0],
+        }));
+        const deletedIds = new Set(rows.map((r: { id: number }) => r.id));
+        const not_found = numericIds.filter(id => !deletedIds.has(id));
 
         return toolResponse({
           deleted,
@@ -201,30 +346,28 @@ Parameters:
 
       // --- Delete workout mode (soft delete) ---
       if (delete_workout !== undefined && delete_workout !== null) {
-        const workoutId = Number(delete_workout);
-        if (Number.isNaN(workoutId)) {
-          return toolResponse({ error: "Invalid workout ID" }, true);
-        }
-        // Verify ownership
-        const { rows: workoutRows } = await pool.query(
-          "SELECT id, started_at, ended_at FROM sessions WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",
-          [workoutId, userId]
-        );
-        if (workoutRows.length === 0) {
-          return toolResponse({ error: `Workout ${delete_workout} not found` }, true);
+        const resolved = await resolveWorkoutSelector(delete_workout, userId, userDate);
+        if (!resolved) {
+          return toolResponse({ error: `Workout "${delete_workout}" not found` }, true);
         }
 
-        await pool.query("UPDATE sessions SET deleted_at = NOW() WHERE id = $1 AND user_id = $2", [workoutId, userId]);
+        // Get exercise count before deleting
+        const { rows: countRows } = await pool.query(
+          `SELECT COUNT(*)::int as count FROM session_exercises WHERE session_id = $1`,
+          [resolved.session_id]
+        );
+
+        await pool.query("UPDATE sessions SET deleted_at = NOW() WHERE id = $1 AND user_id = $2", [resolved.session_id, userId]);
 
         return toolResponse({
-          deleted_workout: workoutId,
-          started_at: workoutRows[0].started_at,
+          deleted_workout: resolved.session_id,
+          workout_date: resolved.started_at.toISOString().split("T")[0],
+          exercises_count: countRows[0].count,
         });
       }
 
       // --- Bulk mode ---
       if (bulk && bulk.length > 0) {
-        const userDate = await getUserCurrentDate();
         const results = [];
         for (const entry of bulk) {
           const entryAction = entry.action || action || "update";
@@ -253,7 +396,6 @@ Parameters:
         return toolResponse({ error: "action is required for single mode" }, true);
       }
 
-      const userDate = await getUserCurrentDate();
       const result = await processSingleEdit({
         userId,
         exercise,
@@ -276,7 +418,8 @@ Parameters:
 }
 
 async function processSingleEdit(params: EditParams): Promise<Record<string, unknown>> {
-  const { userId, exercise, workout, action, updates, set_numbers, set_ids, set_type_filter, userDate } = params;
+  const { userId, exercise, workout, action, updates, set_ids, set_type_filter, userDate } = params;
+  let { set_numbers } = params;
 
   const resolved = await findExercise(exercise);
   if (!resolved) {
@@ -291,6 +434,11 @@ async function processSingleEdit(params: EditParams): Promise<Record<string, unk
     workoutFilter = `AND s.started_at >= $${queryParams.length}::date AND s.started_at < $${queryParams.length}::date + INTERVAL '1 day'`;
   } else if (workout === "last") {
     workoutFilter = "";
+  } else if (workout === "yesterday") {
+    const yesterday = new Date(userDate);
+    yesterday.setDate(yesterday.getDate() - 1);
+    queryParams.push(yesterday.toISOString().split("T")[0]);
+    workoutFilter = `AND s.started_at >= $${queryParams.length}::date AND s.started_at < $${queryParams.length}::date + INTERVAL '1 day'`;
   } else {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(workout)) {
       return { error: "Invalid date format. Use YYYY-MM-DD" };
@@ -303,7 +451,7 @@ async function processSingleEdit(params: EditParams): Promise<Record<string, unk
     workoutFilter = `AND s.started_at >= $${queryParams.length}::date AND s.started_at < $${queryParams.length}::date + INTERVAL '1 day'`;
   }
 
-  // Get ALL session_exercises for that exercise in that workout (handles legacy data with multiple entries)
+  // Get ALL session_exercises for that exercise in that workout
   const { rows: workoutExercises } = await pool.query(
     `SELECT se.id, s.id as session_id, s.started_at
      FROM session_exercises se
@@ -319,11 +467,28 @@ async function processSingleEdit(params: EditParams): Promise<Record<string, unk
 
   // Collect all session_exercise IDs (for the most recent workout)
   const targetSessionId = workoutExercises[0].session_id;
+  const workoutDate = workoutExercises[0].started_at.toISOString().split("T")[0];
   const seIds = workoutExercises
     .filter((se: { session_id: number }) => se.session_id === targetSessionId)
     .map((se: { id: number }) => se.id);
 
+  // Resolve negative set numbers
+  if (set_numbers && set_numbers.length > 0) {
+    set_numbers = await resolveSetNumbers(set_numbers, seIds);
+    if (set_numbers.length === 0) {
+      return { error: "No valid set numbers after resolving negative indices" };
+    }
+  }
+
+  // Get total sets count for context
+  const { rows: totalSetsRows } = await pool.query(
+    `SELECT COUNT(*)::int as total FROM sets WHERE session_exercise_id = ANY($1)`,
+    [seIds]
+  );
+  const totalSets = totalSetsRows[0].total;
+
   if (action === "delete") {
+    let deletedCount = 0;
     for (const seId of seIds) {
       const deleteParams: (number | number[] | string)[] = [seId];
       const conditions: string[] = ["session_exercise_id = $1"];
@@ -341,16 +506,17 @@ async function processSingleEdit(params: EditParams): Promise<Record<string, unk
         conditions.push(`set_type = $${deleteParams.length}`);
       }
 
-      await pool.query(
+      const { rowCount } = await pool.query(
         `DELETE FROM sets WHERE ${conditions.join(" AND ")}`,
         deleteParams
       );
+      deletedCount += rowCount ?? 0;
 
-      // If no specific filter was used (deleting all), also delete the session_exercise
+      // If no specific filter was used, also delete the session_exercise
       if (!set_ids && !set_numbers && !set_type_filter) {
         await pool.query(`DELETE FROM session_exercises WHERE id = $1`, [seId]);
       } else {
-        // Check if any sets remain; if not, clean up the session_exercise
+        // Check if any sets remain
         const { rows: remainingRows } = await pool.query(
           `SELECT 1 FROM sets WHERE session_exercise_id = $1 LIMIT 1`,
           [seId]
@@ -361,9 +527,21 @@ async function processSingleEdit(params: EditParams): Promise<Record<string, unk
       }
     }
 
+    // Get remaining sets for context
+    const { rows: remainingSets } = await pool.query(
+      `SELECT id as set_id, set_number, reps, weight, rpe, set_type, notes
+       FROM sets WHERE session_exercise_id = ANY($1) ORDER BY set_number`,
+      [seIds]
+    );
+
     return {
       deleted: true,
       exercise: resolved.name,
+      session_id: targetSessionId,
+      workout_date: workoutDate,
+      sets_deleted: deletedCount,
+      sets_remaining: remainingSets.length,
+      remaining_sets: remainingSets.length > 0 ? remainingSets : undefined,
       set_numbers: set_numbers || undefined,
       set_ids: set_ids || undefined,
       set_type_filter: set_type_filter || undefined,
@@ -444,7 +622,10 @@ async function processSingleEdit(params: EditParams): Promise<Record<string, unk
 
   return {
     exercise: resolved.name,
+    session_id: targetSessionId,
+    workout_date: workoutDate,
     sets_updated: totalUpdated,
+    total_sets: totalSets,
     updated_sets: allUpdatedSets,
   };
 }

@@ -167,7 +167,7 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 | `get_today_plan` | no params — today's day + exercises + last workout (read-only, no workout created) |
 | `get_workouts` | period, exercise?, program_day?, tags? filter, workout_id for specific workout |
 | `get_stats` | single (`exercise`) or multi (`exercises[]`), period — PRs, progression, volume, frequency |
-| `edit_workout` | update/delete sets, bulk[], delete_workout, restore_workout, delete_workouts[], validate_workout |
+| `edit_workout` | update/delete sets, bulk[], update_session, delete_workout, restore_workout, delete_workouts[], validate_workout. Supports semantic workout selectors ("today", "last", "yesterday", date, ID) for all workout-level actions. Supports negative set indices (-1 = last set). Responses include session_id, workout_date, total_sets for context. |
 | `manage_measurements` | log, history, latest — temporal tracking (weight_kg, body_fat_pct, chest_cm, etc.) |
 | `export_data` | json or csv — scopes: all, sessions, exercises, programs, measurements, prs; period filter |
 
