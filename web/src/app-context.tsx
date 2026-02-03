@@ -152,9 +152,21 @@ function OpenAiProvider({ children }: { children: ReactNode }) {
 
   const callTool = useCallback(
     async (name: string, args: Record<string, any> = {}) => {
-      if (!window.openai?.callTool) return null;
-      const result = await window.openai.callTool(name, args);
-      return parseToolContent(result);
+      if (!window.openai?.callTool) {
+        console.warn("[openai] callTool not available");
+        return null;
+      }
+      console.log("[openai] calling tool:", name, args);
+      try {
+        const result = await window.openai.callTool(name, args);
+        console.log("[openai] raw result:", result);
+        const parsed = parseToolContent(result);
+        console.log("[openai] parsed result:", parsed);
+        return parsed;
+      } catch (err) {
+        console.error("[openai] callTool error:", err);
+        throw err;
+      }
     },
     [],
   );

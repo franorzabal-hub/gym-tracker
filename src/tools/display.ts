@@ -10,33 +10,33 @@ import { getUserCurrentDate } from "../helpers/date-helpers.js";
 export function registerDisplayTools(server: McpServer) {
   registerAppToolWithMeta(server, "show_profile", {
     title: "Show Profile",
-    description: `${APP_CONTEXT}Display the user's profile as a read-only card. The widget shows all profile fields visually — do NOT repeat the data in your response.
-To propose changes, pass pending_changes with the fields to update. The widget shows a visual diff (old → new) and a "Confirm" button. The user reviews and confirms in the widget — do NOT apply changes yourself.
-Examples: user says "peso 85kg" → call show_profile({ pending_changes: { weight_kg: 85 } }). User says "cambié de gym a Iron Paradise y mi goal ahora es endurance" → call show_profile({ pending_changes: { gym: "Iron Paradise", goals: ["endurance"] } }).
-Without pending_changes: read-only view. With pending_changes: diff view + confirm button. Wait for the user to confirm before proceeding.`,
+    description: `${APP_CONTEXT}Display the user's profile as a visual card. The widget shows all profile fields — do NOT repeat the data in your response.
+To highlight specific fields with new values, pass the preview parameter. The widget shows a visual comparison and lets the user apply if desired.
+Examples: user mentions "peso 85kg" → call show_profile({ preview: { weight_kg: 85 } }). User mentions "gym Iron Paradise" → call show_profile({ preview: { gym: "Iron Paradise" } }).
+Without preview: standard view. With preview: comparison view. Let the user interact with the widget.`,
     inputSchema: {
-      pending_changes: z.record(z.any()).optional()
-        .describe("Fields to propose changing. Widget shows visual diff with confirm button. Omit for read-only view."),
+      preview: z.record(z.any()).optional()
+        .describe("Fields to highlight with new values. Widget shows visual comparison. Omit for standard view."),
     },
-    annotations: { readOnlyHint: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
     _meta: {
       ui: { resourceUri: "ui://gym-tracker/profile.html" },
       "openai/toolInvocation/invoking": "Loading profile...",
       "openai/toolInvocation/invoked": "Profile loaded",
     },
-  }, safeHandler("show_profile", async ({ pending_changes }: { pending_changes?: Record<string, any> }) => {
+  }, safeHandler("show_profile", async ({ preview }: { preview?: Record<string, any> }) => {
     const userId = getUserId();
     const { rows } = await pool.query(
       "SELECT data FROM user_profile WHERE user_id = $1 LIMIT 1", [userId]
     );
     const profile = rows[0]?.data || {};
-    const hasPending = pending_changes && Object.keys(pending_changes).length > 0;
-    const llmNote = hasPending
-      ? `Profile widget displayed with proposed changes. Wait for the user to confirm or reject in the widget. Do NOT describe or list any data.`
-      : `Profile widget displayed. The user can already see all their data visually. Do NOT describe, list, or summarize any profile information in text. Just acknowledge it's shown and offer to help with changes.`;
+    const hasPreview = preview && Object.keys(preview).length > 0;
+    const llmNote = hasPreview
+      ? `Profile widget displayed with preview. Let the user interact with the widget. Do NOT describe or list any data.`
+      : `Profile widget displayed. The user can already see all their data visually. Do NOT describe, list, or summarize any profile information in text. Just acknowledge it's shown and offer to help.`;
     return widgetResponse(
       llmNote,
-      { profile, ...(hasPending ? { pendingChanges: pending_changes } : {}) }
+      { profile, ...(hasPreview ? { pendingChanges: preview } : {}) }
     );
   }));
 

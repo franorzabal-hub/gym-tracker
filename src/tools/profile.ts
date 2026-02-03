@@ -35,7 +35,11 @@ Example: user says "entreno lunes miercoles y viernes" → update with { "traini
         action: z.enum(["get", "update"]),
         data: z.record(z.any()).optional(),
       },
-      annotations: {},
+      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
+      _meta: {
+        "openai/visibility": "private",
+        "openai/widgetAccessible": true,
+      },
     },
     safeHandler("manage_profile", async ({ action, data }) => {
       const userId = getUserId();

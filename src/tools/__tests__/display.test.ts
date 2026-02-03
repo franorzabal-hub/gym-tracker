@@ -50,8 +50,8 @@ describe("show_profile display tool", () => {
       "show_profile",
       expect.objectContaining({
         title: "Show Profile",
-        annotations: { readOnlyHint: false },
-        inputSchema: expect.objectContaining({ pending_changes: expect.anything() }),
+        annotations: { readOnlyHint: true, openWorldHint: false },
+        inputSchema: expect.objectContaining({ preview: expect.anything() }),
         _meta: expect.objectContaining({ ui: { resourceUri: "ui://gym-tracker/profile.html" } }),
       }),
       expect.any(Function)
@@ -77,23 +77,23 @@ describe("show_profile display tool", () => {
     expect(result.content[0].text).toContain("Do NOT describe");
   });
 
-  it("includes pendingChanges when pending_changes provided", async () => {
+  it("includes pendingChanges when preview provided", async () => {
     mockQuery.mockResolvedValueOnce({
       rows: [{ data: { name: "Franco", weight_kg: 80, gym: "SmartFit" } }],
     });
 
-    const result = await toolHandlers["show_profile"]({ pending_changes: { weight_kg: 85, gym: "Iron Paradise" } });
+    const result = await toolHandlers["show_profile"]({ preview: { weight_kg: 85, gym: "Iron Paradise" } });
     expect(result.structuredContent.profile).toEqual({ name: "Franco", weight_kg: 80, gym: "SmartFit" });
     expect(result.structuredContent.pendingChanges).toEqual({ weight_kg: 85, gym: "Iron Paradise" });
-    expect(result.content[0].text).toContain("proposed changes");
+    expect(result.content[0].text).toContain("preview");
   });
 
-  it("omits pendingChanges when pending_changes is empty object", async () => {
+  it("omits pendingChanges when preview is empty object", async () => {
     mockQuery.mockResolvedValueOnce({
       rows: [{ data: { name: "Franco" } }],
     });
 
-    const result = await toolHandlers["show_profile"]({ pending_changes: {} });
+    const result = await toolHandlers["show_profile"]({ preview: {} });
     expect(result.structuredContent.pendingChanges).toBeUndefined();
     expect(result.content[0].text).toContain("Do NOT describe");
   });

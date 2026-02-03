@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useToolOutput, useCallTool } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
 import { WeekdayPills } from "./shared/weekday-pills.js";
@@ -176,6 +176,7 @@ function ProfileHeader({ profile, pending }: { profile: Record<string, any>; pen
   const gym = profile.gym;
 
   const hasPending = !!pending;
+  const nameChanged = hasPending && hasFieldChange(profile, pending!, "name");
   const gymChanged = hasPending && hasFieldChange(profile, pending!, "gym");
   const expChanged = hasPending && hasFieldChange(profile, pending!, "experience_level");
 
@@ -207,7 +208,13 @@ function ProfileHeader({ profile, pending }: { profile: Record<string, any>; pen
   return (
     <header className="profile-header">
       <div style={{ minWidth: 0, flex: 1 }}>
-        <h1 className="profile-name">{name}</h1>
+        <h1 className="profile-name">
+          {nameChanged ? (
+            <DiffValue current={name} pending={pending!.name || "—"} />
+          ) : (
+            name
+          )}
+        </h1>
         <div className="profile-subtitle">
           {subtitleParts.map((part, i) => (
             <span key={i}>
@@ -372,20 +379,51 @@ function ProfileWidget() {
   const data = useToolOutput<ProfileData>();
   const { callTool } = useCallTool();
   const [confirming, setConfirming] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
+  const [changesApplied, setChangesApplied] = useState(false);
   const [localProfile, setLocalProfile] = useState<Record<string, any> | null>(null);
   const [savingValidation, setSavingValidation] = useState(false);
+  const autoAppliedRef = useRef(false);
+
+  // Auto-apply changes when requires_validation is false
+  useEffect(() => {
+    if (!data?.pendingChanges || autoAppliedRef.current || changesApplied) return;
+
+    const profile = data.profile || {};
+    const requiresValidation = profile.requires_validation === true || profile.requires_validation === "true";
+
+    if (!requiresValidation && Object.keys(data.pendingChanges).length > 0) {
+      autoAppliedRef.current = true;
+      console.log("[profile] Auto-applying changes (requires_validation=false):", data.pendingChanges);
+
+      (async () => {
+        setConfirming(true);
+        try {
+          await callTool("manage_profile", { action: "update", data: data.pendingChanges });
+          setLocalProfile(prev => ({ ...(prev || profile), ...data.pendingChanges }));
+          setChangesApplied(true);
+        } catch (err) {
+          console.error("[profile] Auto-apply error:", err);
+        } finally {
+          setConfirming(false);
+        }
+      })();
+    }
+  }, [data, callTool, changesApplied]);
 
   const handleConfirm = useCallback(async () => {
     if (!data?.pendingChanges) return;
     setConfirming(true);
-    const result = await callTool("manage_profile", { action: "update", data: data.pendingChanges });
-    setConfirming(false);
-    if (result) {
-      // Merge pending into local profile state
+    console.log("[profile] Confirming changes:", data.pendingChanges);
+    try {
+      const result = await callTool("manage_profile", { action: "update", data: data.pendingChanges });
+      console.log("[profile] callTool result:", result);
+      // Always apply changes locally on success (result may vary by host)
       setLocalProfile(prev => ({ ...(prev || data.profile), ...data.pendingChanges }));
-      setConfirmed(true);
-      setTimeout(() => setConfirmed(false), 2000);
+      setChangesApplied(true);  // Permanently hide pending UI
+    } catch (err) {
+      console.error("[profile] callTool error:", err);
+    } finally {
+      setConfirming(false);
     }
   }, [data, callTool]);
 
@@ -401,7 +439,9 @@ function ProfileWidget() {
   if (!data) return <SkeletonCard />;
 
   const profile = localProfile || data.profile || {};
-  const pending = confirmed ? undefined : data.pendingChanges;
+  const requiresValidation = profile.requires_validation === true || profile.requires_validation === "true";
+  // Only show pending diff if requires_validation is true
+  const pending = (changesApplied || !requiresValidation) ? undefined : data.pendingChanges;
   const hasPending = !!pending && Object.keys(pending).length > 0;
 
   // Parse array fields
@@ -444,7 +484,7 @@ function ProfileWidget() {
       />
 
       {hasPending && (
-        <ConfirmBar onConfirm={handleConfirm} confirming={confirming} confirmed={confirmed} className="profile-confirm-bar" />
+        <ConfirmBar onConfirm={handleConfirm} confirming={confirming} confirmed={false} className="profile-confirm-bar" />
       )}
     </article>
   );

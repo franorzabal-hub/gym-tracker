@@ -72,8 +72,15 @@ Manage via: `gcloud run services update gym-tracker --region us-central1 --proje
 
 ### Daily workflow
 1. `DEV_USER_ID=1 npm run dev` (server on port 3001, migrations auto-apply)
-2. For widget development: `cd web && npm run dev:host` → opens http://localhost:5173/test-host.html with HMR
-3. For production/Claude Desktop: `cd web && npm run build` (only needed when done iterating)
+2. `cloudflared tunnel --protocol http2 run gym-tracker` (exposes local server at https://gym-tracker.1kairos.com)
+3. For widget development: `cd web && npm run dev:host` → opens http://localhost:5173/test-host.html with HMR
+4. For production/Claude Desktop: `cd web && npm run build` (only needed when done iterating)
+
+### Local dev tunnel
+The named Cloudflare tunnel `gym-tracker` routes `https://gym-tracker.1kairos.com` → `localhost:3001`.
+- MCP endpoint: `https://gym-tracker.1kairos.com/mcp`
+- Tunnel ID: `acc9fe70-c92d-4a49-9a19-f836409a0bed`
+- Credentials: `~/.cloudflared/acc9fe70-c92d-4a49-9a19-f836409a0bed.json`
 
 ### Database management
 - Dev branch is isolated from prod (copy-on-write)
@@ -127,12 +134,12 @@ user_profile (user_id FK UNIQUE, data JSONB)
 exercises (user_id FK nullable, name, muscle_group, equipment, rep_type, exercise_type, description)
   → UNIQUE on (COALESCE(user_id, 0), LOWER(name)) — global (user_id NULL) + per-user
 exercise_aliases (exercise_id FK, alias UNIQUE)
-programs (user_id FK nullable, name, is_active) → program_versions → program_days → program_day_exercises (group_id FK, section_id FK, rest_seconds, target_reps_per_set INTEGER[], target_weight_per_set REAL[])
+programs (user_id FK nullable, name, is_active, is_validated) → program_versions → program_days → program_day_exercises (group_id FK, section_id FK, rest_seconds, target_reps_per_set INTEGER[], target_weight_per_set REAL[])
   → user_id NULL = global template program; user_id set = user-owned program
   → per-set arrays: NULL = uniform (use scalar target_reps/target_weight), array = per-set progression (length = target_sets)
 program_exercise_groups (day_id FK, group_type CHECK superset|paired|circuit, label, notes, rest_seconds, sort_order)
 program_sections (day_id FK CASCADE, label, notes, sort_order)
-sessions (user_id FK, started_at, ended_at, tags TEXT[], deleted_at) → session_exercises (group_id FK, section_id FK, rest_seconds) → sets (notes)
+sessions (user_id FK, started_at, ended_at, tags TEXT[], deleted_at, is_validated) → session_exercises (group_id FK, section_id FK, rest_seconds) → sets (notes)
 session_exercise_groups (session_id FK, group_type, label, notes, rest_seconds, sort_order)
 session_sections (session_id FK CASCADE, label, notes, sort_order)
 personal_records (user_id FK, exercise_id FK, record_type) UNIQUE per user+exercise+type
@@ -216,7 +223,7 @@ Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture
 
 ## Migrations
 
-18 migrations in `src/db/migrations/` (001–018). Each file is self-describing — read the SQL for details. Auto-applied on server startup via `runMigrations()`.
+19 migrations in `src/db/migrations/` (001–019). Each file is self-describing — read the SQL for details. Auto-applied on server startup via `runMigrations()`.
 
 ## Pending (Phase 3)
 
