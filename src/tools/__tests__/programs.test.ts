@@ -36,6 +36,11 @@ vi.mock("../../helpers/program-helpers.js", () => ({
   getLatestVersion: vi.fn(),
   getProgramDaysWithExercises: vi.fn(),
   cloneVersion: vi.fn(),
+  findProgramExercises: vi.fn(),
+  getProgramExerciseById: vi.fn(),
+  findProgramDays: vi.fn(),
+  getProgramDayById: vi.fn(),
+  formatExerciseContext: vi.fn().mockImplementation((m) => `${m.target_sets}×${m.target_reps} @ ${m.target_weight}kg`),
 }));
 
 vi.mock("../../helpers/group-helpers.js", () => ({
@@ -56,7 +61,10 @@ vi.mock("../../context/user-context.js", () => ({
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerProgramTool } from "../programs.js";
-import { getActiveProgram, getLatestVersion, getProgramDaysWithExercises } from "../../helpers/program-helpers.js";
+import {
+  getActiveProgram, getLatestVersion, getProgramDaysWithExercises,
+  findProgramExercises, getProgramExerciseById, findProgramDays, getProgramDayById
+} from "../../helpers/program-helpers.js";
 import { resolveExercise, resolveExercisesBatch } from "../../helpers/exercise-resolver.js";
 
 const mockGetActiveProgram = getActiveProgram as ReturnType<typeof vi.fn>;
@@ -64,6 +72,10 @@ const mockGetLatestVersion = getLatestVersion as ReturnType<typeof vi.fn>;
 const mockGetDays = getProgramDaysWithExercises as ReturnType<typeof vi.fn>;
 const mockResolveExercise = resolveExercise as ReturnType<typeof vi.fn>;
 const mockResolveExercisesBatch = resolveExercisesBatch as ReturnType<typeof vi.fn>;
+const mockFindProgramExercises = findProgramExercises as ReturnType<typeof vi.fn>;
+const mockGetProgramExerciseById = getProgramExerciseById as ReturnType<typeof vi.fn>;
+const mockFindProgramDays = findProgramDays as ReturnType<typeof vi.fn>;
+const mockGetProgramDayById = getProgramDayById as ReturnType<typeof vi.fn>;
 
 let toolHandler: Function;
 
@@ -90,6 +102,10 @@ describe("manage_program tool", () => {
     mockInsertGroup.mockImplementation(() => Promise.resolve(gid++));
     mockCloneGroups.mockReset();
     mockCloneGroups.mockResolvedValue(new Map());
+    mockFindProgramExercises.mockReset();
+    mockGetProgramExerciseById.mockReset();
+    mockFindProgramDays.mockReset();
+    mockGetProgramDayById.mockReset();
 
     const server = {
       registerTool: vi.fn((_name: string, _config: any, handler: Function) => {
@@ -1270,5 +1286,366 @@ describe("manage_program tool", () => {
   it("returns error for unknown action", async () => {
     const result = await toolHandler({ action: "unknown" });
     expect(result.isError).toBe(true);
+  });
+
+  // ========== PATCH_EXERCISE ACTION ==========
+
+  describe("patch_exercise action", () => {
+    it("updates exercise by ID", async () => {
+      mockGetProgramExerciseById.mockResolvedValueOnce({
+        program_day_exercise_id: 42,
+        day_id: 1,
+        target_sets: 3,
+        target_reps: 10,
+        target_weight: 80,
+      });
+      mockQuery.mockResolvedValueOnce({}); // UPDATE
+
+      const result = await toolHandler({
+        action: "patch_exercise",
+        program_day_exercise_id: 42,
+        weight: 85,
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.updated).toBe(true);
+      expect(parsed.program_day_exercise_id).toBe(42);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE program_day_exercises"),
+        expect.arrayContaining([85])
+      );
+    });
+
+    it("updates exercise by day + name (single match)", async () => {
+      mockFindProgramExercises.mockResolvedValueOnce([{
+        program_day_exercise_id: 42,
+        day_id: 1,
+        target_sets: 3,
+        target_reps: 10,
+        target_weight: 80,
+      }]);
+      mockQuery.mockResolvedValueOnce({});
+
+      const result = await toolHandler({
+        action: "patch_exercise",
+        day: "Día 1",
+        exercise: "bicho muerto",
+        weight: 35,
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.updated).toBe(true);
+    });
+
+    it("returns ambiguous when multiple matches found", async () => {
+      mockFindProgramExercises.mockResolvedValueOnce([
+        { program_day_exercise_id: 42, target_sets: 3, target_reps: 12, target_weight: 30, section_label: "Entrada en calor" },
+        { program_day_exercise_id: 67, target_sets: 4, target_reps: 8, target_weight: 40, section_label: "Trabajo principal" },
+      ]);
+
+      const result = await toolHandler({
+        action: "patch_exercise",
+        day: "Día 1",
+        exercise: "bicho muerto",
+        weight: 35,
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.ambiguous).toBe(true);
+      expect(parsed.matches).toHaveLength(2);
+      expect(parsed.matches[0].program_day_exercise_id).toBe(42);
+      expect(parsed.matches[1].program_day_exercise_id).toBe(67);
+    });
+
+    it("returns error when exercise not found", async () => {
+      mockFindProgramExercises.mockResolvedValueOnce([]);
+
+      const result = await toolHandler({
+        action: "patch_exercise",
+        day: "Día 1",
+        exercise: "nonexistent",
+        weight: 35,
+      });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("not found");
+    });
+
+    it("returns error when no fields to update", async () => {
+      mockGetProgramExerciseById.mockResolvedValueOnce({ program_day_exercise_id: 42 });
+
+      const result = await toolHandler({
+        action: "patch_exercise",
+        program_day_exercise_id: 42,
+      });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("No fields to update");
+    });
+
+    it("handles per-set reps array", async () => {
+      mockGetProgramExerciseById.mockResolvedValueOnce({ program_day_exercise_id: 42 });
+      mockQuery.mockResolvedValueOnce({});
+
+      await toolHandler({
+        action: "patch_exercise",
+        program_day_exercise_id: 42,
+        reps: [12, 10, 8],
+      });
+
+      const updateArgs = mockQuery.mock.calls[0][1];
+      expect(updateArgs[0]).toBe(12); // target_reps = first
+      expect(updateArgs[1]).toEqual([12, 10, 8]); // target_reps_per_set
+    });
+
+    it("handles per-set weight array", async () => {
+      mockGetProgramExerciseById.mockResolvedValueOnce({ program_day_exercise_id: 42 });
+      mockQuery.mockResolvedValueOnce({});
+
+      await toolHandler({
+        action: "patch_exercise",
+        program_day_exercise_id: 42,
+        weight: [80, 85, 90],
+      });
+
+      const updateArgs = mockQuery.mock.calls[0][1];
+      expect(updateArgs[0]).toBe(80); // target_weight = first
+      expect(updateArgs[1]).toEqual([80, 85, 90]); // target_weight_per_set
+    });
+
+    it("handles null weight to clear", async () => {
+      mockGetProgramExerciseById.mockResolvedValueOnce({ program_day_exercise_id: 42 });
+      mockQuery.mockResolvedValueOnce({});
+
+      await toolHandler({
+        action: "patch_exercise",
+        program_day_exercise_id: 42,
+        weight: null,
+      });
+
+      const updateArgs = mockQuery.mock.calls[0][1];
+      expect(updateArgs[0]).toBeNull(); // target_weight
+      expect(updateArgs[1]).toBeNull(); // target_weight_per_set
+    });
+  });
+
+  // ========== PATCH_DAY ACTION ==========
+
+  describe("patch_day action", () => {
+    it("updates day label by ID", async () => {
+      mockGetProgramDayById.mockResolvedValueOnce({ day_id: 10, day_label: "Push" });
+      mockQuery.mockResolvedValueOnce({});
+
+      const result = await toolHandler({
+        action: "patch_day",
+        day_id: 10,
+        new_label: "Push Day",
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.updated).toBe(true);
+      expect(parsed.day_id).toBe(10);
+      expect(parsed.new_label).toBe("Push Day");
+    });
+
+    it("updates day by label (single match)", async () => {
+      mockFindProgramDays.mockResolvedValueOnce([{ day_id: 10 }]);
+      mockQuery.mockResolvedValueOnce({});
+
+      const result = await toolHandler({
+        action: "patch_day",
+        day: "Push",
+        new_label: "Push Day",
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.updated).toBe(true);
+    });
+
+    it("updates weekdays", async () => {
+      mockGetProgramDayById.mockResolvedValueOnce({ day_id: 10 });
+      mockQuery.mockResolvedValueOnce({});
+
+      await toolHandler({
+        action: "patch_day",
+        day_id: 10,
+        weekdays: [1, 3, 5],
+      });
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE program_days"),
+        expect.arrayContaining([[1, 3, 5]])
+      );
+    });
+
+    it("returns error when day not found", async () => {
+      mockFindProgramDays.mockResolvedValueOnce([]);
+
+      const result = await toolHandler({
+        action: "patch_day",
+        day: "Nonexistent",
+        new_label: "Test",
+      });
+      expect(result.isError).toBe(true);
+    });
+
+    it("returns error when no fields to update", async () => {
+      mockGetProgramDayById.mockResolvedValueOnce({ day_id: 10 });
+
+      const result = await toolHandler({
+        action: "patch_day",
+        day_id: 10,
+      });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("No fields to update");
+    });
+  });
+
+  // ========== ADD_EXERCISE ACTION ==========
+
+  describe("add_exercise action", () => {
+    it("adds exercise to day", async () => {
+      mockFindProgramDays.mockResolvedValueOnce([{ day_id: 10, day_label: "Push" }]);
+      mockResolveExercise.mockResolvedValueOnce({ id: 5, name: "Bench Press", isNew: false });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ next: 3 }] }) // MAX sort_order
+        .mockResolvedValueOnce({ rows: [{ id: 99 }] }) // INSERT
+        .mockResolvedValueOnce({}); // COMMIT
+
+      const result = await toolHandler({
+        action: "add_exercise",
+        day: "Push",
+        exercise: "Bench Press",
+        sets: 4,
+        reps: 8,
+        weight: 100,
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.added).toBe(true);
+      expect(parsed.program_day_exercise_id).toBe(99);
+      expect(parsed.exercise).toBe("Bench Press");
+      expect(parsed.day).toBe("Push");
+    });
+
+    it("creates new exercise if not found", async () => {
+      mockFindProgramDays.mockResolvedValueOnce([{ day_id: 10, day_label: "Push" }]);
+      mockResolveExercise.mockResolvedValueOnce({ id: 99, name: "New Exercise", isNew: true });
+      mockClientQuery
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ rows: [{ next: 0 }] })
+        .mockResolvedValueOnce({ rows: [{ id: 50 }] })
+        .mockResolvedValueOnce({});
+
+      const result = await toolHandler({
+        action: "add_exercise",
+        day: "Push",
+        exercise: "New Exercise",
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.exercise_created).toBe(true);
+    });
+
+    it("returns error when exercise name missing", async () => {
+      const result = await toolHandler({
+        action: "add_exercise",
+        day: "Push",
+      });
+      expect(result.isError).toBe(true);
+    });
+
+    it("returns error when day not found", async () => {
+      mockFindProgramDays.mockResolvedValueOnce([]);
+
+      const result = await toolHandler({
+        action: "add_exercise",
+        day: "Nonexistent",
+        exercise: "Bench",
+      });
+      expect(result.isError).toBe(true);
+    });
+
+    it("handles per-set arrays", async () => {
+      mockFindProgramDays.mockResolvedValueOnce([{ day_id: 10, day_label: "Push" }]);
+      mockResolveExercise.mockResolvedValueOnce({ id: 5, name: "Bench", isNew: false });
+      mockClientQuery
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ rows: [{ next: 0 }] })
+        .mockResolvedValueOnce({ rows: [{ id: 50 }] })
+        .mockResolvedValueOnce({});
+
+      await toolHandler({
+        action: "add_exercise",
+        day: "Push",
+        exercise: "Bench",
+        sets: 3,
+        reps: [12, 10, 8],
+        weight: [80, 85, 90],
+      });
+
+      // INSERT is the 3rd call (index 2)
+      const insertArgs = mockClientQuery.mock.calls[2][1];
+      expect(insertArgs[3]).toBe(12); // target_reps = first
+      expect(insertArgs[4]).toBe(80); // target_weight = first
+      expect(insertArgs[11]).toEqual([12, 10, 8]); // target_reps_per_set
+      expect(insertArgs[12]).toEqual([80, 85, 90]); // target_weight_per_set
+    });
+  });
+
+  // ========== REMOVE_EXERCISE ACTION ==========
+
+  describe("remove_exercise action", () => {
+    it("removes exercise by ID", async () => {
+      mockGetProgramExerciseById.mockResolvedValueOnce({ program_day_exercise_id: 42 });
+      mockQuery.mockResolvedValueOnce({});
+
+      const result = await toolHandler({
+        action: "remove_exercise",
+        program_day_exercise_id: 42,
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.removed).toBe(true);
+      expect(parsed.program_day_exercise_id).toBe(42);
+      expect(mockQuery).toHaveBeenCalledWith(
+        "DELETE FROM program_day_exercises WHERE id = $1",
+        [42]
+      );
+    });
+
+    it("removes exercise by day + name", async () => {
+      mockFindProgramExercises.mockResolvedValueOnce([{ program_day_exercise_id: 42 }]);
+      mockQuery.mockResolvedValueOnce({});
+
+      const result = await toolHandler({
+        action: "remove_exercise",
+        day: "Push",
+        exercise: "Bench Press",
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.removed).toBe(true);
+    });
+
+    it("returns ambiguous when multiple matches", async () => {
+      mockFindProgramExercises.mockResolvedValueOnce([
+        { program_day_exercise_id: 42, target_sets: 3, target_reps: 10, target_weight: 80 },
+        { program_day_exercise_id: 43, target_sets: 3, target_reps: 12, target_weight: 60 },
+      ]);
+
+      const result = await toolHandler({
+        action: "remove_exercise",
+        day: "Push",
+        exercise: "Bench",
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.ambiguous).toBe(true);
+      expect(parsed.matches).toHaveLength(2);
+    });
+
+    it("returns error when not found", async () => {
+      mockFindProgramExercises.mockResolvedValueOnce([]);
+
+      const result = await toolHandler({
+        action: "remove_exercise",
+        day: "Push",
+        exercise: "Nonexistent",
+      });
+      expect(result.isError).toBe(true);
+    });
   });
 });

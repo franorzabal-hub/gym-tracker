@@ -161,7 +161,7 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 | `get_context` | MANDATORY first call. Returns full user context in single call: profile, program, active_workout, routing. Follow `required_action` field: "setup_profile" → show_profile, "choose_program" → show_programs |
 | `manage_profile` | get, update (JSONB) |
 | `manage_exercises` | list, search, add, add_bulk, update, update_bulk, delete, delete_bulk |
-| `manage_program` | list, get, create, clone, update, activate, delete, delete_bulk, history |
+| `manage_program` | list, get, create, clone, update, activate, delete, delete_bulk, history, patch_exercise, patch_day, add_exercise, remove_exercise |
 | `log_workout` | Unified: start workout, log exercise(s), log routine day. Auto-creates workout, infers program day, supports overrides/skip, single/bulk exercises, PR check |
 | `end_workout` | notes?, force?, tags? — summary + comparison vs last |
 | `get_today_plan` | no params — today's day + exercises + last workout (read-only, no workout created) |
@@ -215,6 +215,17 @@ All tools return `{ content: [{ type: "text", text: JSON.stringify({...}) }] }`.
 
 ### Testing Pattern
 Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture `toolHandler` from `server.tool()` mock, call handler directly with params. Pool queries mocked via `mockQuery` / `mockClientQuery` (for transactions).
+
+### Program Patch Actions (Inline Updates)
+`manage_program` supports lightweight patch actions that modify exercises/days without creating new versions:
+- `patch_exercise`: Update weight/reps/sets/rpe/notes of a single exercise
+- `patch_day`: Update day label or weekdays
+- `add_exercise`: Add exercise to existing day
+- `remove_exercise`: Remove exercise from day
+
+**Identification:** Pass `program_day_exercise_id` (from `show_program` response) OR `day` + `exercise` name.
+
+**Ambiguity handling:** If multiple exercises match (e.g., same exercise twice in a day), returns `{ ambiguous: true, matches: [...] }`. LLM should ask user to choose, then retry with the specific `program_day_exercise_id`.
 
 ## Migrations
 

@@ -1,7 +1,168 @@
+import type { PoolClient } from "pg";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { cloneGroupsBatch } from "./group-helpers.js";
 import { cloneSectionsBatch } from "./section-helpers.js";
+
+export interface ExerciseMatch {
+  program_day_exercise_id: number;
+  day_id: number;
+  version_id: number;
+  program_id: number;
+  target_sets: number;
+  target_reps: number;
+  target_weight: number | null;
+  sort_order: number;
+  section_label: string | null;
+  group_label: string | null;
+  group_type: string | null;
+}
+
+export interface DayMatch {
+  day_id: number;
+  version_id: number;
+  program_id: number;
+  day_label: string;
+  weekdays: number[] | null;
+  sort_order: number;
+}
+
+/**
+ * Find exercise(s) in user's active program by day label + exercise name.
+ * Returns all matches for ambiguity detection.
+ */
+export async function findProgramExercises(
+  userId: number,
+  dayLabel: string,
+  exerciseName: string,
+  programName?: string
+): Promise<ExerciseMatch[]> {
+  const query = programName
+    ? `SELECT pde.id as program_day_exercise_id, pde.day_id, pd.version_id, pv.program_id,
+              pde.target_sets, pde.target_reps, pde.target_weight, pde.sort_order,
+              ps.label as section_label, peg.label as group_label, peg.group_type
+       FROM program_day_exercises pde
+       JOIN exercises e ON e.id = pde.exercise_id
+       JOIN program_days pd ON pd.id = pde.day_id
+       JOIN program_versions pv ON pv.id = pd.version_id
+       JOIN programs p ON p.id = pv.program_id
+       LEFT JOIN program_sections ps ON ps.id = pde.section_id
+       LEFT JOIN program_exercise_groups peg ON peg.id = pde.group_id
+       WHERE p.user_id = $1
+         AND LOWER(p.name) = LOWER($4)
+         AND LOWER(pd.day_label) = LOWER($2)
+         AND LOWER(e.name) = LOWER($3)
+         AND pv.version_number = (SELECT MAX(version_number) FROM program_versions WHERE program_id = p.id)
+       ORDER BY pde.sort_order`
+    : `SELECT pde.id as program_day_exercise_id, pde.day_id, pd.version_id, pv.program_id,
+              pde.target_sets, pde.target_reps, pde.target_weight, pde.sort_order,
+              ps.label as section_label, peg.label as group_label, peg.group_type
+       FROM program_day_exercises pde
+       JOIN exercises e ON e.id = pde.exercise_id
+       JOIN program_days pd ON pd.id = pde.day_id
+       JOIN program_versions pv ON pv.id = pd.version_id
+       JOIN programs p ON p.id = pv.program_id
+       LEFT JOIN program_sections ps ON ps.id = pde.section_id
+       LEFT JOIN program_exercise_groups peg ON peg.id = pde.group_id
+       WHERE p.user_id = $1
+         AND p.is_active = TRUE
+         AND LOWER(pd.day_label) = LOWER($2)
+         AND LOWER(e.name) = LOWER($3)
+         AND pv.version_number = (SELECT MAX(version_number) FROM program_versions WHERE program_id = p.id)
+       ORDER BY pde.sort_order`;
+
+  const params = programName ? [userId, dayLabel, exerciseName, programName] : [userId, dayLabel, exerciseName];
+  const { rows } = await pool.query(query, params);
+  return rows;
+}
+
+/**
+ * Get a program_day_exercise by ID with ownership validation.
+ */
+export async function getProgramExerciseById(
+  userId: number,
+  pdeId: number
+): Promise<ExerciseMatch | null> {
+  const { rows } = await pool.query(
+    `SELECT pde.id as program_day_exercise_id, pde.day_id, pd.version_id, pv.program_id,
+            pde.target_sets, pde.target_reps, pde.target_weight, pde.sort_order,
+            ps.label as section_label, peg.label as group_label, peg.group_type
+     FROM program_day_exercises pde
+     JOIN program_days pd ON pd.id = pde.day_id
+     JOIN program_versions pv ON pv.id = pd.version_id
+     JOIN programs p ON p.id = pv.program_id
+     LEFT JOIN program_sections ps ON ps.id = pde.section_id
+     LEFT JOIN program_exercise_groups peg ON peg.id = pde.group_id
+     WHERE pde.id = $1 AND p.user_id = $2`,
+    [pdeId, userId]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Find day(s) in user's active program by day label.
+ * Returns all matches for ambiguity detection (rare but possible with duplicate labels).
+ */
+export async function findProgramDays(
+  userId: number,
+  dayLabel: string,
+  programName?: string
+): Promise<DayMatch[]> {
+  const query = programName
+    ? `SELECT pd.id as day_id, pd.version_id, pv.program_id, pd.day_label, pd.weekdays, pd.sort_order
+       FROM program_days pd
+       JOIN program_versions pv ON pv.id = pd.version_id
+       JOIN programs p ON p.id = pv.program_id
+       WHERE p.user_id = $1
+         AND LOWER(p.name) = LOWER($3)
+         AND LOWER(pd.day_label) = LOWER($2)
+         AND pv.version_number = (SELECT MAX(version_number) FROM program_versions WHERE program_id = p.id)
+       ORDER BY pd.sort_order`
+    : `SELECT pd.id as day_id, pd.version_id, pv.program_id, pd.day_label, pd.weekdays, pd.sort_order
+       FROM program_days pd
+       JOIN program_versions pv ON pv.id = pd.version_id
+       JOIN programs p ON p.id = pv.program_id
+       WHERE p.user_id = $1
+         AND p.is_active = TRUE
+         AND LOWER(pd.day_label) = LOWER($2)
+         AND pv.version_number = (SELECT MAX(version_number) FROM program_versions WHERE program_id = p.id)
+       ORDER BY pd.sort_order`;
+
+  const params = programName ? [userId, dayLabel, programName] : [userId, dayLabel];
+  const { rows } = await pool.query(query, params);
+  return rows;
+}
+
+/**
+ * Get a program_day by ID with ownership validation.
+ */
+export async function getProgramDayById(
+  userId: number,
+  dayId: number
+): Promise<DayMatch | null> {
+  const { rows } = await pool.query(
+    `SELECT pd.id as day_id, pd.version_id, pv.program_id, pd.day_label, pd.weekdays, pd.sort_order
+     FROM program_days pd
+     JOIN program_versions pv ON pv.id = pd.version_id
+     JOIN programs p ON p.id = pv.program_id
+     WHERE pd.id = $1 AND p.user_id = $2`,
+    [dayId, userId]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Format exercise match for user-friendly display in ambiguity messages.
+ */
+export function formatExerciseContext(match: ExerciseMatch): string {
+  const parts: string[] = [];
+  if (match.section_label) parts.push(`Sección: ${match.section_label}`);
+  if (match.group_label) parts.push(`Grupo: ${match.group_label} (${match.group_type})`);
+  parts.push(`${match.target_sets}×${match.target_reps}`);
+  if (match.target_weight) parts.push(`@ ${match.target_weight}kg`);
+  parts.push(`posición ${match.sort_order + 1}`);
+  return parts.join(", ");
+}
 
 export async function getActiveProgram() {
   const userId = getUserId();

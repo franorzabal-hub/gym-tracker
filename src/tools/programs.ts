@@ -7,6 +7,11 @@ import {
   getLatestVersion,
   getProgramDaysWithExercises,
   cloneVersion,
+  findProgramExercises,
+  getProgramExerciseById,
+  findProgramDays,
+  getProgramDayById,
+  formatExerciseContext,
 } from "../helpers/program-helpers.js";
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
@@ -321,9 +326,18 @@ exercise_type and rep_type are resolved automatically from the exercises DB. Do 
 - "warmup" is NOT a valid exercise_type. An exercise in "Entrada en calor" section is still strength or mobility by nature.
 - muscle_group is also resolved from the exercises DB. To set it, use manage_exercises.
 
-To see the program visually, call show_program (not manage_program "get").`,
+To see the program visually, call show_program (not manage_program "get").
+
+## Patch actions (inline updates without versioning)
+
+- "patch_exercise": Update weight/reps/sets/notes of a single exercise. Pass day + exercise name, OR program_day_exercise_id for precision.
+- "patch_day": Update label/weekdays of a day. Pass day (label) OR day_id.
+- "add_exercise": Add exercise to existing day. Pass day + exercise name + optional sets/reps/weight.
+- "remove_exercise": Remove exercise from day. Pass day + exercise name, OR program_day_exercise_id.
+
+If multiple exercises match (e.g., same exercise twice in a day), returns ambiguous=true with matches array. Ask user to choose, then retry with program_day_exercise_id.`,
       inputSchema: {
-        action: z.enum(["list", "get", "create", "clone", "update", "patch", "activate", "delete", "delete_bulk", "history", "validate"]),
+        action: z.enum(["list", "get", "create", "clone", "update", "patch", "activate", "delete", "delete_bulk", "history", "validate", "patch_exercise", "patch_day", "add_exercise", "remove_exercise"]),
         name: z.string().optional(),
         program_id: z.number().int().optional().describe("Program ID (for patch action). Identifies which program to patch."),
         source_id: z.number().int().optional().describe("Program ID to clone (for clone action). Typically a global template program ID from show_programs."),
@@ -334,14 +348,40 @@ To see the program visually, call show_program (not manage_program "get").`,
         hard_delete: z.boolean().optional(),
         names: z.union([z.array(z.string()), z.string()]).optional().describe("Array of program names for delete_bulk"),
         include_exercises: z.boolean().optional().describe("If true, include exercise details for each day. Defaults to true"),
+        // Patch action params
+        program_day_exercise_id: z.number().int().optional().describe("ID of specific exercise entry in program (from show_program or ambiguity response)"),
+        day_id: z.number().int().optional().describe("ID of specific day in program"),
+        day: z.string().optional().describe("Day label (e.g., 'Día 1', 'Push') for patch actions"),
+        exercise: z.string().optional().describe("Exercise name for patch_exercise/add_exercise/remove_exercise"),
+        sets: z.number().int().min(1).optional().describe("Target sets for patch_exercise/add_exercise"),
+        reps: z.union([z.number().int().min(1), z.array(z.number().int().min(1)), z.string()]).optional().describe("Target reps (number or per-set array) for patch_exercise/add_exercise"),
+        weight: z.union([z.number(), z.array(z.number()), z.string()]).nullable().optional().describe("Target weight (number or per-set array) for patch_exercise/add_exercise"),
+        rpe: z.number().min(1).max(10).nullable().optional().describe("Target RPE for patch_exercise/add_exercise"),
+        rest_seconds: z.number().int().nullable().optional().describe("Rest seconds for patch_exercise/add_exercise"),
+        exercise_notes: z.string().nullable().optional().describe("Notes for the exercise"),
+        new_label: z.string().optional().describe("New day label for patch_day"),
+        weekdays: z.union([z.array(z.number().int().min(1).max(7)), z.string()]).optional().describe("Weekdays array (ISO 1=Mon..7=Sun) for patch_day"),
+        position: z.number().int().min(0).optional().describe("Sort order position for add_exercise (default: end)"),
+        target_group_id: z.number().int().optional().describe("Group ID to add exercise into (for add_exercise)"),
+        target_section_id: z.number().int().optional().describe("Section ID to add exercise into (for add_exercise)"),
       },
       annotations: {},
     },
-    safeHandler("manage_program", async ({ action, name, new_name, description, days: rawDays, change_description, hard_delete, names: rawNames, include_exercises, source_id, program_id }) => {
+    safeHandler("manage_program", async ({
+      action, name, new_name, description, days: rawDays, change_description, hard_delete,
+      names: rawNames, include_exercises, source_id, program_id,
+      // Patch action params
+      program_day_exercise_id, day_id, day, exercise, sets, reps: rawReps, weight: rawWeight,
+      rpe, rest_seconds, exercise_notes, new_label, weekdays: rawWeekdays, position,
+      target_group_id, target_section_id
+    }) => {
       const userId = getUserId();
 
       // Some MCP clients serialize nested arrays as JSON strings
       const days = parseJsonParam<any[]>(rawDays);
+      const reps = parseJsonParam<number | number[]>(rawReps) ?? rawReps;
+      const weight = parseJsonParam<number | number[] | null>(rawWeight) ?? rawWeight;
+      const weekdays = parseJsonParam<number[]>(rawWeekdays) ?? rawWeekdays;
 
       if (action === "list") {
         // Use CTE with DISTINCT ON to avoid correlated subqueries
@@ -971,6 +1011,287 @@ To see the program visually, call show_program (not manage_program "get").`,
         );
 
         return toolResponse({ validated: true, program_id: program.id, name: program.name });
+      }
+
+      // ========== PATCH ACTIONS (inline updates without versioning) ==========
+
+      if (action === "patch_exercise") {
+        // Find exercise by ID or by day+name
+        let target;
+
+        if (program_day_exercise_id) {
+          target = await getProgramExerciseById(userId, program_day_exercise_id);
+          if (!target) {
+            return toolResponse({ error: "Exercise not found in your program" }, true);
+          }
+        } else if (day && exercise) {
+          const matches = await findProgramExercises(userId, day, exercise, name);
+
+          if (matches.length === 0) {
+            return toolResponse({ error: `Exercise "${exercise}" not found in "${day}"` }, true);
+          }
+
+          if (matches.length > 1) {
+            // Ambiguity → return options for LLM to ask user
+            return toolResponse({
+              ambiguous: true,
+              message: `Found ${matches.length} "${exercise}" in "${day}". Ask user which one, then retry with program_day_exercise_id.`,
+              matches: matches.map(m => ({
+                program_day_exercise_id: m.program_day_exercise_id,
+                context: formatExerciseContext(m),
+              })),
+            });
+          }
+
+          target = matches[0];
+        } else {
+          return toolResponse({ error: "Provide program_day_exercise_id OR (day + exercise)" }, true);
+        }
+
+        // Build dynamic UPDATE
+        const updates: string[] = [];
+        const params: any[] = [];
+
+        if (sets !== undefined) {
+          params.push(sets);
+          updates.push(`target_sets = $${params.length}`);
+        }
+        if (reps !== undefined) {
+          const repsIsArray = Array.isArray(reps);
+          params.push(repsIsArray ? (reps as number[])[0] : reps);
+          updates.push(`target_reps = $${params.length}`);
+          params.push(repsIsArray ? reps : null);
+          updates.push(`target_reps_per_set = $${params.length}`);
+        }
+        if (weight !== undefined) {
+          const weightIsArray = Array.isArray(weight);
+          params.push(weight === null ? null : (weightIsArray ? (weight as number[])[0] : weight));
+          updates.push(`target_weight = $${params.length}`);
+          params.push(weight === null ? null : (weightIsArray ? weight : null));
+          updates.push(`target_weight_per_set = $${params.length}`);
+        }
+        if (rpe !== undefined) {
+          params.push(rpe);
+          updates.push(`target_rpe = $${params.length}`);
+        }
+        if (rest_seconds !== undefined) {
+          params.push(rest_seconds);
+          updates.push(`rest_seconds = $${params.length}`);
+        }
+        if (exercise_notes !== undefined) {
+          params.push(exercise_notes);
+          updates.push(`notes = $${params.length}`);
+        }
+
+        if (updates.length === 0) {
+          return toolResponse({ error: "No fields to update. Provide sets, reps, weight, rpe, rest_seconds, or exercise_notes." }, true);
+        }
+
+        params.push(target.program_day_exercise_id);
+        await pool.query(
+          `UPDATE program_day_exercises SET ${updates.join(", ")} WHERE id = $${params.length}`,
+          params
+        );
+
+        return toolResponse({
+          updated: true,
+          program_day_exercise_id: target.program_day_exercise_id,
+          fields_updated: updates.length,
+        });
+      }
+
+      if (action === "patch_day") {
+        // Find day by ID or by label
+        let target;
+
+        if (day_id) {
+          target = await getProgramDayById(userId, day_id);
+          if (!target) {
+            return toolResponse({ error: "Day not found in your program" }, true);
+          }
+        } else if (day) {
+          const matches = await findProgramDays(userId, day, name);
+
+          if (matches.length === 0) {
+            return toolResponse({ error: `Day "${day}" not found` }, true);
+          }
+
+          if (matches.length > 1) {
+            // Ambiguity (rare but possible with duplicate labels)
+            return toolResponse({
+              ambiguous: true,
+              message: `Found ${matches.length} days labeled "${day}". Ask user which one, then retry with day_id.`,
+              matches: matches.map(m => ({
+                day_id: m.day_id,
+                context: `posición ${m.sort_order + 1}, weekdays: ${m.weekdays?.join(",") || "none"}`,
+              })),
+            });
+          }
+
+          target = matches[0];
+        } else {
+          return toolResponse({ error: "Provide day_id OR day (label)" }, true);
+        }
+
+        // Build dynamic UPDATE
+        const updates: string[] = [];
+        const params: any[] = [];
+
+        if (new_label) {
+          params.push(new_label);
+          updates.push(`day_label = $${params.length}`);
+        }
+        if (weekdays !== undefined) {
+          params.push(Array.isArray(weekdays) ? weekdays : null);
+          updates.push(`weekdays = $${params.length}`);
+        }
+
+        if (updates.length === 0) {
+          return toolResponse({ error: "No fields to update. Provide new_label or weekdays." }, true);
+        }
+
+        params.push(target.day_id);
+        await pool.query(
+          `UPDATE program_days SET ${updates.join(", ")} WHERE id = $${params.length}`,
+          params
+        );
+
+        return toolResponse({
+          updated: true,
+          day_id: target.day_id,
+          new_label: new_label || undefined,
+        });
+      }
+
+      if (action === "add_exercise") {
+        if (!exercise) {
+          return toolResponse({ error: "exercise name required" }, true);
+        }
+
+        // Find target day
+        let targetDay;
+        if (day_id) {
+          targetDay = await getProgramDayById(userId, day_id);
+        } else if (day) {
+          const matches = await findProgramDays(userId, day, name);
+          if (matches.length === 0) {
+            return toolResponse({ error: `Day "${day}" not found` }, true);
+          }
+          if (matches.length > 1) {
+            return toolResponse({
+              ambiguous: true,
+              message: `Found ${matches.length} days labeled "${day}". Ask user which one, then retry with day_id.`,
+              matches: matches.map(m => ({
+                day_id: m.day_id,
+                context: `posición ${m.sort_order + 1}`,
+              })),
+            });
+          }
+          targetDay = matches[0];
+        } else {
+          return toolResponse({ error: "Provide day_id OR day (label)" }, true);
+        }
+
+        if (!targetDay) {
+          return toolResponse({ error: "Day not found" }, true);
+        }
+
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+
+          // Resolve exercise (creates if needed)
+          const resolved = await resolveExercise(exercise, undefined, undefined, undefined, undefined, client);
+
+          // Get max sort_order for this day
+          const { rows: [maxSort] } = await client.query(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM program_day_exercises WHERE day_id = $1",
+            [targetDay.day_id]
+          );
+          const sortOrder = position ?? maxSort.next;
+
+          // Handle per-set arrays
+          const repsIsArray = Array.isArray(reps);
+          const weightIsArray = Array.isArray(weight);
+
+          const { rows: [inserted] } = await client.query(
+            `INSERT INTO program_day_exercises
+               (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe,
+                sort_order, group_id, section_id, rest_seconds, notes, target_reps_per_set, target_weight_per_set)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+             RETURNING id`,
+            [
+              targetDay.day_id,
+              resolved.id,
+              sets ?? 3,
+              repsIsArray ? (reps as number[])[0] : (reps ?? 10),
+              weight === null || weight === undefined ? null : (weightIsArray ? (weight as number[])[0] : weight),
+              rpe ?? null,
+              sortOrder,
+              target_group_id ?? null,
+              target_section_id ?? null,
+              rest_seconds ?? null,
+              exercise_notes ?? null,
+              repsIsArray ? reps : null,
+              weightIsArray ? weight : null,
+            ]
+          );
+
+          await client.query("COMMIT");
+
+          return toolResponse({
+            added: true,
+            program_day_exercise_id: inserted.id,
+            exercise: resolved.name,
+            exercise_created: resolved.isNew,
+            day: targetDay.day_label,
+          });
+        } catch (err) {
+          await client.query("ROLLBACK");
+          throw err;
+        } finally {
+          client.release();
+        }
+      }
+
+      if (action === "remove_exercise") {
+        // Find exercise by ID or by day+name
+        let target;
+
+        if (program_day_exercise_id) {
+          target = await getProgramExerciseById(userId, program_day_exercise_id);
+          if (!target) {
+            return toolResponse({ error: "Exercise not found in your program" }, true);
+          }
+        } else if (day && exercise) {
+          const matches = await findProgramExercises(userId, day, exercise, name);
+
+          if (matches.length === 0) {
+            return toolResponse({ error: `Exercise "${exercise}" not found in "${day}"` }, true);
+          }
+
+          if (matches.length > 1) {
+            return toolResponse({
+              ambiguous: true,
+              message: `Found ${matches.length} "${exercise}" in "${day}". Ask user which one, then retry with program_day_exercise_id.`,
+              matches: matches.map(m => ({
+                program_day_exercise_id: m.program_day_exercise_id,
+                context: formatExerciseContext(m),
+              })),
+            });
+          }
+
+          target = matches[0];
+        } else {
+          return toolResponse({ error: "Provide program_day_exercise_id OR (day + exercise)" }, true);
+        }
+
+        await pool.query("DELETE FROM program_day_exercises WHERE id = $1", [target.program_day_exercise_id]);
+
+        return toolResponse({
+          removed: true,
+          program_day_exercise_id: target.program_day_exercise_id,
+        });
       }
 
       return toolResponse({ error: "Unknown action" }, true);
