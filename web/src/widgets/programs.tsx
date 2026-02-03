@@ -192,7 +192,7 @@ function ProgramsWidget() {
   return (
     <div className="profile-card">
       {/* Header */}
-      <div style={{ marginBottom: sp[6] }}>
+      <div style={{ marginBottom: sp[8] }}>
         <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginBottom: sp[1] }}>
           <div className="title" style={{ marginBottom: 0 }}>
             {hasPending && pending?.name

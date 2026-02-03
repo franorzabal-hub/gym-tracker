@@ -284,18 +284,20 @@ function ExerciseRow({ exercise, exNum, isLast }: {
           justifyContent: "space-between",
           gap: sp[3],
           cursor: hasPerSet ? "pointer" : "default",
+          position: "relative",
         }}
         onClick={hasPerSet ? () => setExpanded(!expanded) : undefined}
       >
-        {/* Left: number + name */}
+        {/* Number - positioned to the left, within profile-card padding (16px) */}
+        <span style={{
+          position: "absolute",
+          left: -sp[6],
+          fontSize: font.xs,
+          color: "var(--text-secondary)",
+          opacity: opacity.muted,
+        }}>{exNum}</span>
+        {/* Left: name */}
         <div style={{ display: "flex", alignItems: "baseline", gap: sp[2], minWidth: 0 }}>
-          <span style={{
-            fontSize: font.xs,
-            color: "var(--text-secondary)",
-            opacity: 0.4,
-            minWidth: 14,
-            flexShrink: 0,
-          }}>{exNum}</span>
           <span className="exercise-name" style={{
             fontWeight: weight.medium,
             fontSize: font.base,
@@ -321,7 +323,7 @@ function ExerciseRow({ exercise, exNum, isLast }: {
           <span style={{ fontWeight: weight.semibold }}>{setsSummary}</span>
           {weightRange != null && (
             <>
-              <span style={{ opacity: 0.4 }}>·</span>
+              <span style={{ opacity: opacity.muted }}>·</span>
               <span style={{ fontWeight: weight.semibold }}>{weightRange}kg</span>
             </>
           )}
@@ -366,9 +368,9 @@ function ExerciseRow({ exercise, exNum, isLast }: {
                     <span style={{ fontWeight: weight.medium, color: "var(--text)" }}>{set.reps}</span>
                     {set.weight != null && (
                       <>
-                        <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>×</span>
+                        <span style={{ opacity: opacity.muted, margin: `0 ${sp[1]}px` }}>×</span>
                         <span style={{ fontWeight: weight.medium, color: "var(--text)" }}>{set.weight}</span>
-                        <span style={{ opacity: 0.5 }}> kg</span>
+                        <span style={{ opacity: opacity.muted }}> kg</span>
                       </>
                     )}
                   </span>
@@ -586,7 +588,7 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
   return (
     <div className="profile-card">
       {/* Header */}
-      <div style={{ marginBottom: sp[5] }}>
+      <div style={{ marginBottom: sp[8] }}>
         {/* Title row: title + badge (left), date (right) */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: sp[2] }}>
           <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
@@ -594,7 +596,7 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
               {isActive ? "Active Workout" : "Workout"}
             </span>
             {isActive && <span className="badge badge-success">Active</span>}
-            {!isActive && session.ended_at && <span className="badge badge-muted">Completed</span>}
+            {!isActive && session.ended_at && <span className="badge badge-success">Completed</span>}
           </div>
           {!isActive && session.ended_at && (
             <span style={{ fontSize: font.md, color: "var(--text-secondary)" }}>
@@ -616,12 +618,6 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
           </span>
         </div>
       </div>
-
-      {/* Divider with more spacing */}
-      <div style={{
-        borderBottom: "1px solid color-mix(in srgb, var(--border) 40%, transparent)",
-        marginBottom: sp[5],
-      }} />
 
       {/* Exercise list - flat, no grouping */}
       <div>
