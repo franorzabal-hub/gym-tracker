@@ -1,7 +1,6 @@
 /**
  * Shared utilities for exercise display across widgets.
  * Used by: program-view.tsx, workout.tsx
- * Note: program-editor.tsx is scheduled for removal - don't update it.
  */
 
 import { font } from "../../tokens.js";

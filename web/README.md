@@ -91,7 +91,7 @@ web/
     styles.css               # Shared styles with host CSS variable aliases
     test-host.ts             # Widget test host: AppBridge + MCP client, HMR, device presets, all 21 tools
     widgets/                 # One React component per widget (profile.tsx, etc.)
-      shared/              # Shared components: charts.tsx, exercise-icons.tsx, program-view.tsx, program-editor.tsx
+      shared/              # Shared components: charts.tsx, exercise-icons.tsx, program-view.tsx, diff-components.tsx
 ```
 
 **Build pipeline:** `cd web && npm run build` → runs `build.sh` → loops over each `*.html` entry point → Vite builds each with `vite-plugin-singlefile` (inlines all JS/CSS into a single HTML) → output to `web/dist/`.

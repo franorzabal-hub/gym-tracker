@@ -4,6 +4,7 @@ import { useToolOutput, useCallTool } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
 import { WeekdayPills } from "./shared/weekday-pills.js";
 import { sp, radius, font } from "../tokens.js";
+import { DiffValue, ConfirmBar } from "./shared/diff-components.js";
 import "../styles.css";
 
 const DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -93,25 +94,7 @@ function SkeletonCard() {
   );
 }
 
-// ── DiffValue: scalar diff (old → new) ──
-
-function DiffValue({ current, pending, format }: {
-  current: any;
-  pending: any;
-  format?: (v: any) => string;
-}) {
-  const fmt = format || ((v: any) => String(v ?? "—"));
-  const hasOld = current != null && current !== "";
-  return (
-    <span>
-      {hasOld && <span className="diff-old">{fmt(current)}</span>}
-      {hasOld && " "}
-      <span className="diff-new">{fmt(pending)}</span>
-    </span>
-  );
-}
-
-// ── DiffChips: array diff ──
+// ── DiffChips: array diff (case-insensitive, with badges) ──
 
 function DiffChips({ current, pending, variant = "primary" }: {
   current: string[];
@@ -136,31 +119,6 @@ function DiffChips({ current, pending, variant = "primary" }: {
       {added.map(s => (
         <span key={`add-${s}`} className="badge diff-chip-added">+{formatFieldLabel(s)}</span>
       ))}
-    </div>
-  );
-}
-
-// ── ConfirmBar ──
-
-function ConfirmBar({ onConfirm, confirming, confirmed }: {
-  onConfirm: () => void;
-  confirming: boolean;
-  confirmed: boolean;
-}) {
-  return (
-    <div className="profile-confirm-bar" role="status" aria-live="polite">
-      {confirmed ? (
-        <span className="profile-confirm-flash">Updated</span>
-      ) : (
-        <button
-          className="btn btn-primary"
-          onClick={onConfirm}
-          disabled={confirming}
-          aria-busy={confirming}
-        >
-          {confirming ? "Saving..." : "Confirm Changes"}
-        </button>
-      )}
     </div>
   );
 }
@@ -390,7 +348,7 @@ function ProfileWidget() {
       ) : null}
 
       {hasPending && (
-        <ConfirmBar onConfirm={handleConfirm} confirming={confirming} confirmed={confirmed} />
+        <ConfirmBar onConfirm={handleConfirm} confirming={confirming} confirmed={confirmed} className="profile-confirm-bar" />
       )}
     </article>
   );

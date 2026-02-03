@@ -5,6 +5,7 @@ import { AppProvider } from "../app-context.js";
 import { sp, radius, font } from "../tokens.js";
 import "../styles.css";
 import { type Program, ProgramView } from "./shared/program-view.js";
+import { DiffValue, ConfirmBar } from "./shared/diff-components.js";
 
 /** Skeleton loading state */
 function SkeletonProgram() {
@@ -45,42 +46,6 @@ interface ToolData {
   pendingChanges?: Record<string, any>;
 }
 
-function DiffValue({ current, pending }: { current: any; pending: any }) {
-  const fmt = (v: any) => String(v ?? "—");
-  const hasOld = current != null && current !== "";
-  return (
-    <span>
-      {hasOld && <span className="diff-old">{fmt(current)}</span>}
-      {hasOld && " "}
-      <span className="diff-new">{fmt(pending)}</span>
-    </span>
-  );
-}
-
-function ConfirmBar({ onConfirm, confirming, confirmed }: {
-  onConfirm: () => void;
-  confirming: boolean;
-  confirmed: boolean;
-}) {
-  return (
-    <div className="confirm-bar-sticky" role="status" aria-live="polite">
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        {confirmed ? (
-          <span className="profile-confirm-flash">Updated</span>
-        ) : (
-          <button
-            className="btn btn-primary"
-            onClick={onConfirm}
-            disabled={confirming}
-            aria-busy={confirming}
-          >
-            {confirming ? "Saving..." : "Confirm Changes"}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function ProgramsWidget() {
   const data = useToolOutput<ToolData>();
