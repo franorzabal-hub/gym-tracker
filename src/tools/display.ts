@@ -231,9 +231,10 @@ DEPRECATED: Use show_programs({ mode: "available" }) instead. This tool is kept 
 To propose metadata changes (name, description), pass pending_changes. The widget shows a visual diff and a "Confirm" button. Wait for the user to confirm.
 For structural changes (days, exercises, sets), use manage_program then re-render with show_program.
 Use this whenever the user asks to see/show their program, routine, or plan.
-Defaults to the active program. Pass a name to show a specific program.
+Defaults to the active program. Pass id or name to show a specific program.
 Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday").`,
     inputSchema: {
+      id: z.number().optional().describe("Program ID. Takes precedence over name if both provided."),
       name: z.string().optional().describe("Program name. Omit for active program."),
       day: z.string().optional().describe("Scroll to a specific day. Accepts day label (e.g. 'Dia 1'), weekday name (e.g. 'lunes', 'monday'), or weekday number (1=Mon..7=Sun)."),
       pending_changes: z.record(z.any()).optional()
@@ -245,20 +246,36 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday").`,
       "openai/toolInvocation/invoking": "Loading program...",
       "openai/toolInvocation/invoked": "Program loaded",
     },
-  }, safeHandler("show_program", async ({ name, day, pending_changes }: { name?: string; day?: string; pending_changes?: Record<string, any> }) => {
+  }, safeHandler("show_program", async ({ id, name, day, pending_changes }: { id?: number; name?: string; day?: string; pending_changes?: Record<string, any> }) => {
     const userId = getUserId();
 
-    const program = name
-      ? await pool
-          .query(
-            `SELECT p.id, p.name, p.description, p.is_active, pv.id as version_id, pv.version_number
-             FROM programs p JOIN program_versions pv ON pv.program_id = p.id
-             WHERE p.user_id = $1 AND LOWER(p.name) = LOWER($2)
-             ORDER BY pv.version_number DESC LIMIT 1`,
-            [userId, name]
-          )
-          .then(r => r.rows[0])
-      : await getActiveProgram();
+    let program;
+    if (id) {
+      // Lookup by ID
+      program = await pool
+        .query(
+          `SELECT p.id, p.name, p.description, p.is_active, pv.id as version_id, pv.version_number
+           FROM programs p JOIN program_versions pv ON pv.program_id = p.id
+           WHERE p.user_id = $1 AND p.id = $2
+           ORDER BY pv.version_number DESC LIMIT 1`,
+          [userId, id]
+        )
+        .then(r => r.rows[0]);
+    } else if (name) {
+      // Lookup by name
+      program = await pool
+        .query(
+          `SELECT p.id, p.name, p.description, p.is_active, pv.id as version_id, pv.version_number
+           FROM programs p JOIN program_versions pv ON pv.program_id = p.id
+           WHERE p.user_id = $1 AND LOWER(p.name) = LOWER($2)
+           ORDER BY pv.version_number DESC LIMIT 1`,
+          [userId, name]
+        )
+        .then(r => r.rows[0]);
+    } else {
+      // Default to active program
+      program = await getActiveProgram();
+    }
 
     if (!program) {
       return widgetResponse(
