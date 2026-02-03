@@ -520,17 +520,21 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, colla
           marginBottom: showExercises ? sp[3] : 0,
           userSelect: "none",
         }}
+        role={canCollapse ? "button" : undefined}
+        aria-expanded={canCollapse ? expanded : undefined}
+        tabIndex={canCollapse ? 0 : undefined}
+        onKeyDown={canCollapse ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded(!expanded); } } : undefined}
       >
         <div style={{ display: "flex", alignItems: "center", gap: sp[2] }}>
           {canCollapse && (
-            <span style={{ fontSize: font.sm, color: "var(--text-secondary)", transition: "transform 0.15s", transform: expanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
+            <span aria-hidden="true" style={{ fontSize: font.sm, color: "var(--text-secondary)", transition: "transform 0.15s", transform: expanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
               ▼
             </span>
           )}
           <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
             {headerLabel}
           </span>
-          <span style={{ color: "var(--text-secondary)", opacity: opacity.subtle, display: "inline-flex" }}>
+          <span style={{ color: "var(--text-secondary)", opacity: opacity.subtle, display: "inline-flex" }} aria-hidden="true">
             <GroupIcon type={type} size={font.md} />
           </span>
         </div>
@@ -616,10 +620,14 @@ export function SectionCard({ section, ssGroupColors, startNumber }: {
   const blocks = groupIntoBlocks(section.exercises);
 
   return (
-    <div style={{ marginBottom: sp[5] }}>
+    <section style={{ marginBottom: sp[5] }} aria-label={section.label}>
       <div
         className="tappable section-header"
         onClick={() => setExpanded(!expanded)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded(!expanded); } }}
+        role="button"
+        aria-expanded={expanded}
+        tabIndex={0}
         style={{
           marginBottom: expanded ? sp[3] : 0,
           userSelect: "none",
@@ -628,7 +636,7 @@ export function SectionCard({ section, ssGroupColors, startNumber }: {
         {/* Line 1: chevron + label + count */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
-            <span style={{ fontSize: font.sm, color: "var(--text-secondary)", transition: "transform 0.15s", transform: expanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
+            <span aria-hidden="true" style={{ fontSize: font.sm, color: "var(--text-secondary)", transition: "transform 0.15s", transform: expanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
               ▼
             </span>
             <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
@@ -658,7 +666,7 @@ export function SectionCard({ section, ssGroupColors, startNumber }: {
           <ExerciseBlockList blocks={blocks} ssGroupColors={ssGroupColors} startNumber={startNumber} />
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -701,23 +709,27 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
           marginBottom: sp[4],
         }}
         onClick={canCollapse ? () => setExpanded(!expanded) : undefined}
+        onKeyDown={canCollapse ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded(!expanded); } } : undefined}
+        role={canCollapse ? "button" : undefined}
+        aria-expanded={canCollapse ? expanded : undefined}
+        tabIndex={canCollapse ? 0 : undefined}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontWeight: weight.semibold, fontSize: font.xl }}>{titleLabel}</div>
+          <h2 style={{ fontWeight: weight.semibold, fontSize: font.xl, margin: 0 }}>{titleLabel}</h2>
           {canCollapse && (
-            <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>{expanded ? "▲" : "▼"}</span>
+            <span aria-hidden="true" style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>{expanded ? "▲" : "▼"}</span>
           )}
         </div>
         <div style={{ fontSize: font.base, color: "var(--text-secondary)", marginTop: sp[1], display: "flex", alignItems: "center", gap: 0 }}>
           <span>{day.exercises.length} ejercicios</span>
           {estimatedMinutes > 0 && (
-            <><span style={{ margin: `0 ${sp[3]}px`, opacity: opacity.muted }}>·</span><span>~{estimatedMinutes} min</span></>
+            <><span aria-hidden="true" style={{ margin: `0 ${sp[3]}px`, opacity: opacity.muted }}>·</span><span>~{estimatedMinutes} min</span></>
           )}
         </div>
         {muscleGroups.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: sp[2], marginTop: sp[3] }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: sp[2], marginTop: sp[3] }} role="list" aria-label="Muscle groups">
             {muscleGroups.map(g => (
-              <span key={g} style={{
+              <span key={g} role="listitem" style={{
                 fontSize: font.xs,
                 padding: `${sp[0.5]}px ${sp[3]}px`,
                 borderRadius: radius.lg,

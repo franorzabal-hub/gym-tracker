@@ -3,6 +3,7 @@ import { useState, useCallback } from "react";
 import { useToolOutput, useCallTool } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
 import { WeekdayPills } from "./shared/weekday-pills.js";
+import { sp, radius, font } from "../tokens.js";
 import "../styles.css";
 
 const DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -64,27 +65,27 @@ function hasFieldChange(
 
 function SkeletonCard() {
   return (
-    <div className="profile-card">
+    <div className="profile-card" role="status" aria-label="Loading profile">
       <div className="profile-header">
-        <div className="skeleton" style={{ width: 48, height: 48, borderRadius: "50%" }} />
+        <div className="skeleton" style={{ width: 48, height: 48, borderRadius: radius.full }} />
         <div style={{ flex: 1 }}>
-          <div className="skeleton" style={{ width: 120, height: 18, marginBottom: 6 }} />
-          <div className="skeleton" style={{ width: 180, height: 13 }} />
+          <div className="skeleton" style={{ width: 120, height: font["2xl"], marginBottom: sp[3] }} />
+          <div className="skeleton" style={{ width: 180, height: font.base }} />
         </div>
       </div>
       <div className="profile-section profile-metrics">
         {[1, 2, 3, 4].map(i => (
           <div key={i} style={{ textAlign: "center", flex: 1 }}>
-            <div className="skeleton" style={{ width: 36, height: 22, margin: "0 auto 4px" }} />
-            <div className="skeleton" style={{ width: 48, height: 11, margin: "0 auto" }} />
+            <div className="skeleton" style={{ width: 36, height: font["2xl"], margin: `0 auto ${sp[2]}px` }} />
+            <div className="skeleton" style={{ width: 48, height: font.xs, margin: "0 auto" }} />
           </div>
         ))}
       </div>
       <div className="profile-section">
-        <div className="skeleton" style={{ width: 100, height: 11, marginBottom: 8 }} />
-        <div style={{ display: "flex", gap: 6 }}>
+        <div className="skeleton" style={{ width: 100, height: font.xs, marginBottom: sp[4] }} />
+        <div style={{ display: "flex", gap: sp[3] }}>
           {[1, 2, 3, 4, 5, 6, 7].map(i => (
-            <div key={i} className="skeleton" style={{ width: 28, height: 28, borderRadius: "50%" }} />
+            <div key={i} className="skeleton" style={{ width: 28, height: 28, borderRadius: radius.full }} />
           ))}
         </div>
       </div>
@@ -147,7 +148,7 @@ function ConfirmBar({ onConfirm, confirming, confirmed }: {
   confirmed: boolean;
 }) {
   return (
-    <div className="profile-confirm-bar">
+    <div className="profile-confirm-bar" role="status" aria-live="polite">
       {confirmed ? (
         <span className="profile-confirm-flash">Updated</span>
       ) : (
@@ -155,8 +156,7 @@ function ConfirmBar({ onConfirm, confirming, confirmed }: {
           className="btn btn-primary"
           onClick={onConfirm}
           disabled={confirming}
-          role="button"
-          aria-label="Confirm profile changes"
+          aria-busy={confirming}
         >
           {confirming ? "Saving..." : "Confirm Changes"}
         </button>
@@ -203,19 +203,19 @@ function ProfileHeader({ profile, pending }: { profile: Record<string, any>; pen
   }
 
   return (
-    <div className="profile-header">
+    <header className="profile-header">
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div className="profile-name">{name}</div>
+        <h1 className="profile-name">{name}</h1>
         <div className="profile-subtitle">
           {subtitleParts.map((part, i) => (
             <span key={i}>
-              {i > 0 && <span className="profile-sep"> · </span>}
+              {i > 0 && <span className="profile-sep" aria-hidden="true"> · </span>}
               {part}
             </span>
           ))}
         </div>
       </div>
-    </div>
+    </header>
   );
 }
 
@@ -366,7 +366,7 @@ function ProfileWidget() {
   const pendingInjuries = hasPending && hasFieldChange(profile, pending!, "injuries") ? parseArray(pending!.injuries).filter(s => !EMPTY_INJURY.test(s.trim())) : null;
 
   return (
-    <div className="profile-card">
+    <article className="profile-card" aria-label="User profile">
       <ProfileHeader profile={profile} pending={hasPending ? pending : undefined} />
       <MetricsRow profile={profile} pending={hasPending ? pending : undefined} />
       <TrainingDays profile={profile} pending={hasPending ? pending : undefined} />
@@ -392,7 +392,7 @@ function ProfileWidget() {
       {hasPending && (
         <ConfirmBar onConfirm={handleConfirm} confirming={confirming} confirmed={confirmed} />
       )}
-    </div>
+    </article>
   );
 }
 

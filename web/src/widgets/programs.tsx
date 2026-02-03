@@ -2,7 +2,7 @@ import { createRoot } from "react-dom/client";
 import { useState, useCallback, useRef, KeyboardEvent } from "react";
 import { useToolOutput, useCallTool, useWidgetState } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
-import { sp, font, weight } from "../tokens.js";
+import { sp, radius, font, weight } from "../tokens.js";
 import "../styles.css";
 import {
   type Day,
@@ -97,6 +97,39 @@ interface ProgramData {
   is_active?: boolean;
 }
 
+/** Skeleton loading state */
+function SkeletonProgram() {
+  return (
+    <div className="profile-card" role="status" aria-label="Loading program">
+      {/* Header skeleton */}
+      <div style={{ marginBottom: sp[8] }}>
+        <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginBottom: sp[2] }}>
+          <div className="skeleton" style={{ width: 180, height: font["2xl"] }} />
+          <div className="skeleton" style={{ width: 60, height: 20, borderRadius: radius.lg }} />
+        </div>
+        <div className="skeleton" style={{ width: 140, height: font.base, marginBottom: sp[4] }} />
+        {/* Day tabs skeleton */}
+        <div style={{ display: "flex", gap: sp[2], borderBottom: "1px solid var(--border)", paddingBottom: sp[3] }}>
+          {[1, 2, 3].map(i => (
+            <div key={i} className="skeleton" style={{ width: 50, height: 24, borderRadius: radius.sm }} />
+          ))}
+        </div>
+      </div>
+      {/* Day content skeleton */}
+      <div>
+        <div className="skeleton" style={{ width: 120, height: font.xl, marginBottom: sp[3] }} />
+        <div className="skeleton" style={{ width: 100, height: font.sm, marginBottom: sp[4] }} />
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", marginBottom: sp[3] }}>
+            <div className="skeleton" style={{ width: `${40 + i * 10}%`, height: font.lg }} />
+            <div className="skeleton" style={{ width: 80, height: font.md }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 interface ToolData {
   program: ProgramData;
   initialDayIdx?: number;
@@ -121,7 +154,7 @@ function ConfirmBar({ onConfirm, confirming, confirmed }: {
   confirmed: boolean;
 }) {
   return (
-    <div className="confirm-bar-sticky">
+    <div className="confirm-bar-sticky" role="status" aria-live="polite">
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         {confirmed ? (
           <span className="profile-confirm-flash">Updated</span>
@@ -130,8 +163,7 @@ function ConfirmBar({ onConfirm, confirming, confirmed }: {
             className="btn btn-primary"
             onClick={onConfirm}
             disabled={confirming}
-            role="button"
-            aria-label="Confirm program changes"
+            aria-busy={confirming}
           >
             {confirming ? "Saving..." : "Confirm Changes"}
           </button>
@@ -177,7 +209,7 @@ function ProgramsWidget() {
     setWidgetState(prev => ({ ...prev, selectedDay: clampedIdx }));
   }, [daysLen, setWidgetState]);
 
-  if (!data) return <div className="loading">Loading...</div>;
+  if (!data) return <SkeletonProgram />;
   if (!data.program) return <div className="empty">No program found</div>;
 
   const program = localProgram || data.program;
@@ -190,15 +222,15 @@ function ProgramsWidget() {
   const pending = data.pendingChanges;
 
   return (
-    <div className="profile-card">
+    <article className="profile-card" aria-label="Training program">
       {/* Header */}
-      <div style={{ marginBottom: sp[8] }}>
+      <header style={{ marginBottom: sp[8] }}>
         <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginBottom: sp[1] }}>
-          <div className="title" style={{ marginBottom: 0 }}>
+          <h1 className="title" style={{ marginBottom: 0 }}>
             {hasPending && pending?.name
               ? <DiffValue current={program.name} pending={pending.name} />
               : program.name}
-          </div>
+          </h1>
           {active
             ? <span className="badge badge-success">Active</span>
             : <span className="badge badge-muted">Inactive</span>
@@ -213,20 +245,20 @@ function ProgramsWidget() {
             <span style={{ fontSize: font.md, color: "var(--text-secondary)" }}>{program.description}</span>
           ) : null}
           <span style={{ fontSize: font.base, color: "var(--text-secondary)" }}>
-            {program.days.length} days &middot; {totalExercises} exercises
+            {program.days.length} days · {totalExercises} exercises
           </span>
         </div>
         {/* Day navigation: WeekdayPills if weekdays exist, otherwise DayTabs */}
         {program.days.length > 1 && (
-          <div style={{ marginTop: sp[4] }}>
+          <nav style={{ marginTop: sp[4] }} aria-label="Program days navigation">
             {hasAnyWeekdays ? (
               <WeekdayPills days={program.days} highlightedDays={viewingWeekdays} onDayClick={goTo} />
             ) : (
               <DayTabs days={program.days} activeIdx={viewingIdx} goTo={goTo} />
             )}
-          </div>
+          </nav>
         )}
-      </div>
+      </header>
 
       {/* Day content panel */}
       <div
@@ -244,7 +276,7 @@ function ProgramsWidget() {
       {hasPending && (
         <ConfirmBar onConfirm={handleConfirm} confirming={confirming} confirmed={confirmed} />
       )}
-    </div>
+    </article>
   );
 }
 
