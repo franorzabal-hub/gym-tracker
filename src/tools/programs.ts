@@ -182,44 +182,91 @@ export function registerProgramTool(server: McpServer) {
   server.registerTool(
     "manage_program",
     {
-      description: `${APP_CONTEXT}Manage workout programs (routines). A program is a weekly routine like PPL, Upper/Lower, Full Body.
-Each program has versioned days with exercises. When updated, a new version is created preserving history.
+      description: `${APP_CONTEXT}Manage workout programs. A program is a weekly routine (PPL, Upper/Lower, Full Body, etc.) with versioned days and exercises.
 
 Actions:
-- "list": List all programs with their current version and active status
-- "get": Get the current version of a program by name, with all days and exercises
-- "create": Create a new program with days and exercises (auto-activates it)
-- "clone": Clone an existing program (global template or another user's program) as a new user-owned program. Pass source_id (program id). Optionally pass name to override the program name. The cloned program is auto-activated. Global programs (templates) are shown by show_programs.
-- "update": Modify a program. If "days" array is provided, creates a new version with updated days + change_description. If only metadata (new_name, description) is provided without days, updates the program metadata without creating a new version.
-- "patch": Update a program's current version in-place (no new version created). Used by the widget for inline editing. Pass program_id (or name/active fallback). Optionally pass new_name, description for metadata. Pass days array to replace all days+exercises in the current version.
-- "activate": Set a program as the active one (deactivates all others). Only one program can be active.
-- "delete": Deactivate a program (soft delete). Use hard_delete=true to permanently remove with all versions/days/exercises (irreversible).
-- "delete_bulk": Delete multiple programs at once. Pass "names" array. Optional hard_delete=true for permanent removal. Returns { deleted, not_found }.
-- "history": List all versions of a program with dates and change descriptions
+- "list": List programs with version and active status
+- "get": Get program by name with days and exercises
+- "create": Create program with days/exercises (auto-activates)
+- "clone": Clone a program (global template or user's). Pass source_id. Optionally pass name. Auto-activates.
+- "update": If "days" provided → new version + change_description. If only metadata (new_name/description) → no new version.
+- "patch": Update current version in-place (no new version). Pass program_id. For widget inline editing.
+- "activate": Set as active (deactivates others). Only one active at a time.
+- "delete": Soft delete. hard_delete=true for permanent removal.
+- "delete_bulk": Delete multiple by "names" array. Optional hard_delete=true.
+- "history": List all versions with dates and change descriptions
 
-For "create" and "update" with days, pass the "days" array with day_label, weekdays (ISO: 1=Mon..7=Sun), and exercises.
-The exercises array accepts three types of items:
+## Day structure
+
+Pass "days" array with day_label, weekdays (ISO: 1=Mon..7=Sun), and exercises.
+Exercises array accepts 3 item types (discriminator: "exercise" → solo, "group_type"+"exercises" → group, "section"+"exercises" → section):
+
 1. Solo exercise: { exercise, sets, reps, weight?, rpe?, rest_seconds?, notes? }
-2. Group: { group_type, label?, notes?, rest_seconds?, exercises: [solo_exercise, ...] }
-   - group_type: "superset" (back-to-back no rest), "paired" (active rest), "circuit" (rotate)
-   - label: optional display label (e.g. "Pecho + Hombro")
-   - notes: group-level notes (e.g. "Sin descanso entre ejercicios")
-   - rest_seconds: rest between rounds of the group
-   - exercises: array of 2+ solo exercises (rest_seconds on individual exercises is ignored inside groups)
-3. Section: { section, notes?, exercises: [solo_or_group, ...] }
-   - section: label for the section (e.g. "Entrada en calor", "Trabajo principal", "Finisher")
-   - notes: section-level notes
-   - exercises: array of solo exercises and/or groups (no nested sections)
-   - Sections are optional collapsible containers. Exercises without a section render directly.
-Discriminator: if the item has "exercise" (string) it's solo; if it has "group_type" + "exercises" (array) it's a group; if it has "section" (string) + "exercises" (array) it's a section.
-Each exercise needs: sets (number), reps (number or array of numbers), weight (optional, number or array of numbers, in kg).
-If reps or weight vary per set (e.g. pyramid), pass an array: reps: [12, 10, 8], weight: [80, 85, 90]. Array length must equal sets.
-If uniform, pass a single number: reps: 10, weight: 80. The widget shows variable schemes as "3×(12/10/8) · 80→90kg" with expandable per-set detail.
-For "clone", pass source_id (the id of the program to clone, typically a global template).
-For "update" with days, also pass change_description explaining what changed.
-For "update" metadata only, pass new_name and/or description (no days needed).
-For "activate", pass the program name.
-When the user wants to SEE their program visually, call show_program instead (not manage_program with action "get").`,
+2. Group: { group_type, label?, notes?, rest_seconds?, exercises: [2+ solo exercises] }
+3. Section: { section, notes?, exercises: [solo or group items, no nesting] }
+
+## Reps and weight (per-set targets)
+
+reps and weight accept number OR array. Array length must equal sets.
+- Uniform: reps: 10, weight: 80 → "3×10 · 80kg"
+- Pyramid: reps: [12, 10, 8], weight: [80, 85, 90] → "3×(12/10/8) · 80→90kg" with expandable detail
+- Mixed: reps: [12, 10, 8], weight: 80 (only reps vary) or reps: 10, weight: [80, 85, 90] (only weight varies)
+
+## Group types — CRITICAL RULES
+
+### superset: Equal-importance exercises back-to-back, rest after the round.
+USE FOR: antagonist pairs (chest+back, bicep+tricep), warmup pairs where both exercises are equivalent.
+EXAMPLE: Cable Fly 3x12 + Lateral Raise 3x15, rest 90s between rounds.
+
+### paired: ONE principal exercise + ONE secondary done during its rest (active rest). Always exactly 2 exercises.
+USE FOR: heavy compound + mobility/activation between sets. The secondary must NOT fatigue the principal.
+CRITICAL: Array order is semantic — exercises[0] = principal (heavy), exercises[1] = secondary (mobility/corrective). Reversing breaks the semantics.
+EXAMPLE: Deadlift 3x[12,10,8] + Hip Mobility 3x30s, rest 180s (secondary done within that rest).
+
+### circuit: 2+ exercises rotated in sequence, rest only after completing the full round.
+USE FOR: accessory blocks, conditioning, finishers.
+EXAMPLE: Lat Pulldown 3x12 + Cable Row 3x12, rest 90s between rounds.
+
+### Choosing the right type:
+- Both exercises equal importance → superset
+- One clearly principal + one for active rest → paired
+- Block of accessories in rotation → circuit
+- If there's no heavy principal exercise with long rest → it's NOT paired
+
+## Sections — standard patterns
+
+Sections are optional collapsible containers. Standard names:
+- "Entrada en calor": warmup. Use superset for equal pairs. Do NOT use paired (no heavy principal exercise in warmup).
+- "Trabajo principal": main work. Use paired (compound+mobility), superset (antagonists), circuit (accessories).
+- "Cierre": cooldown, stretching. Prefer solo exercises (no groups needed).
+The section defines WHEN in the workout; it does NOT imply group_type. Grouping depends on exercise relationship, not section.
+
+## Rest seconds
+
+- Solo exercise: rest_seconds = rest between sets.
+- Grouped exercise: rest_seconds belongs to the GROUP (rest between rounds). The server DISCARDS rest_seconds on individual exercises inside groups.
+- Superset/circuit: group rest_seconds = rest between complete rounds. No rest between exercises.
+- Paired: group rest_seconds = total rest of the principal. Secondary is done within that time.
+
+## Notes rules — avoid redundancy
+
+Exercise notes: form cues, equipment variants, rep ranges. Shown as ⓘ tooltip.
+Group notes: execution instructions that can't be expressed by structured fields.
+Section notes: objective/focus of the section.
+
+DO NOT put in notes:
+- Info already in fields: "3 series de 10" (use sets/reps), "Descanso 90s" (use rest_seconds), "reps: 12/10/8" (use reps array)
+- The definition of the group_type: "Sin descanso entre ejercicios" (= superset definition), "Movilidad durante el descanso" (= paired definition), "Circuito sin descanso entre ejercicios" (= circuit definition)
+- Info already in the section: "Esto es entrada en calor" (section label says it)
+
+## Fields NOT passed in program exercises
+
+exercise_type and rep_type are resolved automatically from the exercises DB. Do NOT pass them.
+- exercise_type (strength/mobility/cardio) describes the exercise's nature, not its position in the workout.
+- "warmup" is NOT a valid exercise_type. An exercise in "Entrada en calor" section is still strength or mobility by nature.
+- muscle_group is also resolved from the exercises DB. To set it, use manage_exercises.
+
+To see the program visually, call show_program (not manage_program "get").`,
       inputSchema: {
         action: z.enum(["list", "get", "create", "clone", "update", "patch", "activate", "delete", "delete_bulk", "history"]),
         name: z.string().optional(),
