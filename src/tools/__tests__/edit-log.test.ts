@@ -239,6 +239,8 @@ describe("edit_workout tool", () => {
         // UPDATE is_validated
         .mockResolvedValueOnce({})
         // Get exercises
+        .mockResolvedValueOnce({ rows: [] })
+        // Batch get all sets (none since no exercises)
         .mockResolvedValueOnce({ rows: [] });
 
       const result = await toolHandler({ validate_workout: "today" });

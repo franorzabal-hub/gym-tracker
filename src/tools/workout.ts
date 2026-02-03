@@ -24,16 +24,26 @@ The widget already shows all information visually — do NOT repeat exercises or
   }, safeHandler("show_workout", async ({ session_id }: { session_id?: number }) => {
     const userId = getUserId();
 
+    // Fetch session with program day in one query (saves 1 round-trip)
     let rows;
     if (session_id != null) {
       const result = await pool.query(
-        "SELECT id, started_at, ended_at, program_day_id, tags, is_validated FROM sessions WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL LIMIT 1",
+        `SELECT s.id, s.started_at, s.ended_at, s.program_day_id, s.tags, s.is_validated, pd.day_label as program_day
+         FROM sessions s
+         LEFT JOIN program_days pd ON pd.id = s.program_day_id
+         WHERE s.id = $1 AND s.user_id = $2 AND s.deleted_at IS NULL
+         LIMIT 1`,
         [session_id, userId]
       );
       rows = result.rows;
     } else {
       const result = await pool.query(
-        "SELECT id, started_at, ended_at, program_day_id, tags, is_validated FROM sessions WHERE user_id = $1 AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
+        `SELECT s.id, s.started_at, s.ended_at, s.program_day_id, s.tags, s.is_validated, pd.day_label as program_day
+         FROM sessions s
+         LEFT JOIN program_days pd ON pd.id = s.program_day_id
+         WHERE s.user_id = $1 AND s.deleted_at IS NULL
+         ORDER BY s.started_at DESC
+         LIMIT 1`,
         [userId]
       );
       rows = result.rows;
@@ -53,16 +63,7 @@ The widget already shows all information visually — do NOT repeat exercises or
     const durationMinutes = isEnded
       ? Math.round((new Date(session.ended_at).getTime() - new Date(session.started_at).getTime()) / 60000)
       : Math.round((Date.now() - new Date(session.started_at).getTime()) / 60000);
-
-    // Get program day label
-    let programDay: string | undefined;
-    if (session.program_day_id) {
-      const { rows: dayRows } = await pool.query(
-        "SELECT day_label FROM program_days WHERE id = $1",
-        [session.program_day_id]
-      );
-      if (dayRows.length > 0) programDay = dayRows[0].day_label;
-    }
+    const programDay = session.program_day || undefined;
 
     // Get exercises + sets (with logged_at, muscle_group, exercise_type, rep_type, group info, section info)
     const { rows: exerciseDetails } = await pool.query(

@@ -253,7 +253,7 @@ Parameters:
           [resolved.session_id, userId]
         );
 
-        // Recalculate PRs for all exercises in this workout
+        // Recalculate PRs for all exercises in this workout (batch query for all sets)
         const { rows: workoutExercises } = await pool.query(
           `SELECT se.id, se.exercise_id, e.name as exercise_name, e.exercise_type
            FROM session_exercises se
@@ -262,12 +262,26 @@ Parameters:
           [resolved.session_id]
         );
 
+        // Batch fetch all sets for all exercises in this workout
+        const { rows: allSets } = await pool.query<{ session_exercise_id: number; id: number; reps: number; weight: number | null }>(
+          `SELECT s.session_exercise_id, s.id, s.reps, s.weight
+           FROM sets s
+           JOIN session_exercises se ON se.id = s.session_exercise_id
+           WHERE se.session_id = $1`,
+          [resolved.session_id]
+        );
+
+        // Group sets by session_exercise_id
+        const setsByExercise = new Map<number, Array<{ id: number; reps: number; weight: number | null }>>();
+        for (const set of allSets) {
+          const existing = setsByExercise.get(set.session_exercise_id) || [];
+          existing.push({ id: set.id, reps: set.reps, weight: set.weight });
+          setsByExercise.set(set.session_exercise_id, existing);
+        }
+
         const allPRs: Array<{ exercise: string; prs: PRCheck[] }> = [];
         for (const se of workoutExercises) {
-          const { rows: sets } = await pool.query<{ id: number; reps: number; weight: number | null }>(
-            `SELECT id, reps, weight FROM sets WHERE session_exercise_id = $1`,
-            [se.id]
-          );
+          const sets = setsByExercise.get(se.id) || [];
 
           if (sets.length > 0) {
             const prs = await checkPRs(
@@ -488,43 +502,40 @@ async function processSingleEdit(params: EditParams): Promise<Record<string, unk
   const totalSets = totalSetsRows[0].total;
 
   if (action === "delete") {
-    let deletedCount = 0;
-    for (const seId of seIds) {
-      const deleteParams: (number | number[] | string)[] = [seId];
-      const conditions: string[] = ["session_exercise_id = $1"];
+    // Batch DELETE across all seIds in one query
+    const deleteParams: (number[] | string)[] = [seIds];
+    const conditions: string[] = ["session_exercise_id = ANY($1)"];
 
-      if (set_ids && set_ids.length > 0) {
-        deleteParams.push(set_ids);
-        conditions.push(`id = ANY($${deleteParams.length})`);
-      } else if (set_numbers && set_numbers.length > 0) {
-        deleteParams.push(set_numbers);
-        conditions.push(`set_number = ANY($${deleteParams.length})`);
-      }
+    if (set_ids && set_ids.length > 0) {
+      deleteParams.push(set_ids);
+      conditions.push(`id = ANY($${deleteParams.length})`);
+    } else if (set_numbers && set_numbers.length > 0) {
+      deleteParams.push(set_numbers);
+      conditions.push(`set_number = ANY($${deleteParams.length})`);
+    }
 
-      if (set_type_filter) {
-        deleteParams.push(set_type_filter);
-        conditions.push(`set_type = $${deleteParams.length}`);
-      }
+    if (set_type_filter) {
+      deleteParams.push(set_type_filter);
+      conditions.push(`set_type = $${deleteParams.length}`);
+    }
 
-      const { rowCount } = await pool.query(
-        `DELETE FROM sets WHERE ${conditions.join(" AND ")}`,
-        deleteParams
+    const { rowCount } = await pool.query(
+      `DELETE FROM sets WHERE ${conditions.join(" AND ")}`,
+      deleteParams
+    );
+    const deletedCount = rowCount ?? 0;
+
+    // Clean up session_exercises with no remaining sets (batch check)
+    if (!set_ids && !set_numbers && !set_type_filter) {
+      // If no filter was used, delete all session_exercises
+      await pool.query(`DELETE FROM session_exercises WHERE id = ANY($1)`, [seIds]);
+    } else {
+      // Find and delete session_exercises with no remaining sets
+      await pool.query(
+        `DELETE FROM session_exercises
+         WHERE id = ANY($1) AND NOT EXISTS (SELECT 1 FROM sets WHERE session_exercise_id = session_exercises.id)`,
+        [seIds]
       );
-      deletedCount += rowCount ?? 0;
-
-      // If no specific filter was used, also delete the session_exercise
-      if (!set_ids && !set_numbers && !set_type_filter) {
-        await pool.query(`DELETE FROM session_exercises WHERE id = $1`, [seId]);
-      } else {
-        // Check if any sets remain
-        const { rows: remainingRows } = await pool.query(
-          `SELECT 1 FROM sets WHERE session_exercise_id = $1 LIMIT 1`,
-          [seId]
-        );
-        if (remainingRows.length === 0) {
-          await pool.query(`DELETE FROM session_exercises WHERE id = $1`, [seId]);
-        }
-      }
     }
 
     // Get remaining sets for context
@@ -554,71 +565,58 @@ async function processSingleEdit(params: EditParams): Promise<Record<string, unk
     return { error: "No updates provided" };
   }
 
-  let totalUpdated = 0;
-  const allUpdatedSets: Array<{
-    set_id: number;
-    set_number: number;
-    reps: number;
-    weight: number | null;
-    rpe: number | null;
-    set_type: string;
-    notes: string | null;
-  }> = [];
+  // Batch UPDATE across all seIds in one query
+  const setClauses: string[] = [];
+  const updateParams: (number[] | number | string | null)[] = [seIds];
 
-  for (const seId of seIds) {
-    const setClauses: string[] = [];
-    const updateParams: (number | number[] | string | null)[] = [seId];
-
-    if (updates.reps !== undefined) {
-      updateParams.push(updates.reps);
-      setClauses.push(`reps = $${updateParams.length}`);
-    }
-    if (updates.weight !== undefined) {
-      updateParams.push(updates.weight);
-      setClauses.push(`weight = $${updateParams.length}`);
-    }
-    if (updates.rpe !== undefined) {
-      updateParams.push(updates.rpe);
-      setClauses.push(`rpe = $${updateParams.length}`);
-    }
-    if (updates.set_type !== undefined) {
-      updateParams.push(updates.set_type);
-      setClauses.push(`set_type = $${updateParams.length}`);
-    }
-    if (updates.notes !== undefined) {
-      updateParams.push(updates.notes);
-      setClauses.push(`notes = $${updateParams.length}`);
-    }
-
-    let setFilter = "";
-    if (set_ids && set_ids.length > 0) {
-      updateParams.push(set_ids);
-      setFilter = `AND id = ANY($${updateParams.length})`;
-    } else if (set_numbers && set_numbers.length > 0) {
-      updateParams.push(set_numbers);
-      setFilter = `AND set_number = ANY($${updateParams.length})`;
-    }
-
-    if (set_type_filter) {
-      updateParams.push(set_type_filter);
-      setFilter += ` AND set_type = $${updateParams.length}`;
-    }
-
-    const { rowCount } = await pool.query(
-      `UPDATE sets SET ${setClauses.join(", ")}
-       WHERE session_exercise_id = $1 ${setFilter}`,
-      updateParams
-    );
-    totalUpdated += rowCount ?? 0;
-
-    // Fetch updated sets
-    const { rows: updatedSets } = await pool.query(
-      `SELECT id as set_id, set_number, reps, weight, rpe, set_type, notes
-       FROM sets WHERE session_exercise_id = $1 ORDER BY set_number`,
-      [seId]
-    );
-    allUpdatedSets.push(...updatedSets);
+  if (updates.reps !== undefined) {
+    updateParams.push(updates.reps);
+    setClauses.push(`reps = $${updateParams.length}`);
   }
+  if (updates.weight !== undefined) {
+    updateParams.push(updates.weight);
+    setClauses.push(`weight = $${updateParams.length}`);
+  }
+  if (updates.rpe !== undefined) {
+    updateParams.push(updates.rpe);
+    setClauses.push(`rpe = $${updateParams.length}`);
+  }
+  if (updates.set_type !== undefined) {
+    updateParams.push(updates.set_type);
+    setClauses.push(`set_type = $${updateParams.length}`);
+  }
+  if (updates.notes !== undefined) {
+    updateParams.push(updates.notes);
+    setClauses.push(`notes = $${updateParams.length}`);
+  }
+
+  let setFilter = "";
+  if (set_ids && set_ids.length > 0) {
+    updateParams.push(set_ids);
+    setFilter = `AND id = ANY($${updateParams.length})`;
+  } else if (set_numbers && set_numbers.length > 0) {
+    updateParams.push(set_numbers);
+    setFilter = `AND set_number = ANY($${updateParams.length})`;
+  }
+
+  if (set_type_filter) {
+    updateParams.push(set_type_filter);
+    setFilter += ` AND set_type = $${updateParams.length}`;
+  }
+
+  const { rowCount } = await pool.query(
+    `UPDATE sets SET ${setClauses.join(", ")}
+     WHERE session_exercise_id = ANY($1) ${setFilter}`,
+    updateParams
+  );
+  const totalUpdated = rowCount ?? 0;
+
+  // Fetch all updated sets in one query
+  const { rows: allUpdatedSets } = await pool.query(
+    `SELECT id as set_id, set_number, reps, weight, rpe, set_type, notes
+     FROM sets WHERE session_exercise_id = ANY($1) ORDER BY set_number`,
+    [seIds]
+  );
 
   return {
     exercise: resolved.name,

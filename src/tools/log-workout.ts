@@ -11,8 +11,8 @@ import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 import { logSingleExercise, exerciseEntrySchema, type ExerciseEntry } from "../helpers/log-exercise-helper.js";
-import { cloneGroups } from "../helpers/group-helpers.js";
-import { cloneSections } from "../helpers/section-helpers.js";
+import { cloneGroupsBatch } from "../helpers/group-helpers.js";
+import { cloneSectionsBatch } from "../helpers/section-helpers.js";
 import type { ExerciseOverride, PRCheck, ExerciseType, ProgramDayRow } from "../db/types.js";
 
 /** Logged exercise result for routine exercises */
@@ -280,16 +280,16 @@ Parameters:
           overrideMap.set(resolved.name.toLowerCase(), o);
         }
 
-        // Clone exercise groups from program day to session
-        const groupMap = await cloneGroups(
+        // Clone exercise groups from program day to session (batch: 1 query)
+        const groupMap = await cloneGroupsBatch(
           "program_exercise_groups", "session_exercise_groups",
           "day_id", "session_id",
           dayInfo.id, sessionId,
           client
         );
 
-        // Clone sections from program day to session
-        const sectionMap = await cloneSections(
+        // Clone sections from program day to session (batch: 1 query)
+        const sectionMap = await cloneSectionsBatch(
           "program_sections", "session_sections",
           "day_id", "session_id",
           dayInfo.id, sessionId,

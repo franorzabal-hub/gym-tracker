@@ -32,11 +32,11 @@ vi.mock("../../helpers/program-helpers.js", () => ({
 }));
 
 vi.mock("../../helpers/group-helpers.js", () => ({
-  cloneGroups: vi.fn().mockResolvedValue(new Map()),
+  cloneGroupsBatch: vi.fn().mockResolvedValue(new Map()),
 }));
 
 vi.mock("../../helpers/section-helpers.js", () => ({
-  cloneSections: vi.fn().mockResolvedValue(new Map()),
+  cloneSectionsBatch: vi.fn().mockResolvedValue(new Map()),
 }));
 
 vi.mock("../../context/user-context.js", () => ({
@@ -131,17 +131,20 @@ describe("log_workout tool", () => {
   describe("single exercise mode", () => {
     it("logs sets to existing session", async () => {
       mockGetActiveProgram.mockResolvedValueOnce(null);
-      mockResolve.mockResolvedValueOnce({ id: 1, name: "Bench Press", isNew: false });
+      mockResolve.mockResolvedValueOnce({ id: 1, name: "Bench Press", isNew: false, exerciseType: "strength" });
 
       // Transaction: BEGIN, active session, logSingleExercise queries, COMMIT
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ id: 5, started_at: "2024-01-15T10:00:00Z", program_day_id: null, is_validated: true }] }) // active session
-        // logSingleExercise: session_exercise check (new), insert set x3
-        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // insert session_exercise (new, no existing)
-        .mockResolvedValueOnce({ rows: [{ id: 100 }] }) // insert set 1
-        .mockResolvedValueOnce({ rows: [{ id: 101 }] }) // insert set 2
-        .mockResolvedValueOnce({ rows: [{ id: 102 }] }) // insert set 3
+        // logSingleExercise: check existing session_exercise (none), insert session_exercise, batch insert sets
+        .mockResolvedValueOnce({ rows: [] }) // check existing session_exercise (none found)
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // insert session_exercise
+        .mockResolvedValueOnce({ rows: [ // batch insert sets - returns all 3
+          { id: 100, set_number: 1, reps: 8, weight: 80, rpe: null, notes: null },
+          { id: 101, set_number: 2, reps: 8, weight: 80, rpe: null, notes: null },
+          { id: 102, set_number: 3, reps: 8, weight: 80, rpe: null, notes: null },
+        ]})
         .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({
@@ -156,15 +159,16 @@ describe("log_workout tool", () => {
 
     it("auto-creates session when none active", async () => {
       mockGetActiveProgram.mockResolvedValueOnce(null);
-      mockResolve.mockResolvedValueOnce({ id: 1, name: "Squat", isNew: false });
+      mockResolve.mockResolvedValueOnce({ id: 1, name: "Squat", isNew: false, exerciseType: "strength" });
 
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [] }) // no active session
         .mockResolvedValueOnce({ rows: [{ req_val: null }] }) // profile requires_validation
         .mockResolvedValueOnce({ rows: [{ id: 20, started_at: "2024-01-15T10:00:00Z", is_validated: true }] }) // create session
+        .mockResolvedValueOnce({ rows: [] }) // check existing session_exercise (none)
         .mockResolvedValueOnce({ rows: [{ id: 30 }] }) // insert session_exercise
-        .mockResolvedValueOnce({ rows: [{ id: 200 }] }) // insert set
+        .mockResolvedValueOnce({ rows: [{ id: 200, set_number: 1, reps: 5, weight: 100, rpe: null, notes: null }] }) // batch insert sets
         .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({

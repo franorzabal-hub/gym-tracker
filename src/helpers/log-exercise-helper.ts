@@ -107,39 +107,44 @@ export async function logSingleExercise(sessionId: number, entry: ExerciseEntry,
       : set_notes.map((n) => n || null)
     : Array(repsArray.length).fill(null);
 
-  // Insert sets
-  const loggedSets: Array<{
-    set_number: number;
-    reps: number;
-    weight?: number;
-    rpe?: number;
-    set_type: string;
-    notes?: string;
-    set_id: number;
-  }> = [];
+  // Prepare batch data for sets
+  const setNumbers: number[] = [];
+  const setReps: number[] = [];
+  const setWeights: (number | null)[] = [];
+  const setRPEs: (number | null)[] = [];
+  const setNotes: (string | null)[] = [];
 
   for (let i = 0; i < repsArray.length; i++) {
-    const setNote = notesArray[i] || null;
+    setNumbers.push(startSetNumber + i + 1);
+    setReps.push(repsArray[i]);
+    setRPEs.push(rpe || null);
+    setNotes.push(notesArray[i] || null);
+
     // Calculate weight for drop sets
     let setWeight = weight || null;
-    if (set_type === 'drop' && weight && drop_percent) {
+    if (set_type === "drop" && weight && drop_percent) {
       setWeight = Math.max(0, Math.round((weight * (1 - (i * drop_percent / 100))) * 10) / 10);
     }
-    const { rows: [inserted] } = await q.query(
-      `INSERT INTO sets (session_exercise_id, set_number, set_type, reps, weight, rpe, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [se.id, startSetNumber + i + 1, set_type, repsArray[i], setWeight, rpe || null, setNote]
-    );
-    loggedSets.push({
-      set_number: startSetNumber + i + 1,
-      reps: repsArray[i],
-      weight: setWeight || undefined,
-      rpe: rpe || undefined,
-      set_type,
-      notes: setNote || undefined,
-      set_id: inserted.id,
-    });
+    setWeights.push(setWeight);
   }
+
+  // Batch INSERT all sets at once
+  const { rows: insertedSets } = await q.query(
+    `INSERT INTO sets (session_exercise_id, set_number, set_type, reps, weight, rpe, notes)
+     SELECT $1, unnest($2::int[]), $3, unnest($4::int[]), unnest($5::real[]), unnest($6::real[]), unnest($7::text[])
+     RETURNING id, set_number, reps, weight, rpe, notes`,
+    [se.id, setNumbers, set_type, setReps, setWeights, setRPEs, setNotes]
+  );
+
+  const loggedSets = insertedSets.map((row: { id: number; set_number: number; reps: number; weight: number | null; rpe: number | null; notes: string | null }) => ({
+    set_number: row.set_number,
+    reps: row.reps,
+    weight: row.weight ?? undefined,
+    rpe: row.rpe ?? undefined,
+    set_type,
+    notes: row.notes ?? undefined,
+    set_id: row.id,
+  }));
 
   // Check for PRs (only if session is validated)
   const newPRs = sessionValidated
