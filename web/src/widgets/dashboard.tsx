@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { useState, useCallback, useRef } from "react";
 import { useToolOutput } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
+import { sp, radius, font, weight, opacity, maxWidth } from "../tokens.js";
 import "../styles.css";
 import { Sparkline, BarChart, HorizontalBars } from "./shared/charts.js";
 
@@ -19,6 +20,51 @@ interface DashboardData {
   top_exercises?: Array<{ exercise: string; volume: number; sessions: number }>;
 }
 
+// ── Helpers ──
+
+function periodLabel(period: string): string {
+  if (period === "week") return "This week";
+  if (period === "month") return "This month";
+  if (period === "year") return "This year";
+  return `Last ${period} days`;
+}
+
+// ── Skeleton ──
+
+function SkeletonDashboard() {
+  return (
+    <div className="profile-card" role="status" aria-label="Loading dashboard">
+      {/* Card skeleton */}
+      <div style={{
+        background: "var(--bg-secondary)",
+        border: "1px solid var(--border)",
+        borderRadius: radius.md,
+        padding: `${sp[6]}px ${sp[8]}px`,
+      }}>
+        {/* Header skeleton */}
+        <div style={{ display: "flex", alignItems: "center", gap: sp[3], marginBottom: sp[5] }}>
+          <div className="skeleton" style={{ width: 16, height: 16, borderRadius: radius.sm }} />
+          <div className="skeleton" style={{ width: 100, height: font.sm }} />
+        </div>
+        {/* Value skeleton */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: sp[3], marginBottom: sp[3] }}>
+          <div className="skeleton" style={{ width: 60, height: font["2xl"] }} />
+          <div className="skeleton" style={{ width: 30, height: font.sm }} />
+        </div>
+        {/* Chart skeleton */}
+        <div className="skeleton" style={{ width: "100%", height: 70, borderRadius: radius.sm, marginTop: sp[4] }} />
+      </div>
+      {/* Dots skeleton */}
+      <div style={{ display: "flex", justifyContent: "center", gap: sp[3], marginTop: sp[5] }}>
+        {[1, 2, 3].map(i => (
+          <div key={i} className="skeleton" style={{ width: 8, height: 8, borderRadius: radius.full }} />
+        ))}
+      </div>
+      <span className="sr-only">Loading dashboard...</span>
+    </div>
+  );
+}
+
 // ── Card wrapper ──
 
 function Card({ title, icon, children, fullWidth }: { title: string; icon: string; children: React.ReactNode; fullWidth?: boolean }) {
@@ -27,17 +73,17 @@ function Card({ title, icon, children, fullWidth }: { title: string; icon: strin
       style={{
         background: "var(--bg-secondary)",
         border: "1px solid var(--border)",
-        borderRadius: "var(--radius)",
-        padding: "14px 16px",
+        borderRadius: radius.md,
+        padding: `${sp[6]}px ${sp[8]}px`,
         width: fullWidth ? "100%" : undefined,
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-        <span style={{ fontSize: 14 }}>{icon}</span>
-        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.3px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: sp[3], marginBottom: sp[5] }}>
+        <span style={{ fontSize: font.md }}>{icon}</span>
+        <span style={{ fontSize: font.sm, fontWeight: weight.semibold, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.3px" }}>
           {title}
         </span>
       </div>
@@ -53,17 +99,17 @@ function StreakCard({ data, fullWidth }: { data: DashboardData["streak"]; fullWi
   const { current_weeks, longest_weeks, this_week } = data;
   return (
     <Card title="Training Streak" icon="↗" fullWidth={fullWidth}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: sp[3] }}>
         <span className="stat-value">{current_weeks}</span>
         <span className="stat-label">weeks</span>
       </div>
-      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6 }}>
+      <div style={{ fontSize: font.sm, color: "var(--text-secondary)", marginTop: sp[3] }}>
         {this_week > 0
           ? `${this_week} session${this_week > 1 ? "s" : ""} this week`
           : "No sessions this week yet"}
       </div>
       {longest_weeks > current_weeks && (
-        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2, opacity: 0.7 }}>
+        <div style={{ fontSize: font.xs, color: "var(--text-secondary)", marginTop: sp[1], opacity: opacity.subtle }}>
           Best: {longest_weeks} weeks
         </div>
       )}
@@ -75,7 +121,9 @@ function VolumeCard({ data, fullWidth }: { data: DashboardData["volume_weekly"];
   if (!data || data.length === 0) {
     return (
       <Card title="Weekly Volume" icon="◆" fullWidth={fullWidth}>
-        <div className="empty" style={{ padding: 12 }}>No volume data yet</div>
+        <div style={{ fontSize: font.base, color: "var(--text-secondary)", padding: `${sp[6]}px 0`, textAlign: "center" }}>
+          No volume data yet
+        </div>
       </Card>
     );
   }
@@ -89,14 +137,11 @@ function VolumeCard({ data, fullWidth }: { data: DashboardData["volume_weekly"];
 
   return (
     <Card title="Weekly Volume" icon="◆" fullWidth={fullWidth}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: sp[3], marginBottom: sp[3] }}>
         <span className="stat-value">{formatLargeNumber(last.volume)}</span>
         <span className="stat-label">kg</span>
         {prev && diff !== 0 && (
-          <span
-            className={`badge ${diff > 0 ? "badge-success" : "badge-danger"}`}
-            style={{ fontSize: 11, marginLeft: 4 }}
-          >
+          <span className={`badge ${diff > 0 ? "badge-success" : "badge-danger"}`} style={{ marginLeft: sp[2] }}>
             {diff > 0 ? "+" : ""}{diff.toFixed(0)}%
           </span>
         )}
@@ -114,13 +159,15 @@ function FrequencyCard({ data, fullWidth }: { data: DashboardData["frequency"]; 
   if (!data || data.weekly.length === 0) {
     return (
       <Card title="Frequency" icon="▦" fullWidth={fullWidth}>
-        <div className="empty" style={{ padding: 12 }}>No sessions yet</div>
+        <div style={{ fontSize: font.base, color: "var(--text-secondary)", padding: `${sp[6]}px 0`, textAlign: "center" }}>
+          No sessions yet
+        </div>
       </Card>
     );
   }
   return (
     <Card title="Frequency" icon="▦" fullWidth={fullWidth}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: sp[3], marginBottom: sp[3] }}>
         <span className="stat-value">{data.avg_per_week}</span>
         <span className="stat-label">sessions / week</span>
       </div>
@@ -129,7 +176,7 @@ function FrequencyCard({ data, fullWidth }: { data: DashboardData["frequency"]; 
         width={fullWidth ? 320 : 200}
         height={45}
       />
-      <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>
+      <div style={{ fontSize: font.xs, color: "var(--text-secondary)", marginTop: sp[2] }}>
         {data.total} total sessions
       </div>
     </Card>
@@ -140,7 +187,9 @@ function PRsCard({ data, fullWidth }: { data: DashboardData["recent_prs"]; fullW
   if (!data || data.length === 0) {
     return (
       <Card title="Recent PRs" icon="★" fullWidth={fullWidth}>
-        <div className="empty" style={{ padding: 12 }}>No PRs yet</div>
+        <div style={{ fontSize: font.base, color: "var(--text-secondary)", padding: `${sp[6]}px 0`, textAlign: "center" }}>
+          No PRs yet
+        </div>
       </Card>
     );
   }
@@ -160,20 +209,19 @@ function PRsCard({ data, fullWidth }: { data: DashboardData["recent_prs"]; fullW
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            padding: "5px 0",
+            padding: `${sp[2]}px 0`,
             borderBottom: i < data.length - 1 ? "1px solid var(--border)" : "none",
-            fontSize: 13,
           }}
         >
           <div>
-            <div style={{ fontWeight: 500 }}>{pr.exercise}</div>
-            <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+            <div style={{ fontSize: font.base, fontWeight: weight.medium }}>{pr.exercise}</div>
+            <div style={{ fontSize: font.xs, color: "var(--text-secondary)" }}>
               {typeLabel[pr.record_type] || pr.record_type}
             </div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontWeight: 700, color: "var(--warning)" }}>{pr.value}</div>
-            <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>{pr.achieved_at}</div>
+            <div style={{ fontSize: font.base, fontWeight: weight.bold, color: "var(--warning)" }}>{pr.value}</div>
+            <div style={{ fontSize: font["2xs"], color: "var(--text-secondary)" }}>{pr.achieved_at}</div>
           </div>
         </div>
       ))}
@@ -185,7 +233,9 @@ function MuscleGroupCard({ data, fullWidth }: { data: DashboardData["muscle_grou
   if (!data || data.length === 0) {
     return (
       <Card title="Muscle Groups" icon="●" fullWidth={fullWidth}>
-        <div className="empty" style={{ padding: 12 }}>No data yet</div>
+        <div style={{ fontSize: font.base, color: "var(--text-secondary)", padding: `${sp[6]}px 0`, textAlign: "center" }}>
+          No data yet
+        </div>
       </Card>
     );
   }
@@ -212,14 +262,11 @@ function BodyWeightCard({ data, fullWidth }: { data: DashboardData["body_weight"
 
   return (
     <Card title="Body Weight" icon="△" fullWidth={fullWidth}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: sp[3], marginBottom: sp[3] }}>
         <span className="stat-value">{last.toFixed(1)}</span>
         <span className="stat-label">kg</span>
         {data.length > 1 && diff !== 0 && (
-          <span
-            className={`badge ${diff < 0 ? "badge-success" : "badge-warning"}`}
-            style={{ fontSize: 11, marginLeft: 4 }}
-          >
+          <span className={`badge ${diff < 0 ? "badge-success" : "badge-warning"}`} style={{ marginLeft: sp[2] }}>
             {diff > 0 ? "+" : ""}{diff.toFixed(1)} kg
           </span>
         )}
@@ -238,7 +285,9 @@ function TopExercisesCard({ data, fullWidth }: { data: DashboardData["top_exerci
   if (!data || data.length === 0) {
     return (
       <Card title="Top Exercises" icon="▲" fullWidth={fullWidth}>
-        <div className="empty" style={{ padding: 12 }}>No data yet</div>
+        <div style={{ fontSize: font.base, color: "var(--text-secondary)", padding: `${sp[6]}px 0`, textAlign: "center" }}>
+          No data yet
+        </div>
       </Card>
     );
   }
@@ -256,76 +305,92 @@ function TopExercisesCard({ data, fullWidth }: { data: DashboardData["top_exerci
   );
 }
 
-// ── Swipe Carousel ──
+// ── Dashboard Tabs ──
 
-function SwipeCarousel({ children, count }: { children: (idx: number) => React.ReactNode; count: number }) {
-  const [activeIdx, setActiveIdx] = useState(0);
-  const touchRef = useRef<{ startX: number; startY: number } | null>(null);
+interface DashboardCard {
+  key: string;
+  label: string;
+  icon: string;
+  render: () => React.ReactNode;
+}
 
-  const goTo = useCallback(
-    (idx: number) => setActiveIdx(Math.max(0, Math.min(idx, count - 1))),
-    [count],
-  );
+function DashboardTabs({ cards, activeIdx, goTo }: { cards: DashboardCard[]; activeIdx: number; goTo: (idx: number) => void }) {
+  const tabsRef = useRef<HTMLDivElement>(null);
 
-  const onTouchStart = useCallback((e: React.TouchEvent) => {
-    touchRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY };
-  }, []);
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const len = cards.length;
+    switch (e.key) {
+      case "ArrowRight":
+        e.preventDefault();
+        goTo((activeIdx + 1) % len);
+        break;
+      case "ArrowLeft":
+        e.preventDefault();
+        goTo((activeIdx - 1 + len) % len);
+        break;
+      case "Home":
+        e.preventDefault();
+        goTo(0);
+        break;
+      case "End":
+        e.preventDefault();
+        goTo(len - 1);
+        break;
+    }
+  }, [cards.length, activeIdx, goTo]);
 
-  const onTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      if (!touchRef.current) return;
-      const dx = e.changedTouches[0].clientX - touchRef.current.startX;
-      const dy = e.changedTouches[0].clientY - touchRef.current.startY;
-      touchRef.current = null;
-      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
-        goTo(activeIdx + (dx < 0 ? 1 : -1));
-      }
-    },
-    [activeIdx, goTo],
-  );
+  if (cards.length <= 1) return null;
 
   return (
-    <div>
-      <div
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-        style={{ display: "grid", gridTemplateColumns: "1fr" }}
-      >
-        {Array.from({ length: count }, (_, i) => (
-          <div
-            key={i}
+    <div
+      ref={tabsRef}
+      role="tablist"
+      aria-label="Dashboard metrics"
+      onKeyDown={handleKeyDown}
+      style={{
+        display: "flex",
+        borderBottom: "1px solid var(--border)",
+        overflowX: "auto",
+        scrollbarWidth: "none",
+        gap: sp[1],
+        marginBottom: sp[6],
+      }}
+    >
+      {cards.map((card, i) => {
+        const isActive = i === activeIdx;
+
+        return (
+          <button
+            key={card.key}
+            role="tab"
+            aria-selected={isActive}
+            aria-controls={`dashboard-panel-${i}`}
+            tabIndex={isActive ? 0 : -1}
+            onClick={() => goTo(i)}
+            className="day-tab"
             style={{
-              gridArea: "1 / 1",
-              visibility: i === activeIdx ? "visible" : "hidden",
+              display: "flex",
+              alignItems: "center",
+              gap: sp[2],
+              fontSize: font.sm,
+              fontWeight: isActive ? weight.semibold : weight.medium,
+              marginBottom: "-1px",
+              background: "transparent",
+              border: "none",
+              borderBottomWidth: "2px",
+              borderBottomStyle: "solid",
+              borderBottomColor: isActive ? "var(--primary)" : "transparent",
+              color: isActive ? "var(--primary)" : "var(--text-secondary)",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
             }}
-            aria-hidden={i !== activeIdx}
           >
-            {children(i)}
-          </div>
-        ))}
-      </div>
-      {count > 1 && (
-        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 10 }}>
-          {Array.from({ length: count }, (_, i) => (
-            <div
-              key={i}
-              onClick={() => goTo(i)}
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: i === activeIdx ? "var(--primary)" : "var(--border)",
-                cursor: "pointer",
-                transition: "background 0.2s",
-                padding: 0,
-                margin: 0,
-                boxSizing: "content-box",
-                border: "10px solid transparent",
-              }}
-            />
-          ))}
-        </div>
-      )}
+            <span>{card.icon}</span>
+            <span>{card.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -334,35 +399,90 @@ function SwipeCarousel({ children, count }: { children: (idx: number) => React.R
 
 function DashboardWidget() {
   const data = useToolOutput<DashboardData>();
+  const [activeIdx, setActiveIdx] = useState(0);
 
-  if (!data) return <div className="loading">Loading...</div>;
+  const goTo = useCallback((idx: number) => {
+    setActiveIdx(idx);
+  }, []);
 
-  // Build list of available cards
-  const cards: Array<{ key: string; render: (fullWidth: boolean) => React.ReactNode }> = [];
+  if (!data) return <SkeletonDashboard />;
 
-  if (data.streak) cards.push({ key: "streak", render: (fw) => <StreakCard data={data.streak} fullWidth={fw} /> });
-  if (data.volume_weekly) cards.push({ key: "volume", render: (fw) => <VolumeCard data={data.volume_weekly} fullWidth={fw} /> });
-  if (data.frequency) cards.push({ key: "frequency", render: (fw) => <FrequencyCard data={data.frequency} fullWidth={fw} /> });
-  if (data.recent_prs) cards.push({ key: "prs", render: (fw) => <PRsCard data={data.recent_prs} fullWidth={fw} /> });
-  if (data.muscle_groups) cards.push({ key: "muscle_groups", render: (fw) => <MuscleGroupCard data={data.muscle_groups} fullWidth={fw} /> });
-  if (data.body_weight) cards.push({ key: "body_weight", render: (fw) => <BodyWeightCard data={data.body_weight} fullWidth={fw} /> });
-  if (data.top_exercises) cards.push({ key: "top_exercises", render: (fw) => <TopExercisesCard data={data.top_exercises} fullWidth={fw} /> });
+  // Build list of available cards with labels
+  const cards: DashboardCard[] = [];
+
+  if (data.streak) cards.push({ key: "streak", label: "Streak", icon: "↗", render: () => <StreakCard data={data.streak} fullWidth /> });
+  if (data.volume_weekly) cards.push({ key: "volume", label: "Volume", icon: "◆", render: () => <VolumeCard data={data.volume_weekly} fullWidth /> });
+  if (data.frequency) cards.push({ key: "frequency", label: "Frequency", icon: "▦", render: () => <FrequencyCard data={data.frequency} fullWidth /> });
+  if (data.recent_prs) cards.push({ key: "prs", label: "PRs", icon: "★", render: () => <PRsCard data={data.recent_prs} fullWidth /> });
+  if (data.muscle_groups) cards.push({ key: "muscle_groups", label: "Muscles", icon: "●", render: () => <MuscleGroupCard data={data.muscle_groups} fullWidth /> });
+  if (data.body_weight) cards.push({ key: "body_weight", label: "Weight", icon: "△", render: () => <BodyWeightCard data={data.body_weight} fullWidth /> });
+  if (data.top_exercises) cards.push({ key: "top_exercises", label: "Top", icon: "▲", render: () => <TopExercisesCard data={data.top_exercises} fullWidth /> });
 
   if (cards.length === 0) {
-    return <div className="empty">No training data yet. Start logging workouts to see your dashboard!</div>;
+    return (
+      <div className="profile-card" style={{ maxWidth: maxWidth.widget }}>
+        <div style={{ textAlign: "center", padding: `${sp[12]}px ${sp[8]}px` }}>
+          <div style={{ fontSize: font["2xl"], marginBottom: sp[4] }}>📊</div>
+          <div style={{ fontSize: font.lg, fontWeight: weight.semibold, marginBottom: sp[2] }}>No training data yet</div>
+          <div style={{ fontSize: font.base, color: "var(--text-secondary)" }}>
+            Start logging workouts to see your dashboard!
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  // Single metric → show full width, no carousel
+  // Clamp activeIdx if cards changed
+  const safeIdx = Math.min(activeIdx, cards.length - 1);
+
+  // Single metric → show full width, no tabs
   if (data.metric && cards.length === 1) {
-    return <div style={{ maxWidth: 400 }}>{cards[0].render(true)}</div>;
+    return (
+      <div
+        className="profile-card"
+        style={{ maxWidth: maxWidth.widget }}
+        role="region"
+        aria-label="Training dashboard"
+      >
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: sp[6] }}>
+          <h1 style={{ fontSize: font["3xl"], fontWeight: weight.semibold, margin: 0 }}>
+            Dashboard
+          </h1>
+          <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
+            {periodLabel(data.period)}
+          </span>
+        </div>
+        {cards[0].render()}
+      </div>
+    );
   }
 
-  // Multiple cards → carousel
+  // Multiple cards → tabs
   return (
-    <div style={{ maxWidth: 400 }}>
-      <SwipeCarousel count={cards.length}>
-        {(idx) => cards[idx].render(true)}
-      </SwipeCarousel>
+    <div
+      className="profile-card"
+      style={{ maxWidth: maxWidth.widget }}
+      role="region"
+      aria-label="Training dashboard"
+    >
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: sp[6] }}>
+        <h1 style={{ fontSize: font["3xl"], fontWeight: weight.semibold, margin: 0 }}>
+          Dashboard
+        </h1>
+        <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
+          {periodLabel(data.period)}
+        </span>
+      </div>
+
+      {/* Tabs */}
+      <DashboardTabs cards={cards} activeIdx={safeIdx} goTo={goTo} />
+
+      {/* Content */}
+      <div role="tabpanel" id={`dashboard-panel-${safeIdx}`} aria-live="polite">
+        {cards[safeIdx].render()}
+      </div>
     </div>
   );
 }
