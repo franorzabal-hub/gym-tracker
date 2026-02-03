@@ -7,6 +7,7 @@ import {
   formatRestSeconds,
   formatPerSetReps,
   formatPerSetWeight,
+  formatRepsRange,
 } from "./exercise-utils.js";
 
 export { WeekdayPills } from "./weekday-pills.js";
@@ -313,7 +314,7 @@ function ExerciseRow({ ex, exNum, showExerciseRest, isSecondary, hasMetaLine, ha
 }) {
   const [expanded, setExpanded] = useState(false);
   const repsDisplay = ex.target_reps_per_set
-    ? `(${formatPerSetReps(ex.target_reps_per_set)})`
+    ? formatRepsRange(ex.target_reps_per_set)
     : String(ex.target_reps);
   const weightDisplay = ex.target_weight_per_set
     ? formatPerSetWeight(ex.target_weight_per_set)

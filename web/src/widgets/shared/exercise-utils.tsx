@@ -37,6 +37,15 @@ export function formatPerSetReps(repsPerSet: number[]): string {
   return repsPerSet.join("/");
 }
 
+/** Format per-set reps as min-max range: "8-12" (compact, like workout summary) */
+export function formatRepsRange(repsPerSet: number[]): string {
+  if (repsPerSet.length === 0) return "";
+  const min = Math.min(...repsPerSet);
+  const max = Math.max(...repsPerSet);
+  if (min === max) return String(min);
+  return `${min}-${max}`;
+}
+
 /** Format per-set weight as compact range: "80→90" or "80/85/90" */
 export function formatPerSetWeight(weightPerSet: number[]): string {
   if (weightPerSet.length === 0) return "";
