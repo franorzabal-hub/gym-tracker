@@ -308,7 +308,7 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday").`,
 
   registerAppToolWithMeta(server, "show_workouts", {
     title: "Workout History",
-    description: `${APP_CONTEXT}Display workout history as a visual list of session cards. Each card is clickable to view full session details.
+    description: `${APP_CONTEXT}Display workout history as a visual list with full session details.
 The widget already shows all information visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps.
 Use this when the user wants to see past workouts, training history, or review their sessions.`,
     inputSchema: {
@@ -322,7 +322,7 @@ Use this when the user wants to see past workouts, training history, or review t
       exercise: z.string().optional().describe("Filter sessions containing this exercise"),
       program_day: z.string().optional().describe("Filter by program day label"),
       tags: z.union([z.array(z.string()), z.string()]).optional().describe("Filter sessions with ALL of these tags"),
-      limit: z.number().int().optional().describe("Max sessions to return. Defaults to 50"),
+      limit: z.number().int().optional().describe("Max sessions to return. Defaults to 20"),
       offset: z.number().int().optional().describe("Skip first N sessions for pagination. Defaults to 0"),
     },
     annotations: { readOnlyHint: true },
@@ -341,7 +341,7 @@ Use this when the user wants to see past workouts, training history, or review t
   }) => {
     const tags = parseJsonArrayParam<string>(rawTags);
     const userId = getUserId();
-    const effectiveLimit = rawLimit ?? 50;
+    const effectiveLimit = rawLimit ?? 20;
     const effectiveOffset = rawOffset ?? 0;
     const effectivePeriod = period ?? "month";
 
@@ -394,14 +394,14 @@ Use this when the user wants to see past workouts, training history, or review t
     params.push(effectiveOffset);
     const offsetIdx = params.length;
 
+    // Get sessions with summary
     const sql = `
       SELECT s.id as session_id, s.started_at, s.ended_at,
         pd.day_label as program_day, s.tags,
         COUNT(DISTINCT se.id) as exercises_count,
         COALESCE(SUM((SELECT COUNT(*) FROM sets st WHERE st.session_exercise_id = se.id)), 0) as total_sets,
         COALESCE(SUM((SELECT COALESCE(SUM(st.weight * st.reps), 0) FROM sets st WHERE st.session_exercise_id = se.id AND st.set_type != 'warmup' AND st.weight IS NOT NULL)), 0) as total_volume_kg,
-        ARRAY_AGG(DISTINCT e.muscle_group) FILTER (WHERE e.muscle_group IS NOT NULL) as muscle_groups,
-        ARRAY_AGG(DISTINCT e.name) FILTER (WHERE e.name IS NOT NULL) as exercise_names
+        ARRAY_AGG(DISTINCT e.muscle_group) FILTER (WHERE e.muscle_group IS NOT NULL) as muscle_groups
       FROM sessions s
       LEFT JOIN program_days pd ON pd.id = s.program_day_id
       LEFT JOIN session_exercises se ON se.session_id = s.id
@@ -412,17 +412,61 @@ Use this when the user wants to see past workouts, training history, or review t
       LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
 
     const { rows } = await pool.query(sql, params);
-    const sessions = rows.map(s => ({
-      session_id: s.session_id,
-      started_at: s.started_at,
-      ended_at: s.ended_at,
-      program_day: s.program_day,
-      tags: s.tags,
-      exercises_count: Number(s.exercises_count),
-      total_sets: Number(s.total_sets),
-      total_volume_kg: Math.round(Number(s.total_volume_kg)),
-      muscle_groups: s.muscle_groups || [],
-      exercise_names: s.exercise_names || [],
+
+    // Fetch full exercise details for each session (like show_workout)
+    const sessions = await Promise.all(rows.map(async (s) => {
+      const durationMinutes = s.ended_at
+        ? Math.round((new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 60000)
+        : Math.round((Date.now() - new Date(s.started_at).getTime()) / 60000);
+
+      // Get exercises + sets (with group info, section info, muscle_group, rep_type)
+      const { rows: exerciseDetails } = await pool.query(
+        `SELECT e.id as exercise_id, e.name, se.group_id, seg.group_type, seg.label as group_label, seg.notes as group_notes, seg.rest_seconds as group_rest_seconds,
+           se.section_id, ss.label as section_label, ss.notes as section_notes,
+           e.muscle_group, e.exercise_type, e.rep_type,
+           COALESCE(json_agg(json_build_object(
+             'set_id', st.id, 'set_number', st.set_number, 'reps', st.reps, 'weight', st.weight,
+             'rpe', st.rpe, 'set_type', st.set_type
+           ) ORDER BY st.set_number) FILTER (WHERE st.id IS NOT NULL), '[]') as sets
+         FROM session_exercises se
+         JOIN exercises e ON e.id = se.exercise_id
+         LEFT JOIN sets st ON st.session_exercise_id = se.id
+         LEFT JOIN session_exercise_groups seg ON seg.id = se.group_id
+         LEFT JOIN session_sections ss ON ss.id = se.section_id
+         WHERE se.session_id = $1
+         GROUP BY se.id, e.id, e.name, se.group_id, seg.group_type, seg.label, seg.notes, seg.rest_seconds, se.section_id, ss.label, ss.notes, se.sort_order, e.muscle_group, e.exercise_type, e.rep_type
+         ORDER BY se.sort_order`,
+        [s.session_id]
+      );
+
+      return {
+        session_id: s.session_id,
+        started_at: s.started_at,
+        ended_at: s.ended_at,
+        duration_minutes: durationMinutes,
+        program_day: s.program_day,
+        tags: s.tags || [],
+        exercises_count: Number(s.exercises_count),
+        total_sets: Number(s.total_sets),
+        total_volume_kg: Math.round(Number(s.total_volume_kg)),
+        muscle_groups: s.muscle_groups || [],
+        exercises: exerciseDetails.map((e: any) => ({
+          name: e.name,
+          exercise_id: e.exercise_id,
+          group_id: e.group_id,
+          group_type: e.group_type,
+          group_label: e.group_label,
+          group_notes: e.group_notes,
+          group_rest_seconds: e.group_rest_seconds,
+          section_id: e.section_id,
+          section_label: e.section_label,
+          section_notes: e.section_notes,
+          muscle_group: e.muscle_group,
+          exercise_type: e.exercise_type,
+          rep_type: e.rep_type,
+          sets: e.sets,
+        })),
+      };
     }));
 
     const summary = {
