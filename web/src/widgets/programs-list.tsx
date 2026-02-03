@@ -203,11 +203,11 @@ function ProgramsListWidget() {
       {error && <div style={{ color: "var(--danger)", fontSize: font.base, marginBottom: sp[4] }}>{error}</div>}
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "baseline", gap: sp[4], marginBottom: sp[4] }}>
-        <span style={{ fontSize: font.lg, fontWeight: 700, color: "var(--text)" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: sp[6] }}>
+        <h1 style={{ fontSize: font["3xl"], fontWeight: 600, margin: 0 }}>
           {mode === "available" ? "Available Programs" : "My Programs"}
-        </span>
-        <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>{programs.length}</span>
+        </h1>
+        <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>{programs.length} programs</span>
       </div>
 
       {/* Program tabs */}
