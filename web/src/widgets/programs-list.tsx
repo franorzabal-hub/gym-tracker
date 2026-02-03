@@ -4,24 +4,10 @@ import { useToolOutput } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
 import { sp, radius, font, maxWidth } from "../tokens.js";
 import "../styles.css";
-import {
-  type Day,
-  WeekdayPills,
-  DayCard,
-  DayCarousel,
-} from "./shared/program-view.js";
-
-interface UserProgram {
-  id: number;
-  name: string;
-  description: string | null;
-  version: number;
-  days: Day[];
-  is_active: boolean;
-}
+import { type Program, ProgramView } from "./shared/program-view.js";
 
 interface ProgramsListData {
-  programs: UserProgram[];
+  programs: Program[];
 }
 
 // ── Dot indicators ──
@@ -104,53 +90,21 @@ function useSwipe(onSwipe: (dir: -1 | 1) => void) {
   return { onTouchStart, onTouchEnd };
 }
 
-// ── Read-only program card ──
+// ── Program card using shared ProgramView ──
 
-function ProgramCard({ program }: { program: UserProgram }) {
+function ProgramCard({ program }: { program: Program }) {
   const [viewingIdx, setViewingIdx] = useState(0);
 
   const goTo = useCallback((idx: number) => {
     setViewingIdx(Math.max(0, Math.min(idx, program.days.length - 1)));
   }, [program.days.length]);
 
-  const totalExercises = program.days.reduce((sum, d) => sum + d.exercises.length, 0);
-  const viewingWeekdays = program.days[viewingIdx]?.weekdays || [];
-  const hasAnyWeekdays = program.days.some(d => d.weekdays && d.weekdays.length > 0);
-
   return (
-    <article aria-label={`Program: ${program.name}`}>
-      {/* Header */}
-      <header style={{ marginBottom: sp[6] }}>
-        <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginBottom: sp[0.5] }}>
-          <h2 className="title" style={{ marginBottom: 0 }}>{program.name}</h2>
-          {program.is_active
-            ? <span className="badge badge-success">Active</span>
-            : <span className="badge badge-muted">Inactive</span>
-          }
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: sp[4], flexWrap: "wrap" }}>
-          {program.description && (
-            <span style={{ fontSize: font.base, color: "var(--text-secondary)" }}>{program.description}</span>
-          )}
-          <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
-            {program.days.length} days · {totalExercises} exercises
-          </span>
-        </div>
-        {hasAnyWeekdays && (
-          <nav style={{ marginTop: sp[4] }} aria-label="Program days">
-            <WeekdayPills days={program.days} highlightedDays={viewingWeekdays} onDayClick={goTo} />
-          </nav>
-        )}
-      </header>
-
-      {/* Days content */}
-      <section aria-label="Day exercises">
-        {program.days.length === 1
-          ? <DayCard day={program.days[0]} alwaysExpanded />
-          : <DayCarousel days={program.days} activeIdx={viewingIdx} goTo={goTo} />
-        }
-      </section>
-    </article>
+    <ProgramView
+      program={program}
+      viewingIdx={viewingIdx}
+      onDayChange={goTo}
+    />
   );
 }
 

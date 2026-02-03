@@ -10,7 +10,8 @@ import {
   formatRepsRange,
 } from "./exercise-utils.js";
 
-export { WeekdayPills } from "./weekday-pills.js";
+import { WeekdayPills } from "./weekday-pills.js";
+export { WeekdayPills };
 
 export interface Exercise {
   exercise_name: string;
@@ -814,5 +815,172 @@ export function DayCarousel({ days, activeIdx, goTo }: { days: Day[]; activeIdx:
     >
       <DayCard day={days[activeIdx]} alwaysExpanded />
     </div>
+  );
+}
+
+/** Day navigation tabs with accessibility and keyboard support */
+export function DayTabs({ days, activeIdx, goTo }: { days: Day[]; activeIdx: number; goTo: (idx: number) => void }) {
+  const tabsRef = useRef<HTMLDivElement>(null);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const len = days.length;
+    switch (e.key) {
+      case "ArrowRight":
+        e.preventDefault();
+        goTo((activeIdx + 1) % len);
+        break;
+      case "ArrowLeft":
+        e.preventDefault();
+        goTo((activeIdx - 1 + len) % len);
+        break;
+      case "Home":
+        e.preventDefault();
+        goTo(0);
+        break;
+      case "End":
+        e.preventDefault();
+        goTo(len - 1);
+        break;
+    }
+  }, [days.length, activeIdx, goTo]);
+
+  return (
+    <div
+      ref={tabsRef}
+      role="tablist"
+      aria-label="Program days"
+      onKeyDown={handleKeyDown}
+      style={{
+        display: "flex",
+        borderBottom: "1px solid var(--border)",
+        overflowX: "auto",
+        scrollbarWidth: "none",
+        gap: sp[1],
+      }}
+    >
+      {days.map((day, i) => {
+        const isActive = i === activeIdx;
+        const shortLabel = day.day_label.split(/\s*[—–-]\s*/)[0] || `Day ${i + 1}`;
+
+        return (
+          <button
+            key={i}
+            role="tab"
+            aria-selected={isActive}
+            aria-controls={`day-panel-${i}`}
+            tabIndex={isActive ? 0 : -1}
+            onClick={() => goTo(i)}
+            className="day-tab"
+            style={{
+              fontSize: font.sm,
+              fontWeight: isActive ? weight.semibold : weight.medium,
+              marginBottom: "-1px",
+              background: "transparent",
+              border: "none",
+              borderBottomWidth: "2px",
+              borderBottomStyle: "solid",
+              borderBottomColor: isActive ? "var(--primary)" : "transparent",
+              color: isActive ? "var(--primary)" : "var(--text-secondary)",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
+          >
+            {shortLabel}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── ProgramView: shared component for displaying a program ──
+
+export interface Program {
+  id: number;
+  name: string;
+  description: string | null;
+  version: number;
+  days: Day[];
+  is_active?: boolean;
+}
+
+export interface ProgramViewProps {
+  program: Program;
+  /** Current viewing day index */
+  viewingIdx: number;
+  /** Callback when user navigates to a different day */
+  onDayChange: (idx: number) => void;
+  /** Use h1 for title (default: h2) */
+  isMainHeading?: boolean;
+  /** Custom title render (for diff display) */
+  renderTitle?: (name: string) => React.ReactNode;
+  /** Custom description render (for diff display) */
+  renderDescription?: (description: string | null) => React.ReactNode;
+}
+
+export function ProgramView({
+  program,
+  viewingIdx,
+  onDayChange,
+  isMainHeading = false,
+  renderTitle,
+  renderDescription,
+}: ProgramViewProps) {
+  const totalExercises = program.days.reduce((sum, d) => sum + d.exercises.length, 0);
+  const viewingWeekdays = program.days[viewingIdx]?.weekdays || [];
+  const hasAnyWeekdays = program.days.some(d => d.weekdays && d.weekdays.length > 0);
+  const active = program.is_active ?? false;
+
+  const TitleTag = isMainHeading ? "h1" : "h2";
+
+  return (
+    <article aria-label={`Program: ${program.name}`}>
+      {/* Header */}
+      <header style={{ marginBottom: sp[6] }}>
+        <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginBottom: sp[1] }}>
+          <TitleTag className="title" style={{ marginBottom: 0 }}>
+            {renderTitle ? renderTitle(program.name) : program.name}
+          </TitleTag>
+          {active
+            ? <span className="badge badge-success">Active</span>
+            : <span className="badge badge-muted">Inactive</span>
+          }
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: sp[4], flexWrap: "wrap" }}>
+          {renderDescription ? (
+            renderDescription(program.description)
+          ) : program.description ? (
+            <span style={{ fontSize: font.base, color: "var(--text-secondary)" }}>{program.description}</span>
+          ) : null}
+          <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
+            {program.days.length} days · {totalExercises} exercises
+          </span>
+        </div>
+        {/* Day navigation: WeekdayPills if weekdays exist, otherwise DayTabs (only if multiple days) */}
+        {program.days.length > 1 && (
+          <nav style={{ marginTop: sp[4] }} aria-label="Program days navigation">
+            {hasAnyWeekdays ? (
+              <WeekdayPills days={program.days} highlightedDays={viewingWeekdays} onDayClick={onDayChange} />
+            ) : (
+              <DayTabs days={program.days} activeIdx={viewingIdx} goTo={onDayChange} />
+            )}
+          </nav>
+        )}
+      </header>
+
+      {/* Day content panel */}
+      <section
+        role="tabpanel"
+        id={`day-panel-${viewingIdx}`}
+        aria-labelledby={`day-tab-${viewingIdx}`}
+        aria-label="Day exercises"
+      >
+        {program.days.length === 1
+          ? <DayCard day={program.days[0]} alwaysExpanded />
+          : <DayCarousel days={program.days} activeIdx={viewingIdx} goTo={onDayChange} />
+        }
+      </section>
+    </article>
   );
 }

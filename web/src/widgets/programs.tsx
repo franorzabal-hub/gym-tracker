@@ -1,101 +1,10 @@
 import { createRoot } from "react-dom/client";
-import { useState, useCallback, useRef, KeyboardEvent } from "react";
+import { useState, useCallback } from "react";
 import { useToolOutput, useCallTool, useWidgetState } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
-import { sp, radius, font, weight } from "../tokens.js";
+import { sp, radius, font } from "../tokens.js";
 import "../styles.css";
-import {
-  type Day,
-  WeekdayPills,
-  DayCard,
-  DayCarousel,
-} from "./shared/program-view.js";
-
-/** Day navigation tabs with accessibility and keyboard support */
-function DayTabs({ days, activeIdx, goTo }: { days: Day[]; activeIdx: number; goTo: (idx: number) => void }) {
-  const tabsRef = useRef<HTMLDivElement>(null);
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const len = days.length;
-    switch (e.key) {
-      case "ArrowRight":
-        e.preventDefault();
-        goTo((activeIdx + 1) % len);
-        break;
-      case "ArrowLeft":
-        e.preventDefault();
-        goTo((activeIdx - 1 + len) % len);
-        break;
-      case "Home":
-        e.preventDefault();
-        goTo(0);
-        break;
-      case "End":
-        e.preventDefault();
-        goTo(len - 1);
-        break;
-    }
-  };
-
-  return (
-    <div
-      ref={tabsRef}
-      role="tablist"
-      aria-label="Program days"
-      onKeyDown={handleKeyDown}
-      style={{
-        display: "flex",
-        borderBottom: "1px solid var(--border)",
-        overflowX: "auto",
-        scrollbarWidth: "none",
-        gap: sp[1],
-      }}
-    >
-      {days.map((day, i) => {
-        const isActive = i === activeIdx;
-        // Extract short label: "Día 1" from "Día 1 — Peso Muerto + Push Pecho"
-        const shortLabel = day.day_label.split(/\s*[—–-]\s*/)[0] || `Day ${i + 1}`;
-
-        return (
-          <button
-            key={i}
-            role="tab"
-            aria-selected={isActive}
-            aria-controls={`day-panel-${i}`}
-            tabIndex={isActive ? 0 : -1}
-            onClick={() => goTo(i)}
-            className="day-tab"
-            style={{
-              fontSize: font.sm,
-              fontWeight: isActive ? weight.semibold : weight.medium,
-              marginBottom: "-1px",
-              background: "transparent",
-              border: "none",
-              borderBottomWidth: "2px",
-              borderBottomStyle: "solid",
-              borderBottomColor: isActive ? "var(--primary)" : "transparent",
-              color: isActive ? "var(--primary)" : "var(--text-secondary)",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              flexShrink: 0,
-            }}
-          >
-            {shortLabel}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-interface ProgramData {
-  id: number;
-  name: string;
-  description: string | null;
-  version: number;
-  days: Day[];
-  is_active?: boolean;
-}
+import { type Program, ProgramView } from "./shared/program-view.js";
 
 /** Skeleton loading state */
 function SkeletonProgram() {
@@ -131,7 +40,7 @@ function SkeletonProgram() {
 }
 
 interface ToolData {
-  program: ProgramData;
+  program: Program;
   initialDayIdx?: number;
   pendingChanges?: Record<string, any>;
 }
@@ -184,7 +93,7 @@ function ProgramsWidget() {
 
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
-  const [localProgram, setLocalProgram] = useState<ProgramData | null>(null);
+  const [localProgram, setLocalProgram] = useState<Program | null>(null);
 
   const daysLen = data?.program?.days?.length ?? 0;
   const viewingIdx = widgetState.selectedDay;
@@ -213,70 +122,34 @@ function ProgramsWidget() {
   if (!data.program) return <div className="empty">No program found</div>;
 
   const program = localProgram || data.program;
-  const active = program.is_active ?? false;
-  const totalExercises = program.days.reduce((sum, d) => sum + d.exercises.length, 0);
-  const viewingWeekdays = program.days[viewingIdx]?.weekdays || [];
-
-  const hasAnyWeekdays = program.days.some(d => d.weekdays && d.weekdays.length > 0);
   const hasPending = !!data.pendingChanges && Object.keys(data.pendingChanges).length > 0 && !confirmed;
   const pending = data.pendingChanges;
 
   return (
-    <article className="profile-card" aria-label="Training program">
-      {/* Header */}
-      <header style={{ marginBottom: sp[8] }}>
-        <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginBottom: sp[1] }}>
-          <h1 className="title" style={{ marginBottom: 0 }}>
-            {hasPending && pending?.name
-              ? <DiffValue current={program.name} pending={pending.name} />
-              : program.name}
-          </h1>
-          {active
-            ? <span className="badge badge-success">Active</span>
-            : <span className="badge badge-muted">Inactive</span>
-          }
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: sp[4], flexWrap: "wrap" }}>
-          {(hasPending && pending?.description !== undefined) ? (
-            <span style={{ fontSize: font.md, color: "var(--text-secondary)" }}>
-              <DiffValue current={program.description} pending={pending.description} />
-            </span>
-          ) : program.description ? (
-            <span style={{ fontSize: font.md, color: "var(--text-secondary)" }}>{program.description}</span>
-          ) : null}
-          <span style={{ fontSize: font.base, color: "var(--text-secondary)" }}>
-            {program.days.length} days · {totalExercises} exercises
-          </span>
-        </div>
-        {/* Day navigation: WeekdayPills if weekdays exist, otherwise DayTabs */}
-        {program.days.length > 1 && (
-          <nav style={{ marginTop: sp[4] }} aria-label="Program days navigation">
-            {hasAnyWeekdays ? (
-              <WeekdayPills days={program.days} highlightedDays={viewingWeekdays} onDayClick={goTo} />
-            ) : (
-              <DayTabs days={program.days} activeIdx={viewingIdx} goTo={goTo} />
-            )}
-          </nav>
-        )}
-      </header>
-
-      {/* Day content panel */}
-      <div
-        role="tabpanel"
-        id={`day-panel-${viewingIdx}`}
-        aria-labelledby={`day-tab-${viewingIdx}`}
-      >
-        {program.days.length === 1
-          ? <DayCard day={program.days[0]} alwaysExpanded />
-          : <DayCarousel days={program.days} activeIdx={viewingIdx} goTo={goTo} />
+    <div className="profile-card">
+      <ProgramView
+        program={program}
+        viewingIdx={viewingIdx}
+        onDayChange={goTo}
+        isMainHeading
+        renderTitle={hasPending && pending?.name
+          ? () => <DiffValue current={program.name} pending={pending.name} />
+          : undefined
         }
-      </div>
-
+        renderDescription={hasPending && pending?.description !== undefined
+          ? () => (
+              <span style={{ fontSize: font.md, color: "var(--text-secondary)" }}>
+                <DiffValue current={program.description} pending={pending.description} />
+              </span>
+            )
+          : undefined
+        }
+      />
       {/* Confirm bar */}
       {hasPending && (
         <ConfirmBar onConfirm={handleConfirm} confirming={confirming} confirmed={confirmed} />
       )}
-    </article>
+    </div>
   );
 }
 
