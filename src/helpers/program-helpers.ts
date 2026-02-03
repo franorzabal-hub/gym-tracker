@@ -6,7 +6,7 @@ import { cloneSections } from "./section-helpers.js";
 export async function getActiveProgram() {
   const userId = getUserId();
   const { rows } = await pool.query(
-    `SELECT p.id, p.name, p.description, p.is_active,
+    `SELECT p.id, p.name, p.description, p.is_active, p.is_validated,
        pv.id as version_id, pv.version_number
      FROM programs p
      JOIN program_versions pv ON pv.program_id = p.id

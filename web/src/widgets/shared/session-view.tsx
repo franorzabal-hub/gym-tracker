@@ -42,6 +42,7 @@ export interface SessionData {
   program_day: string | null;
   tags: string[];
   exercises: ExerciseData[];
+  is_validated?: boolean;
 }
 
 // ── Helpers ──
@@ -543,7 +544,7 @@ export function SectionCard({ section, startNumber }: {
 
 // ── Session Display ──
 
-export function SessionDisplay({ session, readonly }: { session: SessionData; readonly?: boolean }) {
+export function SessionDisplay({ session, readonly, onValidate, validating }: { session: SessionData; readonly?: boolean; onValidate?: () => void; validating?: boolean }) {
   const liveMinutes = useLiveTimer(session.started_at);
   const isActive = !readonly && !session.ended_at;
   const minutes = isActive ? liveMinutes : session.duration_minutes;
@@ -567,13 +568,26 @@ export function SessionDisplay({ session, readonly }: { session: SessionData; re
               {isActive ? "Active Workout" : "Workout"}
             </h1>
             {isActive && <span className="badge badge-success">Active</span>}
-            {!isActive && session.ended_at && <span className="badge badge-success">Completed</span>}
+            {!isActive && session.ended_at && session.is_validated !== false && <span className="badge badge-success">Completed</span>}
+            {!isActive && session.is_validated === false && <span className="badge badge-warning">Pending validation</span>}
           </div>
-          {!isActive && session.ended_at && (
-            <time dateTime={session.started_at} style={{ fontSize: font.md, color: "var(--text-secondary)" }}>
-              {formatDate(session.started_at)}
-            </time>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
+            {!isActive && session.is_validated === false && onValidate && (
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={onValidate}
+                disabled={validating}
+                style={{ fontSize: font.sm, padding: `${sp[2]}px ${sp[4]}px` }}
+              >
+                {validating ? "Validating..." : "Validate"}
+              </button>
+            )}
+            {!isActive && session.ended_at && (
+              <time dateTime={session.started_at} style={{ fontSize: font.md, color: "var(--text-secondary)" }}>
+                {formatDate(session.started_at)}
+              </time>
+            )}
+          </div>
         </div>
         {/* Chips (left) + stats (right) */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: sp[2] }}>
@@ -614,11 +628,16 @@ export function SessionCard({ session }: { session: SessionData }) {
     <article aria-label="Workout session">
       {/* Header */}
       <header style={{ marginBottom: sp[6] }}>
-        {/* Title row: day name + date */}
+        {/* Title row: day name + date + validation badge */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: sp[2] }}>
-          <h2 style={{ fontSize: font.xl, fontWeight: weight.semibold, margin: 0 }}>
-            {session.program_day || formatDate(session.started_at)}
-          </h2>
+          <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
+            <h2 style={{ fontSize: font.xl, fontWeight: weight.semibold, margin: 0 }}>
+              {session.program_day || formatDate(session.started_at)}
+            </h2>
+            {session.is_validated === false && (
+              <span className="badge badge-warning" style={{ fontSize: font.xs }}>Pending</span>
+            )}
+          </div>
           {session.program_day && (
             <time dateTime={session.started_at} style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
               {formatDate(session.started_at)}

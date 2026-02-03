@@ -188,8 +188,16 @@ function ProgramsListWidget() {
       actionVariant = "primary";
       onAction = () => handleClone(activeProgram.id, activeProgram.name);
     }
+  } else {
+    // user mode: show validation status with active/inactive
+    if (activeProgram.is_validated === false) {
+      badge = <span className="badge badge-warning">Pending validation</span>;
+    } else if (activeProgram.is_active) {
+      badge = <span className="badge badge-success">Active</span>;
+    } else {
+      badge = <span className="badge badge-muted">Inactive</span>;
+    }
   }
-  // user mode: no custom badge (ProgramView shows Active/Inactive)
 
   const regionLabel = mode === "available" ? "Available programs" : "Your programs";
 

@@ -59,6 +59,7 @@ function ProgramsWidget() {
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [localProgram, setLocalProgram] = useState<Program | null>(null);
+  const [validating, setValidating] = useState(false);
 
   const daysLen = data?.program?.days?.length ?? 0;
   const viewingIdx = widgetState.selectedDay;
@@ -78,6 +79,19 @@ function ProgramsWidget() {
     setConfirmed(true);
   }, [data, callTool]);
 
+  const handleValidate = useCallback(async () => {
+    if (!data?.program) return;
+    setValidating(true);
+    const result = await callTool("manage_program", { action: "validate", id: data.program.id });
+    setValidating(false);
+    if (result) {
+      setLocalProgram(prev => ({
+        ...(prev || data.program),
+        is_validated: true,
+      }));
+    }
+  }, [data, callTool]);
+
   const goTo = useCallback((idx: number) => {
     const clampedIdx = Math.max(0, Math.min(idx, daysLen - 1));
     setWidgetState(prev => ({ ...prev, selectedDay: clampedIdx }));
@@ -89,6 +103,26 @@ function ProgramsWidget() {
   const program = localProgram || data.program;
   const hasPending = !!data.pendingChanges && Object.keys(data.pendingChanges).length > 0 && !confirmed;
   const pending = data.pendingChanges;
+  const needsValidation = program.is_validated === false;
+
+  // Custom badge: show validation state or active/inactive
+  const badgeElement = needsValidation ? (
+    <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
+      <span className="badge badge-warning">Pending validation</span>
+      <button
+        className="btn btn-sm btn-primary"
+        onClick={handleValidate}
+        disabled={validating}
+        style={{ fontSize: font.sm, padding: `${sp[2]}px ${sp[4]}px` }}
+      >
+        {validating ? "Validating..." : "Validate"}
+      </button>
+    </div>
+  ) : program.is_active ? (
+    <span className="badge badge-success">Active</span>
+  ) : (
+    <span className="badge badge-muted">Inactive</span>
+  );
 
   return (
     <div className="profile-card">
@@ -97,6 +131,7 @@ function ProgramsWidget() {
         viewingIdx={viewingIdx}
         onDayChange={goTo}
         isMainHeading
+        badge={badgeElement}
         renderTitle={hasPending && pending?.name
           ? () => <DiffValue current={program.name} pending={pending.name} />
           : undefined

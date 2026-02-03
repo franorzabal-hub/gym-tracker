@@ -18,6 +18,7 @@ interface DashboardData {
   muscle_groups?: Array<{ muscle_group: string; volume: number; sets: number }>;
   body_weight?: Array<{ value: number; measured_at: string }>;
   top_exercises?: Array<{ exercise: string; volume: number; sessions: number }>;
+  pending_validation?: { sessions: number; programs: number; message: string };
 }
 
 // ── Helpers ──
@@ -27,6 +28,34 @@ function periodLabel(period: string): string {
   if (period === "month") return "This month";
   if (period === "year") return "This year";
   return `Last ${period} days`;
+}
+
+// ── Validation Banner ──
+
+function ValidationBanner({ data }: { data: DashboardData["pending_validation"] }) {
+  if (!data || (data.sessions === 0 && data.programs === 0)) return null;
+
+  return (
+    <div
+      style={{
+        background: "var(--warning-bg, rgba(234, 179, 8, 0.1))",
+        border: "1px solid var(--warning)",
+        borderRadius: radius.md,
+        padding: `${sp[4]}px ${sp[5]}px`,
+        marginBottom: sp[6],
+        display: "flex",
+        alignItems: "center",
+        gap: sp[3],
+      }}
+    >
+      <span style={{ fontSize: font.lg }}>⚠</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: font.sm, fontWeight: weight.medium, color: "var(--warning)" }}>
+          {data.message}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ── Skeleton ──
@@ -453,6 +482,7 @@ function DashboardWidget() {
             {periodLabel(data.period)}
           </span>
         </div>
+        <ValidationBanner data={data.pending_validation} />
         {cards[0].render()}
       </div>
     );
@@ -475,6 +505,9 @@ function DashboardWidget() {
           {periodLabel(data.period)}
         </span>
       </div>
+
+      {/* Pending validation banner */}
+      <ValidationBanner data={data.pending_validation} />
 
       {/* Tabs */}
       <DashboardTabs cards={cards} activeIdx={safeIdx} goTo={goTo} />

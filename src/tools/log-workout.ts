@@ -181,15 +181,17 @@ Parameters:
 
       // --- 3. Get or create session ---
       const activeSession = await client.query(
-        "SELECT id, started_at, program_day_id FROM sessions WHERE user_id = $1 AND ended_at IS NULL AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
+        "SELECT id, started_at, program_day_id, is_validated FROM sessions WHERE user_id = $1 AND ended_at IS NULL AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
         [userId]
       );
 
       let sessionId: number;
       let sessionCreated = false;
+      let sessionValidated = true;  // Track if session is validated for PR gating
 
       if (activeSession.rows.length > 0) {
         sessionId = activeSession.rows[0].id;
+        sessionValidated = activeSession.rows[0].is_validated;
 
         // Link program_day_id if session doesn't have one and we resolved one
         if (!activeSession.rows[0].program_day_id && programDayId) {
@@ -215,14 +217,22 @@ Parameters:
           );
         }
       } else {
+        // Check if user requires validation for new sessions
+        const { rows: profileRows } = await client.query(
+          "SELECT data->>'requires_validation' as req_val FROM user_profile WHERE user_id = $1",
+          [userId]
+        );
+        const requiresValidation = profileRows[0]?.req_val === 'true';
+
         const startedAt = params.date ? new Date(params.date + 'T00:00:00') : new Date();
         const { rows: [newSession] } = await client.query(
-          `INSERT INTO sessions (user_id, program_version_id, program_day_id, notes, started_at, tags)
-           VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, started_at`,
-          [userId, programVersionId, programDayId, params.notes || null, startedAt, tags || []]
+          `INSERT INTO sessions (user_id, program_version_id, program_day_id, notes, started_at, tags, is_validated)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, started_at, is_validated`,
+          [userId, programVersionId, programDayId, params.notes || null, startedAt, tags || [], !requiresValidation]
         );
         sessionId = newSession.id;
         sessionCreated = true;
+        sessionValidated = newSession.is_validated;
       }
 
       // --- 4. Log program day exercises ---
@@ -297,18 +307,20 @@ Parameters:
           totalRoutineSets += sets;
           if (weight) totalRoutineVolume += weight * reps * sets;
 
-          // Check PRs
-          const prs = await checkPRs(
-            dex.exercise_id,
-            setIds.map((id) => ({
-              reps,
-              weight: weight ?? null,
-              set_id: id,
-            })),
-            dex.exercise_type,
-            client
-          );
-          if (prs.length > 0) allPRs.push({ exercise: dex.exercise_name, prs });
+          // Check PRs (only if session is validated)
+          if (sessionValidated) {
+            const prs = await checkPRs(
+              dex.exercise_id,
+              setIds.map((id) => ({
+                reps,
+                weight: weight ?? null,
+                set_id: id,
+              })),
+              dex.exercise_type,
+              client
+            );
+            if (prs.length > 0) allPRs.push({ exercise: dex.exercise_name, prs });
+          }
 
           routineResults.push({
             exercise: dex.exercise_name,
@@ -325,7 +337,7 @@ Parameters:
 
       if (hasBulkExercises) {
         for (const entry of exercisesList!) {
-          const result = await logSingleExercise(sessionId, entry, client);
+          const result = await logSingleExercise(sessionId, entry, client, sessionValidated);
           explicitResults.push(result);
           if (result.new_prs) allPRs.push(...result.new_prs.map((pr: any) => ({ exercise: result.exercise_name, ...pr })));
         }
@@ -350,7 +362,7 @@ Parameters:
           drop_percent: params.drop_percent,
           rep_type: params.rep_type,
           exercise_type: params.exercise_type,
-        }, client);
+        }, client, sessionValidated);
         explicitResults.push(result);
         if (result.new_prs) allPRs.push(...result.new_prs.map((pr: any) => ({ exercise: result.exercise_name, ...pr })));
       }

@@ -3,7 +3,7 @@ import { useState, useCallback } from "react";
 import { useToolOutput, useCallTool } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
 import { WeekdayPills } from "./shared/weekday-pills.js";
-import { sp, radius, font } from "../tokens.js";
+import { sp, radius, font, weight } from "../tokens.js";
 import { DiffValue, ConfirmBar } from "./shared/diff-components.js";
 import "../styles.css";
 
@@ -20,6 +20,50 @@ const EMPTY_INJURY = /^(nada|ninguna|ninguno|none|no|n\/a|-|—)$/i;
 interface ProfileData {
   profile: Record<string, any>;
   pendingChanges?: Record<string, any>;
+}
+
+// ── Toggle Component ──
+
+function Toggle({ checked, onChange, disabled }: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      className={`toggle ${checked ? "toggle-checked" : ""}`}
+      onClick={() => onChange(!checked)}
+      style={{
+        width: 42,
+        height: 24,
+        borderRadius: 12,
+        border: "none",
+        padding: 2,
+        cursor: disabled ? "not-allowed" : "pointer",
+        background: checked ? "var(--primary)" : "var(--border)",
+        transition: "background 0.2s",
+        display: "flex",
+        alignItems: "center",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <span
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: "50%",
+          background: "white",
+          transform: checked ? "translateX(18px)" : "translateX(0)",
+          transition: "transform 0.2s",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+        }}
+      />
+    </button>
+  );
 }
 
 // ── Helpers ──
@@ -286,6 +330,42 @@ function ChipListWithDiff({ label, current, pending, variant = "primary" }: {
   );
 }
 
+// ── Preferences Section ──
+
+function PreferencesSection({ profile, onValidationToggle, saving }: {
+  profile: Record<string, any>;
+  onValidationToggle: (enabled: boolean) => void;
+  saving: boolean;
+}) {
+  const requiresValidation = profile.requires_validation === true || profile.requires_validation === "true";
+
+  return (
+    <div className="profile-section">
+      <div className="profile-section-label">PREFERENCES</div>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: sp[4],
+      }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: font.base, fontWeight: weight.medium }}>
+            Require validation
+          </div>
+          <div style={{ fontSize: font.sm, color: "var(--text-secondary)", marginTop: sp[1] }}>
+            New workouts and programs need manual validation before affecting stats
+          </div>
+        </div>
+        <Toggle
+          checked={requiresValidation}
+          onChange={onValidationToggle}
+          disabled={saving}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ── Main widget ──
 
 function ProfileWidget() {
@@ -294,6 +374,7 @@ function ProfileWidget() {
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [localProfile, setLocalProfile] = useState<Record<string, any> | null>(null);
+  const [savingValidation, setSavingValidation] = useState(false);
 
   const handleConfirm = useCallback(async () => {
     if (!data?.pendingChanges) return;
@@ -305,6 +386,15 @@ function ProfileWidget() {
       setLocalProfile(prev => ({ ...(prev || data.profile), ...data.pendingChanges }));
       setConfirmed(true);
       setTimeout(() => setConfirmed(false), 2000);
+    }
+  }, [data, callTool]);
+
+  const handleValidationToggle = useCallback(async (enabled: boolean) => {
+    setSavingValidation(true);
+    const result = await callTool("manage_profile", { action: "update", data: { requires_validation: enabled } });
+    setSavingValidation(false);
+    if (result) {
+      setLocalProfile(prev => ({ ...(prev || data?.profile || {}), requires_validation: enabled }));
     }
   }, [data, callTool]);
 
@@ -346,6 +436,12 @@ function ProfileWidget() {
       ) : injuries.length > 0 ? (
         <ChipList label="INJURIES" items={injuries} variant="warning" />
       ) : null}
+
+      <PreferencesSection
+        profile={profile}
+        onValidationToggle={handleValidationToggle}
+        saving={savingValidation}
+      />
 
       {hasPending && (
         <ConfirmBar onConfirm={handleConfirm} confirming={confirming} confirmed={confirmed} className="profile-confirm-bar" />

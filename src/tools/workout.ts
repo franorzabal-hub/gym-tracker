@@ -27,13 +27,13 @@ The widget already shows all information visually — do NOT repeat exercises or
     let rows;
     if (session_id != null) {
       const result = await pool.query(
-        "SELECT id, started_at, ended_at, program_day_id, tags FROM sessions WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL LIMIT 1",
+        "SELECT id, started_at, ended_at, program_day_id, tags, is_validated FROM sessions WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL LIMIT 1",
         [session_id, userId]
       );
       rows = result.rows;
     } else {
       const result = await pool.query(
-        "SELECT id, started_at, ended_at, program_day_id, tags FROM sessions WHERE user_id = $1 AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
+        "SELECT id, started_at, ended_at, program_day_id, tags, is_validated FROM sessions WHERE user_id = $1 AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
         [userId]
       );
       rows = result.rows;
@@ -167,6 +167,7 @@ The widget already shows all information visually — do NOT repeat exercises or
           duration_minutes: durationMinutes,
           program_day: programDay,
           tags: session.tags || [],
+          is_validated: session.is_validated,
           exercises: exerciseDetails.map((e: any) => ({
             name: e.name,
             exercise_id: e.exercise_id,

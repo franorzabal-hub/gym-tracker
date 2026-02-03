@@ -27,7 +27,7 @@ export const exerciseEntrySchema = z.object({
 
 export type ExerciseEntry = z.infer<typeof exerciseEntrySchema>;
 
-export async function logSingleExercise(sessionId: number, entry: ExerciseEntry, client?: PoolClient) {
+export async function logSingleExercise(sessionId: number, entry: ExerciseEntry, client?: PoolClient, sessionValidated: boolean = true) {
   const { exercise, sets, reps, weight, rpe, set_type, notes, rest_seconds, group_id, muscle_group, equipment, set_notes, drop_percent, rep_type, exercise_type } = entry;
   const q = client || pool;
 
@@ -141,17 +141,19 @@ export async function logSingleExercise(sessionId: number, entry: ExerciseEntry,
     });
   }
 
-  // Check for PRs
-  const newPRs = await checkPRs(
-    resolved.id,
-    loggedSets.map((s) => ({
-      reps: s.reps,
-      weight: s.weight ?? null,
-      set_id: s.set_id,
-    })),
-    resolved.exerciseType,
-    client
-  );
+  // Check for PRs (only if session is validated)
+  const newPRs = sessionValidated
+    ? await checkPRs(
+        resolved.id,
+        loggedSets.map((s) => ({
+          reps: s.reps,
+          weight: s.weight ?? null,
+          set_id: s.set_id,
+        })),
+        resolved.exerciseType,
+        client
+      )
+    : [];
 
   return {
     exercise_name: resolved.name,

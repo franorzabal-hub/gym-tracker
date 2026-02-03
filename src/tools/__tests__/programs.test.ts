@@ -148,13 +148,14 @@ describe("manage_program tool", () => {
     it("creates program with days and exercises", async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       mockClientQuery
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({ rows: [{ id: 1 }] })
-        .mockResolvedValueOnce({ rows: [{ id: 10 }] })
-        .mockResolvedValueOnce({ rows: [{ id: 20 }] })
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({});
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ req_val: null }] }) // profile requires_validation
+        .mockResolvedValueOnce({}) // deactivate programs
+        .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // INSERT program
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
+        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({
         action: "create", name: "PPL", description: "Push Pull Legs",
@@ -168,9 +169,10 @@ describe("manage_program tool", () => {
     it("rolls back on error during creation", async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       mockClientQuery
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({})
-        .mockRejectedValueOnce(new Error("DB error"));
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ req_val: null }] }) // profile requires_validation
+        .mockResolvedValueOnce({}) // deactivate programs
+        .mockRejectedValueOnce(new Error("DB error")); // INSERT program fails
 
       const result = await toolHandler({
         action: "create", name: "PPL",
@@ -390,6 +392,7 @@ describe("manage_program tool", () => {
 
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ req_val: null }] }) // profile requires_validation
         .mockResolvedValueOnce({}) // deactivate others
         .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // INSERT program
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
@@ -421,6 +424,7 @@ describe("manage_program tool", () => {
 
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ req_val: null }] }) // profile requires_validation
         .mockResolvedValueOnce({}) // deactivate others
         .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // INSERT program
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
@@ -1157,6 +1161,7 @@ describe("manage_program tool", () => {
       mockQuery.mockResolvedValueOnce({ rows: [] }); // no duplicate
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ req_val: null }] }) // profile requires_validation
         .mockResolvedValueOnce({}) // deactivate
         .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // INSERT program
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
@@ -1171,8 +1176,8 @@ describe("manage_program tool", () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.program.name).toBe("Pyramid");
 
-      // INSERT exercise is the 6th call (index 5)
-      const insertArgs = mockClientQuery.mock.calls[5][1];
+      // INSERT exercise is the 7th call (index 6) after profile query was added
+      const insertArgs = mockClientQuery.mock.calls[6][1];
       expect(insertArgs[3]).toBe(12); // target_reps = first element
       expect(insertArgs[11]).toEqual([12, 10, 8]); // target_reps_per_set
       expect(insertArgs[12]).toBeNull(); // target_weight_per_set (not provided)
@@ -1182,6 +1187,7 @@ describe("manage_program tool", () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ req_val: null }] }) // profile requires_validation
         .mockResolvedValueOnce({}) // deactivate
         .mockResolvedValueOnce({ rows: [{ id: 1 }] })
         .mockResolvedValueOnce({ rows: [{ id: 10 }] })
@@ -1194,7 +1200,7 @@ describe("manage_program tool", () => {
         days: [{ day_label: "Push", exercises: [{ exercise: "Bench Press", sets: 3, reps: [12, 10, 8], weight: [80, 85, 90] }] }],
       });
 
-      const insertArgs = mockClientQuery.mock.calls[5][1];
+      const insertArgs = mockClientQuery.mock.calls[6][1];
       expect(insertArgs[3]).toBe(12); // target_reps = first
       expect(insertArgs[4]).toBe(80); // target_weight = first
       expect(insertArgs[11]).toEqual([12, 10, 8]); // target_reps_per_set
@@ -1205,6 +1211,7 @@ describe("manage_program tool", () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ req_val: null }] }) // profile requires_validation
         .mockResolvedValueOnce({}) // deactivate
         .mockResolvedValueOnce({ rows: [{ id: 1 }] })
         .mockResolvedValueOnce({ rows: [{ id: 10 }] })
@@ -1217,7 +1224,7 @@ describe("manage_program tool", () => {
         days: [{ day_label: "Push", exercises: [{ exercise: "Bench Press", sets: 3, reps: 10, weight: 80 }] }],
       });
 
-      const insertArgs = mockClientQuery.mock.calls[5][1];
+      const insertArgs = mockClientQuery.mock.calls[6][1];
       expect(insertArgs[3]).toBe(10); // target_reps
       expect(insertArgs[4]).toBe(80); // target_weight
       expect(insertArgs[11]).toBeNull(); // target_reps_per_set
@@ -1227,8 +1234,9 @@ describe("manage_program tool", () => {
     it("stores only weight array when reps is uniform", async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       mockClientQuery
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ req_val: null }] }) // profile requires_validation
+        .mockResolvedValueOnce({}) // deactivate
         .mockResolvedValueOnce({ rows: [{ id: 1 }] })
         .mockResolvedValueOnce({ rows: [{ id: 10 }] })
         .mockResolvedValueOnce({ rows: [{ id: 20 }] })
@@ -1240,7 +1248,7 @@ describe("manage_program tool", () => {
         days: [{ day_label: "Push", exercises: [{ exercise: "Bench Press", sets: 3, reps: 10, weight: [80, 85, 90] }] }],
       });
 
-      const insertArgs = mockClientQuery.mock.calls[5][1];
+      const insertArgs = mockClientQuery.mock.calls[6][1];
       expect(insertArgs[3]).toBe(10); // target_reps (scalar)
       expect(insertArgs[4]).toBe(80); // target_weight = first of array
       expect(insertArgs[11]).toBeNull(); // target_reps_per_set (null, uniform)

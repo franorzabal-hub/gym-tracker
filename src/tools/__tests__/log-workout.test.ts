@@ -85,11 +85,12 @@ describe("log_workout tool", () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ timezone: null }] });
       mockInferTodayDay.mockResolvedValueOnce({ id: 5, day_label: "Push" });
 
-      // Transaction: BEGIN, no active session, create session, COMMIT
+      // Transaction: BEGIN, no active session, profile query, create session, COMMIT
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [] }) // no active session
-        .mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z" }] }) // create session
+        .mockResolvedValueOnce({ rows: [{ req_val: null }] }) // profile requires_validation
+        .mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z", is_validated: true }] }) // create session
         .mockResolvedValueOnce({}); // COMMIT
 
       // plan exercises query (post-commit)
@@ -114,7 +115,7 @@ describe("log_workout tool", () => {
       // Transaction: BEGIN, active session found, COMMIT
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({ rows: [{ id: 99, started_at: "2024-01-15T09:00:00Z", program_day_id: null }] }) // active session
+        .mockResolvedValueOnce({ rows: [{ id: 99, started_at: "2024-01-15T09:00:00Z", program_day_id: null, is_validated: true }] }) // active session
         .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({});
@@ -135,7 +136,7 @@ describe("log_workout tool", () => {
       // Transaction: BEGIN, active session, logSingleExercise queries, COMMIT
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({ rows: [{ id: 5, started_at: "2024-01-15T10:00:00Z", program_day_id: null }] }) // active session
+        .mockResolvedValueOnce({ rows: [{ id: 5, started_at: "2024-01-15T10:00:00Z", program_day_id: null, is_validated: true }] }) // active session
         // logSingleExercise: session_exercise check (new), insert set x3
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // insert session_exercise (new, no existing)
         .mockResolvedValueOnce({ rows: [{ id: 100 }] }) // insert set 1
@@ -160,7 +161,8 @@ describe("log_workout tool", () => {
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [] }) // no active session
-        .mockResolvedValueOnce({ rows: [{ id: 20, started_at: "2024-01-15T10:00:00Z" }] }) // create session
+        .mockResolvedValueOnce({ rows: [{ req_val: null }] }) // profile requires_validation
+        .mockResolvedValueOnce({ rows: [{ id: 20, started_at: "2024-01-15T10:00:00Z", is_validated: true }] }) // create session
         .mockResolvedValueOnce({ rows: [{ id: 30 }] }) // insert session_exercise
         .mockResolvedValueOnce({ rows: [{ id: 200 }] }) // insert set
         .mockResolvedValueOnce({}); // COMMIT
@@ -177,7 +179,7 @@ describe("log_workout tool", () => {
 
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({ rows: [{ id: 5, started_at: "2024-01-15T10:00:00Z", program_day_id: null }] }) // active session
+        .mockResolvedValueOnce({ rows: [{ id: 5, started_at: "2024-01-15T10:00:00Z", program_day_id: null, is_validated: true }] }) // active session
         .mockResolvedValueOnce({}); // ROLLBACK
 
       const result = await toolHandler({
@@ -197,7 +199,7 @@ describe("log_workout tool", () => {
 
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({ rows: [{ id: 5, started_at: "2024-01-15T10:00:00Z", program_day_id: null }] }) // active session
+        .mockResolvedValueOnce({ rows: [{ id: 5, started_at: "2024-01-15T10:00:00Z", program_day_id: null, is_validated: true }] }) // active session
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // insert session_exercise
         .mockResolvedValueOnce({ rows: [{ id: 100 }] }) // insert set
         .mockResolvedValueOnce({}); // COMMIT
@@ -221,7 +223,7 @@ describe("log_workout tool", () => {
 
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({ rows: [{ id: 5, started_at: "2024-01-15T10:00:00Z", program_day_id: null }] }) // active session
+        .mockResolvedValueOnce({ rows: [{ id: 5, started_at: "2024-01-15T10:00:00Z", program_day_id: null, is_validated: true }] }) // active session
         // Exercise 1
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // insert session_exercise
         .mockResolvedValueOnce({ rows: [{ id: 100 }] }) // insert set
@@ -266,7 +268,8 @@ describe("log_workout tool", () => {
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [] }) // no active session
-        .mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z" }] }) // create session
+        .mockResolvedValueOnce({ rows: [{ req_val: null }] }) // profile requires_validation
+        .mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z", is_validated: true }] }) // create session
         // Routine exercise: session_exercise + 4 sets
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // insert session_exercise
         .mockResolvedValueOnce({ rows: [{ id: 100 }] }) // set 1
@@ -301,7 +304,7 @@ describe("log_workout tool", () => {
 
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({ rows: [{ id: 99, started_at: "2024-01-15T09:00:00Z", program_day_id: null }] }) // active session
+        .mockResolvedValueOnce({ rows: [{ id: 99, started_at: "2024-01-15T09:00:00Z", program_day_id: null, is_validated: true }] }) // active session
         .mockResolvedValueOnce({}) // link program_day_id
         // Routine exercise
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // insert session_exercise
@@ -331,7 +334,8 @@ describe("log_workout tool", () => {
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [] }) // no active session
-        .mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z" }] }) // create session
+        .mockResolvedValueOnce({ rows: [{ req_val: null }] }) // profile requires_validation
+        .mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z", is_validated: true }] }) // create session
         // Only OHP (bench skipped)
         .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // session_exercise
         .mockResolvedValueOnce({ rows: [{ id: 200 }] }) // set 1
@@ -365,7 +369,8 @@ describe("log_workout tool", () => {
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [] }) // no active session
-        .mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z" }] }) // create session
+        .mockResolvedValueOnce({ rows: [{ req_val: null }] }) // profile requires_validation
+        .mockResolvedValueOnce({ rows: [{ id: 10, started_at: "2024-01-15T10:00:00Z", is_validated: true }] }) // create session
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // session_exercise
         .mockResolvedValueOnce({ rows: [{ id: 100 }] }) // set 1
         .mockResolvedValueOnce({ rows: [{ id: 101 }] }) // set 2
@@ -414,7 +419,7 @@ describe("log_workout tool", () => {
 
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({ rows: [{ id: 5, started_at: "2024-01-15T10:00:00Z", program_day_id: null }] }) // active session
+        .mockResolvedValueOnce({ rows: [{ id: 5, started_at: "2024-01-15T10:00:00Z", program_day_id: null, is_validated: true }] }) // active session
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // insert session_exercise
         .mockResolvedValueOnce({ rows: [{ id: 100 }] }) // insert set
         .mockResolvedValueOnce({}); // COMMIT

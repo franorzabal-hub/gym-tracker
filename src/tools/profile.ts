@@ -27,6 +27,7 @@ Standard fields (always use these exact keys):
 - preferred_units: "kg" | "lb"
 - gym: string — gym name
 - supplements: string
+- requires_validation: boolean — when true, new workouts/programs need manual validation before affecting stats
 
 Example: user says "peso 82kg" → update with { "weight_kg": 82 }
 Example: user says "entreno lunes miercoles y viernes" → update with { "training_days_per_week": 3, "available_days": ["monday", "wednesday", "friday"] }`,

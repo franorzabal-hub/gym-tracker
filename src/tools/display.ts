@@ -129,7 +129,7 @@ To edit programs, use manage_program. After a clone from available mode, follow 
     // === User mode: user's programs ===
     const { rows: programRows } = await pool.query(
       `SELECT * FROM (
-         SELECT DISTINCT ON (p.id) p.id, p.name, p.is_active, p.description,
+         SELECT DISTINCT ON (p.id) p.id, p.name, p.is_active, p.is_validated, p.description,
                 pv.id as version_id, pv.version_number
          FROM programs p
          JOIN program_versions pv ON pv.program_id = p.id
@@ -152,6 +152,7 @@ To edit programs, use manage_program. After a clone from available mode, follow 
         id: p.id,
         name: p.name,
         is_active: p.is_active,
+        is_validated: p.is_validated,
         description: p.description,
         version: p.version_number,
         days: await getProgramDaysWithExercises(p.version_id),
@@ -271,7 +272,7 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday").`,
       // Lookup by ID
       program = await pool
         .query(
-          `SELECT p.id, p.name, p.description, p.is_active, pv.id as version_id, pv.version_number
+          `SELECT p.id, p.name, p.description, p.is_active, p.is_validated, pv.id as version_id, pv.version_number
            FROM programs p JOIN program_versions pv ON pv.program_id = p.id
            WHERE p.user_id = $1 AND p.id = $2
            ORDER BY pv.version_number DESC LIMIT 1`,
@@ -282,7 +283,7 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday").`,
       // Lookup by name
       program = await pool
         .query(
-          `SELECT p.id, p.name, p.description, p.is_active, pv.id as version_id, pv.version_number
+          `SELECT p.id, p.name, p.description, p.is_active, p.is_validated, pv.id as version_id, pv.version_number
            FROM programs p JOIN program_versions pv ON pv.program_id = p.id
            WHERE p.user_id = $1 AND LOWER(p.name) = LOWER($2)
            ORDER BY pv.version_number DESC LIMIT 1`,
@@ -332,6 +333,7 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday").`,
           description: program.description,
           version: program.version_number,
           is_active: program.is_active ?? false,
+          is_validated: program.is_validated,
           days,
         },
         initialDayIdx,
@@ -389,7 +391,7 @@ By default returns only the latest session. Pass ids to show specific sessions.`
       // === ID-based query: ignore other filters ===
       params.push(parsedIds);
       const sql = `
-        SELECT s.id as session_id, s.started_at, s.ended_at,
+        SELECT s.id as session_id, s.started_at, s.ended_at, s.is_validated,
           pd.day_label as program_day, s.tags,
           COUNT(DISTINCT se.id) as exercises_count,
           COALESCE(SUM((SELECT COUNT(*) FROM sets st WHERE st.session_exercise_id = se.id)), 0) as total_sets,
@@ -459,7 +461,7 @@ By default returns only the latest session. Pass ids to show specific sessions.`
 
       // Get sessions with summary
       const sql = `
-        SELECT s.id as session_id, s.started_at, s.ended_at,
+        SELECT s.id as session_id, s.started_at, s.ended_at, s.is_validated,
           pd.day_label as program_day, s.tags,
           COUNT(DISTINCT se.id) as exercises_count,
           COALESCE(SUM((SELECT COUNT(*) FROM sets st WHERE st.session_exercise_id = se.id)), 0) as total_sets,
@@ -509,6 +511,7 @@ By default returns only the latest session. Pass ids to show specific sessions.`
         duration_minutes: durationMinutes,
         program_day: s.program_day,
         tags: s.tags || [],
+        is_validated: s.is_validated,
         exercises_count: Number(s.exercises_count),
         total_sets: Number(s.total_sets),
         total_volume_kg: Math.round(Number(s.total_volume_kg)),

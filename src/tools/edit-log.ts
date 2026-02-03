@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
 import { findExercise } from "../helpers/exercise-resolver.js";
+import { checkPRs } from "../helpers/stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
@@ -19,6 +20,7 @@ Examples:
 - "Corregí press banca y sentadilla de hoy" → bulk edit multiple exercises
 - "Borrá la sesión 42" → soft-delete an entire session
 - "Restaurá la sesión 42" → restore a soft-deleted session
+- "Validá la sesión 42" → validate a pending session (recalculates PRs)
 
 Parameters:
 - exercise: name or alias (required for single mode, ignored if bulk or delete_session is used)
@@ -31,7 +33,8 @@ Parameters:
 - bulk: array of { exercise, action?, set_numbers?, set_ids?, set_type_filter?, updates? } for multi-exercise edits
 - delete_session: session ID to soft-delete (sets deleted_at timestamp, can be restored)
 - restore_session: session ID to restore (clears deleted_at timestamp)
-- delete_sessions: array of session IDs for bulk soft-delete. Returns { deleted, not_found }.`,
+- delete_sessions: array of session IDs for bulk soft-delete. Returns { deleted, not_found }.
+- validate_session: session ID to validate. Marks as validated and recalculates PRs.`,
     inputSchema: {
       exercise: z.string().optional(),
       session: z
@@ -68,11 +71,78 @@ Parameters:
       delete_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to soft-delete. Sets deleted_at timestamp; can be restored later."),
       restore_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to restore from soft-delete. Clears the deleted_at timestamp."),
       delete_sessions: z.union([z.array(z.number().int()), z.string()]).optional().describe("Array of session IDs for bulk soft-delete."),
+      validate_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to validate. Marks as validated and recalculates PRs."),
     },
     annotations: { destructiveHint: true },
   },
-    safeHandler("edit_log", async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session, restore_session, delete_sessions: rawDeleteSessions }) => {
+    safeHandler("edit_log", async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session, restore_session, delete_sessions: rawDeleteSessions, validate_session }) => {
       const userId = getUserId();
+
+      // --- Validate session mode ---
+      if (validate_session !== undefined && validate_session !== null) {
+        const sessionId = Number(validate_session);
+        if (Number.isNaN(sessionId)) {
+          return toolResponse({ error: "Invalid session ID" }, true);
+        }
+
+        // Get session and verify ownership
+        const { rows: sessionRows } = await pool.query(
+          "SELECT id, started_at, is_validated FROM sessions WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",
+          [sessionId, userId]
+        );
+        if (sessionRows.length === 0) {
+          return toolResponse({ error: `Session ${validate_session} not found` }, true);
+        }
+        if (sessionRows[0].is_validated) {
+          return toolResponse({ message: "Session is already validated", session_id: sessionId });
+        }
+
+        // Mark session as validated
+        await pool.query(
+          "UPDATE sessions SET is_validated = true WHERE id = $1 AND user_id = $2",
+          [sessionId, userId]
+        );
+
+        // Recalculate PRs for all exercises in this session
+        const { rows: sessionExercises } = await pool.query(
+          `SELECT se.id, se.exercise_id, e.name as exercise_name, e.exercise_type
+           FROM session_exercises se
+           JOIN exercises e ON e.id = se.exercise_id
+           WHERE se.session_id = $1`,
+          [sessionId]
+        );
+
+        const allPRs: any[] = [];
+        for (const se of sessionExercises) {
+          // Get all sets for this session_exercise
+          const { rows: sets } = await pool.query(
+            `SELECT id, reps, weight FROM sets WHERE session_exercise_id = $1`,
+            [se.id]
+          );
+
+          if (sets.length > 0) {
+            const prs = await checkPRs(
+              se.exercise_id,
+              sets.map((s: any) => ({
+                reps: s.reps,
+                weight: s.weight ?? null,
+                set_id: s.id,
+              })),
+              se.exercise_type
+            );
+            if (prs.length > 0) {
+              allPRs.push({ exercise: se.exercise_name, prs });
+            }
+          }
+        }
+
+        return toolResponse({
+          validated: true,
+          session_id: sessionId,
+          started_at: sessionRows[0].started_at,
+          new_prs: allPRs.length > 0 ? allPRs : undefined,
+        });
+      }
 
       // --- Restore session mode ---
       if (restore_session !== undefined && restore_session !== null) {

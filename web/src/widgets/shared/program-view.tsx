@@ -986,6 +986,7 @@ export interface Program {
   version: number;
   days: Day[];
   is_active?: boolean;
+  is_validated?: boolean;
 }
 
 export interface ProgramViewProps {

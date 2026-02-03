@@ -195,6 +195,7 @@ Actions:
 - "delete": Soft delete. hard_delete=true for permanent removal.
 - "delete_bulk": Delete multiple by "names" array. Optional hard_delete=true.
 - "history": List all versions with dates and change descriptions
+- "validate": Mark a program as validated (for users with requires_validation enabled)
 
 ## Day structure
 
@@ -268,7 +269,7 @@ exercise_type and rep_type are resolved automatically from the exercises DB. Do 
 
 To see the program visually, call show_program (not manage_program "get").`,
       inputSchema: {
-        action: z.enum(["list", "get", "create", "clone", "update", "patch", "activate", "delete", "delete_bulk", "history"]),
+        action: z.enum(["list", "get", "create", "clone", "update", "patch", "activate", "delete", "delete_bulk", "history", "validate"]),
         name: z.string().optional(),
         program_id: z.number().int().optional().describe("Program ID (for patch action). Identifies which program to patch."),
         source_id: z.number().int().optional().describe("Program ID to clone (for clone action). Typically a global template program ID from show_programs."),
@@ -372,15 +373,22 @@ To see the program visually, call show_program (not manage_program "get").`,
         try {
           await client.query("BEGIN");
 
+          // Check if user requires validation for new programs
+          const { rows: profileRows } = await client.query(
+            "SELECT data->>'requires_validation' as req_val FROM user_profile WHERE user_id = $1",
+            [userId]
+          );
+          const requiresValidation = profileRows[0]?.req_val === 'true';
+
           // Deactivate other programs for this user
           await client.query("UPDATE programs SET is_active = FALSE WHERE user_id = $1", [userId]);
 
           const {
             rows: [prog],
           } = await client.query(
-            `INSERT INTO programs (user_id, name, description, is_active) VALUES ($1, $2, $3, TRUE)
+            `INSERT INTO programs (user_id, name, description, is_active, is_validated) VALUES ($1, $2, $3, TRUE, $4)
              RETURNING id`,
-            [userId, name, description || null]
+            [userId, name, description || null, !requiresValidation]
           );
 
           const {
@@ -466,12 +474,19 @@ To see the program visually, call show_program (not manage_program "get").`,
         try {
           await client.query("BEGIN");
 
+          // Check if user requires validation for new programs
+          const { rows: profileRows } = await client.query(
+            "SELECT data->>'requires_validation' as req_val FROM user_profile WHERE user_id = $1",
+            [userId]
+          );
+          const requiresValidation = profileRows[0]?.req_val === 'true';
+
           // Deactivate other programs
           await client.query("UPDATE programs SET is_active = FALSE WHERE user_id = $1", [userId]);
 
           const { rows: [prog] } = await client.query(
-            `INSERT INTO programs (user_id, name, description, is_active) VALUES ($1, $2, $3, TRUE) RETURNING id`,
-            [userId, programName, source.description]
+            `INSERT INTO programs (user_id, name, description, is_active, is_validated) VALUES ($1, $2, $3, TRUE, $4) RETURNING id`,
+            [userId, programName, source.description, !requiresValidation]
           );
 
           const { rows: [ver] } = await client.query(
@@ -863,6 +878,44 @@ To see the program visually, call show_program (not manage_program "get").`,
         );
 
         return toolResponse({ program: program.name, versions });
+      }
+
+      if (action === "validate") {
+        // Find program by program_id, name, or active
+        let program: any;
+        if (program_id) {
+          program = await pool
+            .query("SELECT id, name, is_validated FROM programs WHERE id = $1 AND user_id = $2", [program_id, userId])
+            .then(r => r.rows[0]);
+        } else if (name) {
+          program = await pool
+            .query("SELECT id, name, is_validated FROM programs WHERE user_id = $1 AND LOWER(name) = LOWER($2)", [userId, name])
+            .then(r => r.rows[0]);
+        } else {
+          program = await getActiveProgram();
+          if (program) {
+            const { rows } = await pool.query(
+              "SELECT is_validated FROM programs WHERE id = $1",
+              [program.id]
+            );
+            program = { ...program, is_validated: rows[0]?.is_validated };
+          }
+        }
+
+        if (!program) {
+          return toolResponse({ error: "Program not found" }, true);
+        }
+
+        if (program.is_validated) {
+          return toolResponse({ message: "Program is already validated", program_id: program.id, name: program.name });
+        }
+
+        await pool.query(
+          "UPDATE programs SET is_validated = true WHERE id = $1 AND user_id = $2",
+          [program.id, userId]
+        );
+
+        return toolResponse({ validated: true, program_id: program.id, name: program.name });
       }
 
       return toolResponse({ error: "Unknown action" }, true);

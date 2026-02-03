@@ -60,7 +60,7 @@ describe("show_dashboard tool", () => {
   });
 
   it("returns all metrics when no metric param is given", async () => {
-    // Mock all 7 queries in order
+    // Mock all 9 queries in order (7 metrics + 2 pending validation)
     mockQuery
       // streak
       .mockResolvedValueOnce({ rows: [{ week: weekDate(0), cnt: 2 }, { week: weekDate(1), cnt: 3 }] })
@@ -75,7 +75,11 @@ describe("show_dashboard tool", () => {
       // body weight
       .mockResolvedValueOnce({ rows: [{ value: "80.5", measured_at: new Date("2024-06-01") }] })
       // top exercises
-      .mockResolvedValueOnce({ rows: [{ exercise: "Bench Press", volume: "4000", sessions: 10 }] });
+      .mockResolvedValueOnce({ rows: [{ exercise: "Bench Press", volume: "4000", sessions: 10 }] })
+      // pending validation: sessions count
+      .mockResolvedValueOnce({ rows: [{ count: 0 }] })
+      // pending validation: programs count
+      .mockResolvedValueOnce({ rows: [{ count: 0 }] });
 
     const result = await toolHandlers["show_dashboard"]({});
 
@@ -95,13 +99,17 @@ describe("show_dashboard tool", () => {
   });
 
   it("returns only the specified metric when metric param is given", async () => {
-    // Only PRs query should run
-    mockQuery.mockResolvedValueOnce({
-      rows: [
-        { exercise: "Squat", record_type: "estimated_1rm", value: "150", achieved_at: new Date("2024-05-15") },
-        { exercise: "Deadlift", record_type: "max_weight", value: "180", achieved_at: new Date("2024-05-10") },
-      ],
-    });
+    // Only PRs query should run + pending validation queries
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [
+          { exercise: "Squat", record_type: "estimated_1rm", value: "150", achieved_at: new Date("2024-05-15") },
+          { exercise: "Deadlift", record_type: "max_weight", value: "180", achieved_at: new Date("2024-05-10") },
+        ],
+      })
+      // pending validation
+      .mockResolvedValueOnce({ rows: [{ count: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ count: 0 }] });
 
     const result = await toolHandlers["show_dashboard"]({ metric: "prs" });
 
@@ -117,7 +125,7 @@ describe("show_dashboard tool", () => {
   });
 
   it("handles empty data for a new user", async () => {
-    // All queries return empty
+    // All queries return empty + pending validation
     mockQuery
       .mockResolvedValueOnce({ rows: [] })   // streak
       .mockResolvedValueOnce({ rows: [] })   // volume
@@ -125,7 +133,9 @@ describe("show_dashboard tool", () => {
       .mockResolvedValueOnce({ rows: [] })   // prs
       .mockResolvedValueOnce({ rows: [] })   // muscle groups
       .mockResolvedValueOnce({ rows: [] })   // body weight
-      .mockResolvedValueOnce({ rows: [] });  // top exercises
+      .mockResolvedValueOnce({ rows: [] })   // top exercises
+      .mockResolvedValueOnce({ rows: [{ count: 0 }] })   // pending sessions
+      .mockResolvedValueOnce({ rows: [{ count: 0 }] });  // pending programs
 
     const result = await toolHandlers["show_dashboard"]({});
 
@@ -149,7 +159,9 @@ describe("show_dashboard tool", () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ count: 0 }] });
 
     const result = await toolHandlers["show_dashboard"]({ period: "year" });
 
@@ -160,23 +172,29 @@ describe("show_dashboard tool", () => {
   });
 
   it("returns specific metric with period filter", async () => {
-    mockQuery.mockResolvedValueOnce({
-      rows: [
-        { week: weekDate(0), volume: "8000" },
-        { week: weekDate(1), volume: "7500" },
-      ],
-    });
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [
+          { week: weekDate(0), volume: "8000" },
+          { week: weekDate(1), volume: "7500" },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ count: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ count: 0 }] });
 
     const result = await toolHandlers["show_dashboard"]({ metric: "volume", period: "month" });
 
     expect(result.structuredContent.period).toBe("month");
     expect(result.structuredContent.metric).toBe("volume");
     expect(result.structuredContent.volume_weekly).toHaveLength(2);
-    expect(mockQuery).toHaveBeenCalledTimes(1); // Only one query for volume
+    expect(mockQuery).toHaveBeenCalledTimes(3); // Volume + 2 pending validation queries
   });
 
   it("body_weight metric returns null when no measurements exist", async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] });
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ count: 0 }] });
 
     const result = await toolHandlers["show_dashboard"]({ metric: "body_weight" });
 
@@ -186,9 +204,12 @@ describe("show_dashboard tool", () => {
 
   it("streak calculation handles current week with no sessions", async () => {
     // Only last week has sessions
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ week: weekDate(1), cnt: 3 }],
-    });
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [{ week: weekDate(1), cnt: 3 }],
+      })
+      .mockResolvedValueOnce({ rows: [{ count: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ count: 0 }] });
 
     const result = await toolHandlers["show_dashboard"]({ metric: "streak" });
 

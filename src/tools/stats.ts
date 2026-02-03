@@ -143,7 +143,7 @@ async function getExerciseStats(
          EXTRACT(DAYS FROM (NOW() - MIN(s.started_at))) as span_days
        FROM sessions s
        JOIN session_exercises se ON se.session_id = s.id
-       WHERE s.user_id = $1 AND se.exercise_id = $2 AND s.deleted_at IS NULL
+       WHERE s.user_id = $1 AND se.exercise_id = $2 AND s.deleted_at IS NULL AND s.is_validated = true
          ${sessionsDateFilter}`,
       dateParams
     );
@@ -173,7 +173,7 @@ async function getExerciseStats(
      FROM sets st
      JOIN session_exercises se ON se.id = st.session_exercise_id
      JOIN sessions s ON s.id = se.session_id
-     WHERE s.user_id = $1 AND se.exercise_id = $2 AND st.set_type = 'working' AND st.weight IS NOT NULL AND s.deleted_at IS NULL
+     WHERE s.user_id = $1 AND se.exercise_id = $2 AND st.set_type = 'working' AND st.weight IS NOT NULL AND s.deleted_at IS NULL AND s.is_validated = true
        ${setsDateFilter}
      GROUP BY DATE(s.started_at), se.id
      ORDER BY date DESC
@@ -197,7 +197,7 @@ async function getExerciseStats(
      FROM sets st
      JOIN session_exercises se ON se.id = st.session_exercise_id
      JOIN sessions s ON s.id = se.session_id
-     WHERE s.user_id = $1 AND se.exercise_id = $2 AND st.set_type = 'working' AND st.weight IS NOT NULL AND s.deleted_at IS NULL
+     WHERE s.user_id = $1 AND se.exercise_id = $2 AND st.set_type = 'working' AND st.weight IS NOT NULL AND s.deleted_at IS NULL AND s.is_validated = true
        ${setsDateFilter}
      GROUP BY week
      ORDER BY week DESC
@@ -212,7 +212,7 @@ async function getExerciseStats(
        EXTRACT(DAYS FROM (NOW() - MIN(s.started_at))) as span_days
      FROM sessions s
      JOIN session_exercises se ON se.session_id = s.id
-     WHERE s.user_id = $1 AND se.exercise_id = $2 AND s.deleted_at IS NULL
+     WHERE s.user_id = $1 AND se.exercise_id = $2 AND s.deleted_at IS NULL AND s.is_validated = true
        ${sessionsDateFilter}`,
     dateParams
   );
@@ -274,7 +274,7 @@ async function getMuscleGroupVolume(userId: number, period: string, userDate: st
      JOIN session_exercises se ON se.id = st.session_exercise_id
      JOIN sessions s ON s.id = se.session_id
      JOIN exercises e ON e.id = se.exercise_id
-     WHERE s.user_id = $1 AND st.set_type = 'working' AND st.weight IS NOT NULL AND s.deleted_at IS NULL
+     WHERE s.user_id = $1 AND st.set_type = 'working' AND st.weight IS NOT NULL AND s.deleted_at IS NULL AND s.is_validated = true
        ${dateFilter}
      GROUP BY e.muscle_group
      ORDER BY total_volume_kg DESC`,

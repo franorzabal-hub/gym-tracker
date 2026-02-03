@@ -37,7 +37,7 @@ Use the "period" param to control the time range (default: 3months).`,
 
     const shouldFetch = (m: Metric) => !metric || metric === m;
 
-    const [streak, volume, frequency, prs, muscleGroups, bodyWeight, topExercises] = await Promise.all([
+    const [streak, volume, frequency, prs, muscleGroups, bodyWeight, topExercises, pendingValidation] = await Promise.all([
       shouldFetch("streak") ? fetchStreak(userId, days) : null,
       shouldFetch("volume") ? fetchWeeklyVolume(userId, days) : null,
       shouldFetch("frequency") ? fetchFrequency(userId, days) : null,
@@ -45,6 +45,7 @@ Use the "period" param to control the time range (default: 3months).`,
       shouldFetch("muscle_groups") ? fetchMuscleGroups(userId, days) : null,
       shouldFetch("body_weight") ? fetchBodyWeight(userId) : null,
       shouldFetch("top_exercises") ? fetchTopExercises(userId, days) : null,
+      fetchPendingValidation(userId),
     ]);
 
     const data: Record<string, unknown> = { period: p };
@@ -56,6 +57,9 @@ Use the "period" param to control the time range (default: 3months).`,
     if (muscleGroups) data.muscle_groups = muscleGroups;
     if (bodyWeight) data.body_weight = bodyWeight;
     if (topExercises) data.top_exercises = topExercises;
+    if (pendingValidation && (pendingValidation.sessions > 0 || pendingValidation.programs > 0)) {
+      data.pending_validation = pendingValidation;
+    }
 
     return widgetResponse(
       `Dashboard widget displayed. The user can see all metrics visually. Do NOT describe, list, or summarize any dashboard data in text.`,
@@ -68,7 +72,7 @@ async function fetchStreak(userId: number, days: number) {
   const { rows } = await pool.query(
     `SELECT DATE_TRUNC('week', started_at)::date AS week, COUNT(*) AS cnt
      FROM sessions
-     WHERE user_id = $1 AND deleted_at IS NULL
+     WHERE user_id = $1 AND deleted_at IS NULL AND is_validated = true
        AND started_at >= NOW() - make_interval(days => $2)
      GROUP BY week ORDER BY week`,
     [userId, days],
@@ -134,7 +138,7 @@ async function fetchWeeklyVolume(userId: number, days: number) {
      FROM sessions s
      JOIN session_exercises se ON se.session_id = s.id
      JOIN sets st ON st.session_exercise_id = se.id
-     WHERE s.user_id = $1 AND s.deleted_at IS NULL
+     WHERE s.user_id = $1 AND s.deleted_at IS NULL AND s.is_validated = true
        AND s.started_at >= NOW() - make_interval(days => $2)
      GROUP BY week ORDER BY week`,
     [userId, days],
@@ -146,7 +150,7 @@ async function fetchFrequency(userId: number, days: number) {
   const { rows } = await pool.query(
     `SELECT DATE_TRUNC('week', started_at)::date AS week, COUNT(*)::int AS count
      FROM sessions
-     WHERE user_id = $1 AND deleted_at IS NULL
+     WHERE user_id = $1 AND deleted_at IS NULL AND is_validated = true
        AND started_at >= NOW() - make_interval(days => $2)
      GROUP BY week ORDER BY week`,
     [userId, days],
@@ -184,7 +188,7 @@ async function fetchMuscleGroups(userId: number, days: number) {
      JOIN session_exercises se ON se.session_id = s.id
      JOIN exercises e ON e.id = se.exercise_id
      JOIN sets st ON st.session_exercise_id = se.id
-     WHERE s.user_id = $1 AND s.deleted_at IS NULL
+     WHERE s.user_id = $1 AND s.deleted_at IS NULL AND s.is_validated = true
        AND s.started_at >= NOW() - make_interval(days => $2)
        AND e.muscle_group IS NOT NULL
      GROUP BY e.muscle_group
@@ -225,7 +229,7 @@ async function fetchTopExercises(userId: number, days: number) {
      JOIN session_exercises se ON se.session_id = s.id
      JOIN exercises e ON e.id = se.exercise_id
      JOIN sets st ON st.session_exercise_id = se.id
-     WHERE s.user_id = $1 AND s.deleted_at IS NULL
+     WHERE s.user_id = $1 AND s.deleted_at IS NULL AND s.is_validated = true
        AND s.started_at >= NOW() - make_interval(days => $2)
      GROUP BY e.name
      ORDER BY volume DESC
@@ -237,4 +241,36 @@ async function fetchTopExercises(userId: number, days: number) {
     volume: Number(r.volume),
     sessions: r.sessions,
   }));
+}
+
+async function fetchPendingValidation(userId: number) {
+  const [sessionsRes, programsRes] = await Promise.all([
+    pool.query(
+      `SELECT COUNT(*) as count FROM sessions
+       WHERE user_id = $1 AND deleted_at IS NULL AND is_validated = false`,
+      [userId]
+    ),
+    pool.query(
+      `SELECT COUNT(*) as count FROM programs
+       WHERE user_id = $1 AND is_validated = false`,
+      [userId]
+    ),
+  ]);
+
+  const sessions = Number(sessionsRes.rows[0]?.count || 0);
+  const programs = Number(programsRes.rows[0]?.count || 0);
+
+  if (sessions === 0 && programs === 0) {
+    return null;
+  }
+
+  const parts: string[] = [];
+  if (sessions > 0) parts.push(`${sessions} workout${sessions > 1 ? 's' : ''}`);
+  if (programs > 0) parts.push(`${programs} programa${programs > 1 ? 's' : ''}`);
+
+  return {
+    sessions,
+    programs,
+    message: `Tienes ${parts.join(' y ')} pendiente${sessions + programs > 1 ? 's' : ''} de validar`,
+  };
 }
