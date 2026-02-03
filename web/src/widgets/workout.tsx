@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { useToolOutput } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
 import { sp, radius, font, weight, opacity, maxWidth } from "../tokens.js";
+import { REP_UNIT, GROUP_LABELS, GroupIcon, formatRestSeconds } from "./shared/exercise-utils.js";
 import "../styles.css";
 
 // ── Types ──
@@ -53,19 +54,7 @@ interface ToolData {
 }
 
 // ── Constants ──
-
-const REP_UNIT: Record<string, string> = {
-  reps: "r",
-  seconds: "s",
-  meters: "m",
-  calories: "cal",
-};
-
-const GROUP_LABELS: Record<string, string> = {
-  superset: "Superset",
-  paired: "Paired",
-  circuit: "Circuit",
-};
+// REP_UNIT, GROUP_LABELS imported from shared/exercise-utils.js
 
 // ── Helpers ──
 
@@ -89,14 +78,7 @@ function formatDuration(minutes: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-function formatRestSeconds(seconds: number): string {
-  if (seconds >= 60) {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return s ? `${m}′${s}″` : `${m}′`;
-  }
-  return `${seconds}″`;
-}
+// formatRestSeconds imported from shared/exercise-utils.js
 
 function isPR(set: SetData, baseline: Record<string, number> | null | undefined): string | null {
   if (!baseline || !set.weight || set.set_type === "warmup") return null;
@@ -133,37 +115,7 @@ function formatWeightRange(sets: SetData[]): string | null {
   return `${min}-${max}`;
 }
 
-/** Monochromatic SVG icons for group types */
-function GroupIcon({ type, size = 14 }: { type: string; size?: number }) {
-  const s = { width: size, height: size, display: "block" };
-  const color = "currentColor";
-  if (type === "superset") {
-    return (
-      <svg viewBox="0 0 16 16" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={s}>
-        <path d="M2 5.5h10m-2.5-2.5L12 5.5 9.5 8" />
-        <path d="M14 10.5H4m2.5-2.5L4 10.5 6.5 13" />
-      </svg>
-    );
-  }
-  if (type === "paired") {
-    return (
-      <svg viewBox="0 0 16 16" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={s}>
-        <path d="M6.5 9.5l3-3" />
-        <path d="M9 5l1.5-1.5a2.12 2.12 0 0 1 3 3L12 8" />
-        <path d="M7 8L5.5 9.5a2.12 2.12 0 0 0 3 3L10 11" />
-      </svg>
-    );
-  }
-  // circuit
-  return (
-    <svg viewBox="0 0 16 16" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={s}>
-      <path d="M13.5 8a5.5 5.5 0 0 1-9.17 4.1" />
-      <path d="M2.5 8a5.5 5.5 0 0 1 9.17-4.1" />
-      <path d="M11 1.5L11.67 3.9 9.27 4.57" />
-      <path d="M5 14.5L4.33 12.1 6.73 11.43" />
-    </svg>
-  );
-}
+// GroupIcon imported from shared/exercise-utils.js
 
 // ── Grouping logic ──
 
