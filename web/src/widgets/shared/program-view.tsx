@@ -917,6 +917,10 @@ export interface ProgramViewProps {
   renderTitle?: (name: string) => React.ReactNode;
   /** Custom description render (for diff display) */
   renderDescription?: (description: string | null) => React.ReactNode;
+  /** Hide the Active/Inactive badge */
+  hideBadge?: boolean;
+  /** Custom badge to show instead of Active/Inactive */
+  badge?: React.ReactNode;
 }
 
 export function ProgramView({
@@ -926,11 +930,20 @@ export function ProgramView({
   isMainHeading = false,
   renderTitle,
   renderDescription,
+  hideBadge = false,
+  badge,
 }: ProgramViewProps) {
   const totalExercises = program.days.reduce((sum, d) => sum + d.exercises.length, 0);
   const active = program.is_active ?? false;
 
   const TitleTag = isMainHeading ? "h1" : "h2";
+
+  // Determine which badge to show
+  const badgeElement = badge !== undefined ? badge : !hideBadge ? (
+    active
+      ? <span className="badge badge-success">Active</span>
+      : <span className="badge badge-muted">Inactive</span>
+  ) : null;
 
   return (
     <article aria-label={`Program: ${program.name}`}>
@@ -940,10 +953,7 @@ export function ProgramView({
           <TitleTag className="title" style={{ marginBottom: 0 }}>
             {renderTitle ? renderTitle(program.name) : program.name}
           </TitleTag>
-          {active
-            ? <span className="badge badge-success">Active</span>
-            : <span className="badge badge-muted">Inactive</span>
-          }
+          {badgeElement}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: sp[4], flexWrap: "wrap" }}>
           {renderDescription ? (
