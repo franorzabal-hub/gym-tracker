@@ -11,12 +11,13 @@ import "../styles.css";
 interface WorkoutsData {
   sessions: SessionData[];
   summary: { total_sessions: number; total_volume_kg: number; exercises_count: number };
-  filters: { period: string; exercise?: string; program_day?: string; tags?: string[] };
+  filters: { period?: string; ids?: number[]; exercise?: string; program_day?: string; tags?: string[] };
 }
 
 // ── Helpers ──
 
 function periodLabel(period: string): string {
+  if (period === "latest") return "Latest";
   if (period === "today") return "Today";
   if (period === "week") return "This week";
   if (period === "month") return "This month";
@@ -181,7 +182,8 @@ function WorkoutsWidget() {
           Workouts
         </h1>
         <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
-          {summary.total_sessions} sessions · {periodLabel(filters.period).toLowerCase()}
+          {summary.total_sessions} session{summary.total_sessions !== 1 ? "s" : ""}
+          {filters.period && ` · ${periodLabel(filters.period).toLowerCase()}`}
         </span>
       </div>
 

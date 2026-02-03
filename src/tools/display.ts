@@ -342,22 +342,23 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday").`,
 
   registerAppToolWithMeta(server, "show_workouts", {
     title: "Workout History",
-    description: `${APP_CONTEXT}Display workout history as a visual list with full session details.
+    description: `${APP_CONTEXT}Display workout history as a visual list with full session details (max 10).
 The widget already shows all information visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps.
-Use this when the user wants to see past workouts, training history, or review their sessions.`,
+Use this when the user wants to see past workouts, training history, or review their sessions.
+By default returns only the latest session. Pass ids to show specific sessions.`,
     inputSchema: {
+      ids: z.union([z.array(z.number()), z.number()]).optional()
+        .describe("Filter by session IDs. If provided, ignores period/exercise/program_day/tags filters."),
       period: z
         .union([
           z.enum(["today", "week", "month", "year"]),
           z.number().int().min(1),
         ])
         .optional()
-        .default("month"),
+        .describe("Time period filter. Only used when ids is not provided."),
       exercise: z.string().optional().describe("Filter sessions containing this exercise"),
       program_day: z.string().optional().describe("Filter by program day label"),
       tags: z.union([z.array(z.string()), z.string()]).optional().describe("Filter sessions with ALL of these tags"),
-      limit: z.number().int().optional().describe("Max sessions to return. Defaults to 20"),
-      offset: z.number().int().optional().describe("Skip first N sessions for pagination. Defaults to 0"),
     },
     annotations: { readOnlyHint: true },
     _meta: {
@@ -365,87 +366,115 @@ Use this when the user wants to see past workouts, training history, or review t
       "openai/toolInvocation/invoking": "Loading workouts...",
       "openai/toolInvocation/invoked": "Workouts loaded",
     },
-  }, safeHandler("show_workouts", async ({ period, exercise, program_day, tags: rawTags, limit: rawLimit, offset: rawOffset }: {
+  }, safeHandler("show_workouts", async ({ ids, period, exercise, program_day, tags: rawTags }: {
+    ids?: number[] | number;
     period?: "today" | "week" | "month" | "year" | number;
     exercise?: string;
     program_day?: string;
     tags?: string[] | string;
-    limit?: number;
-    offset?: number;
   }) => {
     const tags = parseJsonArrayParam<string>(rawTags);
     const userId = getUserId();
-    const effectiveLimit = rawLimit ?? 20;
-    const effectiveOffset = rawOffset ?? 0;
-    const effectivePeriod = period ?? "month";
+    const MAX_SESSIONS = 10;
+
+    // Parse ids filter
+    const parsedIds = ids != null
+      ? (Array.isArray(ids) ? ids : [ids]).slice(0, MAX_SESSIONS)
+      : null;
 
     const params: any[] = [userId];
+    let rows: any[];
 
-    // Build date filter
-    const userDate = await getUserCurrentDate();
-    let dateFilter: string;
-    if (effectivePeriod === "today") {
-      params.push(userDate);
-      dateFilter = `s.started_at >= $${params.length}::date`;
-    } else if (effectivePeriod === "week") {
-      params.push(userDate);
-      dateFilter = `s.started_at >= $${params.length}::date - INTERVAL '7 days'`;
-    } else if (effectivePeriod === "month") {
-      params.push(userDate);
-      dateFilter = `s.started_at >= $${params.length}::date - INTERVAL '30 days'`;
-    } else if (effectivePeriod === "year") {
-      params.push(userDate);
-      dateFilter = `s.started_at >= $${params.length}::date - INTERVAL '365 days'`;
+    if (parsedIds && parsedIds.length > 0) {
+      // === ID-based query: ignore other filters ===
+      params.push(parsedIds);
+      const sql = `
+        SELECT s.id as session_id, s.started_at, s.ended_at,
+          pd.day_label as program_day, s.tags,
+          COUNT(DISTINCT se.id) as exercises_count,
+          COALESCE(SUM((SELECT COUNT(*) FROM sets st WHERE st.session_exercise_id = se.id)), 0) as total_sets,
+          COALESCE(SUM((SELECT COALESCE(SUM(st.weight * st.reps), 0) FROM sets st WHERE st.session_exercise_id = se.id AND st.set_type != 'warmup' AND st.weight IS NOT NULL)), 0) as total_volume_kg,
+          ARRAY_AGG(DISTINCT e.muscle_group) FILTER (WHERE e.muscle_group IS NOT NULL) as muscle_groups
+        FROM sessions s
+        LEFT JOIN program_days pd ON pd.id = s.program_day_id
+        LEFT JOIN session_exercises se ON se.session_id = s.id
+        LEFT JOIN exercises e ON e.id = se.exercise_id
+        WHERE s.user_id = $1 AND s.deleted_at IS NULL AND s.id = ANY($2)
+        GROUP BY s.id, pd.day_label, s.tags
+        ORDER BY s.started_at DESC`;
+      rows = (await pool.query(sql, params)).rows;
     } else {
-      params.push(userDate);
-      params.push(effectivePeriod);
-      dateFilter = `s.started_at >= $${params.length - 1}::date - make_interval(days => $${params.length})`;
-    }
+      // === Filter-based query ===
+      // Determine effective period: default to latest session only when no filters
+      const hasFilters = period || exercise || program_day || (tags && tags.length > 0);
+      const effectivePeriod = period ?? (hasFilters ? "month" : null);
+      const effectiveLimit = hasFilters ? MAX_SESSIONS : 1;
 
-    // Build extra WHERE clauses
-    let extraWhere = "";
-    if (exercise) {
-      params.push(`%${escapeIlike(exercise)}%`);
-      extraWhere += ` AND EXISTS (
-        SELECT 1 FROM session_exercises se2
-        JOIN exercises e2 ON e2.id = se2.exercise_id
-        LEFT JOIN exercise_aliases ea ON ea.exercise_id = e2.id
-        WHERE se2.session_id = s.id
-          AND (e2.name ILIKE $${params.length} OR ea.alias ILIKE $${params.length})
-      )`;
-    }
-    if (program_day) {
-      params.push(program_day.toLowerCase());
-      extraWhere += ` AND LOWER(pd.day_label) = $${params.length}`;
-    }
-    if (tags && tags.length > 0) {
-      params.push(tags);
-      extraWhere += ` AND s.tags @> $${params.length}::text[]`;
-    }
+      // Build date filter
+      let dateFilter = "TRUE";
+      if (effectivePeriod) {
+        const userDate = await getUserCurrentDate();
+        if (effectivePeriod === "today") {
+          params.push(userDate);
+          dateFilter = `s.started_at >= $${params.length}::date`;
+        } else if (effectivePeriod === "week") {
+          params.push(userDate);
+          dateFilter = `s.started_at >= $${params.length}::date - INTERVAL '7 days'`;
+        } else if (effectivePeriod === "month") {
+          params.push(userDate);
+          dateFilter = `s.started_at >= $${params.length}::date - INTERVAL '30 days'`;
+        } else if (effectivePeriod === "year") {
+          params.push(userDate);
+          dateFilter = `s.started_at >= $${params.length}::date - INTERVAL '365 days'`;
+        } else {
+          params.push(userDate);
+          params.push(effectivePeriod);
+          dateFilter = `s.started_at >= $${params.length - 1}::date - make_interval(days => $${params.length})`;
+        }
+      }
 
-    params.push(effectiveLimit);
-    const limitIdx = params.length;
-    params.push(effectiveOffset);
-    const offsetIdx = params.length;
+      // Build extra WHERE clauses
+      let extraWhere = "";
+      if (exercise) {
+        params.push(`%${escapeIlike(exercise)}%`);
+        extraWhere += ` AND EXISTS (
+          SELECT 1 FROM session_exercises se2
+          JOIN exercises e2 ON e2.id = se2.exercise_id
+          LEFT JOIN exercise_aliases ea ON ea.exercise_id = e2.id
+          WHERE se2.session_id = s.id
+            AND (e2.name ILIKE $${params.length} OR ea.alias ILIKE $${params.length})
+        )`;
+      }
+      if (program_day) {
+        params.push(program_day.toLowerCase());
+        extraWhere += ` AND LOWER(pd.day_label) = $${params.length}`;
+      }
+      if (tags && tags.length > 0) {
+        params.push(tags);
+        extraWhere += ` AND s.tags @> $${params.length}::text[]`;
+      }
 
-    // Get sessions with summary
-    const sql = `
-      SELECT s.id as session_id, s.started_at, s.ended_at,
-        pd.day_label as program_day, s.tags,
-        COUNT(DISTINCT se.id) as exercises_count,
-        COALESCE(SUM((SELECT COUNT(*) FROM sets st WHERE st.session_exercise_id = se.id)), 0) as total_sets,
-        COALESCE(SUM((SELECT COALESCE(SUM(st.weight * st.reps), 0) FROM sets st WHERE st.session_exercise_id = se.id AND st.set_type != 'warmup' AND st.weight IS NOT NULL)), 0) as total_volume_kg,
-        ARRAY_AGG(DISTINCT e.muscle_group) FILTER (WHERE e.muscle_group IS NOT NULL) as muscle_groups
-      FROM sessions s
-      LEFT JOIN program_days pd ON pd.id = s.program_day_id
-      LEFT JOIN session_exercises se ON se.session_id = s.id
-      LEFT JOIN exercises e ON e.id = se.exercise_id
-      WHERE s.user_id = $1 AND s.deleted_at IS NULL AND ${dateFilter}${extraWhere}
-      GROUP BY s.id, pd.day_label, s.tags
-      ORDER BY s.started_at DESC
-      LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
+      params.push(effectiveLimit);
+      const limitIdx = params.length;
 
-    const { rows } = await pool.query(sql, params);
+      // Get sessions with summary
+      const sql = `
+        SELECT s.id as session_id, s.started_at, s.ended_at,
+          pd.day_label as program_day, s.tags,
+          COUNT(DISTINCT se.id) as exercises_count,
+          COALESCE(SUM((SELECT COUNT(*) FROM sets st WHERE st.session_exercise_id = se.id)), 0) as total_sets,
+          COALESCE(SUM((SELECT COALESCE(SUM(st.weight * st.reps), 0) FROM sets st WHERE st.session_exercise_id = se.id AND st.set_type != 'warmup' AND st.weight IS NOT NULL)), 0) as total_volume_kg,
+          ARRAY_AGG(DISTINCT e.muscle_group) FILTER (WHERE e.muscle_group IS NOT NULL) as muscle_groups
+        FROM sessions s
+        LEFT JOIN program_days pd ON pd.id = s.program_day_id
+        LEFT JOIN session_exercises se ON se.session_id = s.id
+        LEFT JOIN exercises e ON e.id = se.exercise_id
+        WHERE s.user_id = $1 AND s.deleted_at IS NULL AND ${dateFilter}${extraWhere}
+        GROUP BY s.id, pd.day_label, s.tags
+        ORDER BY s.started_at DESC
+        LIMIT $${limitIdx}`;
+      rows = (await pool.query(sql, params)).rows;
+    }
 
     // Fetch full exercise details for each session (like show_workout)
     const sessions = await Promise.all(rows.map(async (s) => {
@@ -509,13 +538,18 @@ Use this when the user wants to see past workouts, training history, or review t
       exercises_count: sessions.reduce((acc, s) => acc + s.exercises_count, 0),
     };
 
-    const periodStr = typeof effectivePeriod === "number" ? `${effectivePeriod}` : effectivePeriod;
-    const filters = {
-      period: periodStr,
-      ...(exercise && { exercise }),
-      ...(program_day && { program_day }),
-      ...(tags && tags.length > 0 && { tags }),
-    };
+    // Build filters object for the widget
+    const filters: Record<string, any> = {};
+    if (parsedIds && parsedIds.length > 0) {
+      filters.ids = parsedIds;
+    } else {
+      const hasFilters = period || exercise || program_day || (tags && tags.length > 0);
+      const effectivePeriod = period ?? (hasFilters ? "month" : "latest");
+      filters.period = typeof effectivePeriod === "number" ? `${effectivePeriod}` : effectivePeriod;
+      if (exercise) filters.exercise = exercise;
+      if (program_day) filters.program_day = program_day;
+      if (tags && tags.length > 0) filters.tags = tags;
+    }
 
     return widgetResponse(
       `Workout history widget displayed. The user can see all sessions visually. Do NOT describe, list, or summarize any workout information in text.`,

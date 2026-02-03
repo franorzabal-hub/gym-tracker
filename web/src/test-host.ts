@@ -19,7 +19,7 @@ const WIDGET_TOOLS: Record<string, { tool: string; args: Record<string, unknown>
   "programs-available": { tool: "show_programs", args: { mode: "available" }, type: "ui", file: "programs-list" },
   dashboard:           { tool: "show_dashboard", args: {}, type: "ui" },
   workout:             { tool: "show_workout", args: {}, type: "ui" },
-  workouts:            { tool: "show_workouts", args: {}, type: "ui" },
+  workouts:            { tool: "show_workouts", args: { period: "year" }, type: "ui" },
   // Data tools with widget HTML
   session:       { tool: "get_active_session", args: {}, type: "data" },
   stats:         { tool: "get_stats", args: { exercise: "Bench Press", period: "3months" }, type: "data" },
