@@ -41,7 +41,6 @@ const WIDGETS: Array<{ name: string; uri: string; file: string; description: str
   { name: "programs-list-widget", uri: "ui://gym-tracker/programs-list.html", file: "programs-list.html", description: "Programs list with templates for program selection" },
   { name: "dashboard-widget", uri: "ui://gym-tracker/dashboard.html", file: "dashboard.html", description: "Training dashboard with KPIs and charts" },
   { name: "workout-widget", uri: "ui://gym-tracker/workout.html", file: "workout.html", description: "Interactive workout session editor" },
-  { name: "available-programs-widget", uri: "ui://gym-tracker/available-programs.html", file: "available-programs.html", description: "Browse and clone global program templates" },
   { name: "workouts-widget", uri: "ui://gym-tracker/workouts.html", file: "workouts.html", description: "Workout history list with session cards" },
 ];
 

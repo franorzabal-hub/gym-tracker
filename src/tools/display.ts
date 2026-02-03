@@ -42,20 +42,82 @@ Without pending_changes: read-only view. With pending_changes: diff view + confi
 
   registerAppToolWithMeta(server, "show_programs", {
     title: "My Programs",
-    description: `${APP_CONTEXT}Display the user's programs as a read-only list widget. Shows each program with days, exercises, and status.
+    description: `${APP_CONTEXT}Display programs as a visual list widget.
+- mode="user" (default): Show user's programs with Active/Inactive status.
+- mode="available": Show global templates with Recommended/Already added badges and clone action.
 The widget already shows all information visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps.
-Call this when the user wants to see or review their programs. To edit programs, use manage_program. For browsing global templates, use show_available_programs instead.`,
-    inputSchema: {},
+Call with mode="user" when the user wants to see their programs. Call with mode="available" to browse global templates.
+To edit programs, use manage_program. After a clone from available mode, follow up with show_program.`,
+    inputSchema: {
+      mode: z.enum(["user", "available"]).optional().default("user")
+        .describe("user = show user's programs. available = browse global templates."),
+      filter: z.union([z.array(z.string()), z.string()]).optional()
+        .describe("(available mode only) Program names to show from global templates. If omitted, returns all."),
+    },
     annotations: { readOnlyHint: true },
     _meta: {
       ui: { resourceUri: "ui://gym-tracker/programs-list.html" },
       "openai/toolInvocation/invoking": "Loading programs...",
       "openai/toolInvocation/invoked": "Programs loaded",
     },
-  }, safeHandler("show_programs", async () => {
+  }, safeHandler("show_programs", async (args: { mode?: "user" | "available"; filter?: string[] | string } = {}) => {
+    const { mode, filter } = args;
     const userId = getUserId();
+    const effectiveMode = mode ?? "user";
 
-    // Fetch user's programs with latest version_id
+    if (effectiveMode === "available") {
+      // === Available mode: global templates ===
+      const { rows: profileRows } = await pool.query(
+        "SELECT data FROM user_profile WHERE user_id = $1 LIMIT 1", [userId]
+      );
+      const profile = profileRows[0]?.data || {};
+
+      const { rows: userProgramRows } = await pool.query(
+        "SELECT name FROM programs WHERE user_id = $1", [userId]
+      );
+
+      const { rows: globalRows } = await pool.query(
+        `SELECT * FROM (
+           SELECT DISTINCT ON (p.id) p.id, p.name, p.description,
+                  pv.id as version_id, pv.version_number
+           FROM programs p
+           JOIN program_versions pv ON pv.program_id = p.id
+           WHERE p.user_id IS NULL
+           ORDER BY p.id, pv.version_number DESC
+         ) sub ORDER BY name`
+      );
+
+      const parsedFilter = parseJsonArrayParam<string>(filter);
+      const filteredGlobalRows = parsedFilter
+        ? globalRows.filter((p) => parsedFilter.some((f) => f.toLowerCase() === p.name.toLowerCase()))
+        : globalRows;
+
+      const programs = await Promise.all(
+        filteredGlobalRows.map(async (p) => {
+          const days = await getProgramDaysWithExercises(p.version_id);
+          return {
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            version: p.version_number,
+            days_per_week: days.length,
+            days,
+          };
+        })
+      );
+
+      const userProgramNamesLower = userProgramRows.map((p) => p.name.toLowerCase());
+      const clonedNames = programs
+        .filter((g) => userProgramNamesLower.includes(g.name.toLowerCase()))
+        .map((g) => g.name);
+
+      return widgetResponse(
+        `Available programs widget displayed. The user can browse templates visually. Do NOT describe, list, or summarize any program information. After a clone, follow up with show_program.`,
+        { mode: "available", programs, profile, clonedNames }
+      );
+    }
+
+    // === User mode: user's programs ===
     const { rows: programRows } = await pool.query(
       `SELECT * FROM (
          SELECT DISTINCT ON (p.id) p.id, p.name, p.is_active, p.description,
@@ -68,8 +130,7 @@ Call this when the user wants to see or review their programs. To edit programs,
       [userId]
     );
 
-    // Fetch full exercise data for each user program
-    const programsWithDays = await Promise.all(
+    const programs = await Promise.all(
       programRows.map(async (p) => ({
         id: p.id,
         name: p.name,
@@ -82,42 +143,37 @@ Call this when the user wants to see or review their programs. To edit programs,
 
     return widgetResponse(
       `Programs list widget displayed. The user can see all their programs visually. Do NOT describe, list, or summarize any program information in text.`,
-      { programs: programsWithDays }
+      { mode: "user", programs }
     );
   }));
 
   registerAppToolWithMeta(server, "show_available_programs", {
     title: "Available Programs",
-    description: `${APP_CONTEXT}Display global program templates for browsing and cloning. Shows read-only program cards with day carousel, "Already added" badges for cloned programs, and "Recommended" badge for best match.
-The widget already shows all information visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps.
-Call this when the user wants to browse available programs, pick a new program, or when they have no programs yet.
-Use the filter param to show only relevant global programs (max ~5) based on user goals/level/experience. If omitted, all global programs are returned.
-After a user clones a program from the widget, follow up with show_program so the user can review, edit, and activate it.`,
+    description: `${APP_CONTEXT}Display global program templates for browsing and cloning.
+DEPRECATED: Use show_programs({ mode: "available" }) instead. This tool is kept for backwards compatibility.`,
     inputSchema: {
       filter: z.union([z.array(z.string()), z.string()]).optional()
-        .describe("Program names to show from global templates (LLM filters based on user context). If omitted, returns all global programs."),
+        .describe("Program names to show from global templates. If omitted, returns all global programs."),
     },
     annotations: { readOnlyHint: true },
     _meta: {
-      ui: { resourceUri: "ui://gym-tracker/available-programs.html" },
+      ui: { resourceUri: "ui://gym-tracker/programs-list.html" },
       "openai/toolInvocation/invoking": "Loading programs...",
       "openai/toolInvocation/invoked": "Programs loaded",
     },
   }, safeHandler("show_available_programs", async ({ filter }: { filter?: string[] | string }) => {
+    // Delegate to show_programs with mode="available"
     const userId = getUserId();
 
-    // Fetch profile
     const { rows: profileRows } = await pool.query(
       "SELECT data FROM user_profile WHERE user_id = $1 LIMIT 1", [userId]
     );
     const profile = profileRows[0]?.data || {};
 
-    // Fetch user's program names for clonedNames detection
     const { rows: userProgramRows } = await pool.query(
       "SELECT name FROM programs WHERE user_id = $1", [userId]
     );
 
-    // Fetch global programs (templates) with full exercise data
     const { rows: globalRows } = await pool.query(
       `SELECT * FROM (
          SELECT DISTINCT ON (p.id) p.id, p.name, p.description,
@@ -129,13 +185,12 @@ After a user clones a program from the widget, follow up with show_program so th
        ) sub ORDER BY name`
     );
 
-    // Apply filter to global programs if provided
     const parsedFilter = parseJsonArrayParam<string>(filter);
     const filteredGlobalRows = parsedFilter
       ? globalRows.filter((p) => parsedFilter.some((f) => f.toLowerCase() === p.name.toLowerCase()))
       : globalRows;
 
-    const globalPrograms = await Promise.all(
+    const programs = await Promise.all(
       filteredGlobalRows.map(async (p) => {
         const days = await getProgramDaysWithExercises(p.version_id);
         return {
@@ -149,15 +204,14 @@ After a user clones a program from the widget, follow up with show_program so th
       })
     );
 
-    // Compute which global programs the user has already cloned (case-insensitive name match)
     const userProgramNamesLower = userProgramRows.map((p) => p.name.toLowerCase());
-    const clonedNames = globalPrograms
+    const clonedNames = programs
       .filter((g) => userProgramNamesLower.includes(g.name.toLowerCase()))
       .map((g) => g.name);
 
     return widgetResponse(
-      `Available programs widget displayed. The user can browse all templates visually. Do NOT describe, list, or summarize any program information in text. After a clone, follow up with show_program.`,
-      { profile, globalPrograms, clonedNames }
+      `Available programs widget displayed. The user can browse templates visually. Do NOT describe, list, or summarize any program information. After a clone, follow up with show_program.`,
+      { mode: "available", programs, profile, clonedNames }
     );
   }));
 

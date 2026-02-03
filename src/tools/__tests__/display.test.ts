@@ -133,6 +133,7 @@ describe("show_programs display tool", () => {
 
     const result = await toolHandlers["show_programs"]();
 
+    expect(result.structuredContent.mode).toBe("user");
     expect(result.structuredContent.programs).toHaveLength(1);
     expect(result.structuredContent.programs[0].name).toBe("PPL");
     expect(result.structuredContent.programs[0].description).toBe("Push Pull Legs");
@@ -172,7 +173,7 @@ describe("show_available_programs display tool", () => {
       expect.objectContaining({
         title: "Available Programs",
         annotations: { readOnlyHint: true },
-        _meta: expect.objectContaining({ ui: { resourceUri: "ui://gym-tracker/available-programs.html" } }),
+        _meta: expect.objectContaining({ ui: { resourceUri: "ui://gym-tracker/programs-list.html" } }),
       }),
       expect.any(Function)
     );
@@ -193,11 +194,12 @@ describe("show_available_programs display tool", () => {
 
     const result = await toolHandlers["show_available_programs"]({});
 
+    expect(result.structuredContent.mode).toBe("available");
     expect(result.structuredContent.profile).toEqual({ name: "Franco", experience_level: "intermediate" });
-    expect(result.structuredContent.globalPrograms).toHaveLength(1);
-    expect(result.structuredContent.globalPrograms[0].name).toBe("Full Body 3x");
-    expect(result.structuredContent.globalPrograms[0].days_per_week).toBe(3);
-    expect(result.structuredContent.globalPrograms[0].days).toHaveLength(3);
+    expect(result.structuredContent.programs).toHaveLength(1);
+    expect(result.structuredContent.programs[0].name).toBe("Full Body 3x");
+    expect(result.structuredContent.programs[0].days_per_week).toBe(3);
+    expect(result.structuredContent.programs[0].days).toHaveLength(3);
     expect(result.structuredContent.clonedNames).toEqual([]);
     expect(result.content[0].text).toContain("Do NOT describe");
     expect(mockGetProgramDaysWithExercises).toHaveBeenCalledWith(50);
@@ -232,11 +234,11 @@ describe("show_available_programs display tool", () => {
 
     const result = await toolHandlers["show_available_programs"]({ filter: ["Full Body 3x"] });
 
-    expect(result.structuredContent.globalPrograms).toHaveLength(1);
-    expect(result.structuredContent.globalPrograms[0].name).toBe("Full Body 3x");
+    expect(result.structuredContent.programs).toHaveLength(1);
+    expect(result.structuredContent.programs[0].name).toBe("Full Body 3x");
   });
 
-  it("returns empty globalPrograms when none exist", async () => {
+  it("returns empty programs when none exist", async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
@@ -245,7 +247,7 @@ describe("show_available_programs display tool", () => {
     const result = await toolHandlers["show_available_programs"]({});
 
     expect(result.structuredContent.profile).toEqual({});
-    expect(result.structuredContent.globalPrograms).toHaveLength(0);
+    expect(result.structuredContent.programs).toHaveLength(0);
     expect(result.structuredContent.clonedNames).toEqual([]);
   });
 });

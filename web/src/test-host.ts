@@ -11,12 +11,12 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 type WidgetType = "ui" | "data" | "data-only";
 
-const WIDGET_TOOLS: Record<string, { tool: string; args: Record<string, unknown>; type: WidgetType }> = {
+const WIDGET_TOOLS: Record<string, { tool: string; args: Record<string, unknown>; type: WidgetType; file?: string }> = {
   // Display tools — render visual widgets (show_* tools)
   profile:             { tool: "show_profile", args: {}, type: "ui" },
   programs:            { tool: "show_program", args: {}, type: "ui" },
-  "programs-list":     { tool: "show_programs", args: {}, type: "ui" },
-  "available-programs": { tool: "show_available_programs", args: {}, type: "ui" },
+  "programs-user":     { tool: "show_programs", args: { mode: "user" }, type: "ui", file: "programs-list" },
+  "programs-available": { tool: "show_programs", args: { mode: "available" }, type: "ui", file: "programs-list" },
   dashboard:           { tool: "show_dashboard", args: {}, type: "ui" },
   workout:             { tool: "show_workout", args: {}, type: "ui" },
   workouts:            { tool: "show_workouts", args: {}, type: "ui" },
@@ -137,8 +137,9 @@ const sampleData: Record<string, { content?: Array<{ type: string; text: string 
       measurements: [{ type: "weight_kg", value: 82, date: "2025-01-28" }],
     })}],
   },
-  "programs-list": {
+  "programs-user": {
     content: [{ type: "text", text: JSON.stringify({
+      mode: "user",
       programs: [
         { id: 1, name: "Upper/Lower 4x", is_active: true, description: "4 days/week upper/lower split", version: 2, days: [
           { day_label: "Upper A", weekdays: [1], exercises: [
@@ -167,11 +168,12 @@ const sampleData: Record<string, { content?: Array<{ type: string; text: string 
       ],
     })}],
   },
-  "available-programs": {
+  "programs-available": {
     content: [{ type: "text", text: JSON.stringify({
+      mode: "available",
       profile: { experience_level: "intermediate", training_days_per_week: 4 },
       clonedNames: ["Upper/Lower 4x"],
-      globalPrograms: [
+      programs: [
         { id: 100, name: "Full Body 3x", description: "3 days/week full body routine.", version: 1, days_per_week: 3,
           days: [
             { day_label: "Full Body A", weekdays: [1], exercises: [
@@ -767,9 +769,10 @@ async function loadWidgetOpenAi(name: string) {
   currentFrameLoadHandler = loadHandler;
   frame.addEventListener("load", loadHandler);
 
-  // Load the widget HTML
+  // Load the widget HTML (use file override if specified)
+  const fileName = WIDGET_TOOLS[name]?.file ?? name;
   frame.removeAttribute("srcdoc");
-  frame.src = `/${name}.html`;
+  frame.src = `/${fileName}.html`;
 }
 
 // ---------------------------------------------------------------------------
@@ -796,9 +799,10 @@ async function loadWidget(name: string) {
     await loadWidgetOpenAi(name);
   } else {
     await connectBridge();
-    // Clear srcdoc from any previous data-only view, then set src
+    // Clear srcdoc from any previous data-only view, then set src (use file override if specified)
+    const fileName = entry?.file ?? name;
     frame.removeAttribute("srcdoc");
-    frame.src = `/${name}.html`;
+    frame.src = `/${fileName}.html`;
   }
 }
 

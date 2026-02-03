@@ -174,8 +174,8 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 | Tool | Widget | Description |
 |---|---|---|
 | `show_profile` | profile.html | Read-only profile card. Supports `pending_changes` param for LLM-proposed edits with visual diff + confirm button |
-| `show_programs` | programs-list.html | Programs list with user's existing programs and global program templates. Users can activate programs, clone global programs, or choose custom |
-| `show_available_programs` | available-programs.html | Browse global program templates with clone capability |
+| `show_programs` | programs-list.html | Unified programs widget. `mode="user"` (default) shows user's programs. `mode="available"` shows global templates with clone capability |
+| `show_available_programs` | programs-list.html | DEPRECATED: Use `show_programs({ mode: "available" })` |
 | `show_program` | programs.html | Program viewer with days, exercises, supersets, weights. Defaults to active program, optional `name` param |
 | `show_dashboard` | dashboard.html | Training dashboard with KPIs, volume charts, streak, PRs, muscle group distribution |
 | `show_workout` | workout.html | Workout session viewer. Optional `session_id` to view a specific session. Without it, shows the most recent session. Read-only for ended sessions; active sessions show inline-editable sets (reps, weight, RPE, type) with add/remove. |
