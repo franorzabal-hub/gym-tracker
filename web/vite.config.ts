@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 import { resolve } from "path";
 import { readdirSync } from "fs";
@@ -14,6 +15,7 @@ const widget = process.env.WIDGET;
 export default defineConfig(({ command }) => ({
   plugins: [
     react(),
+    tailwindcss(),
     // Only inline assets for production builds — viteSingleFile breaks Vite HMR
     ...(command === "build" ? [viteSingleFile()] : []),
   ],

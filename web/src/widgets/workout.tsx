@@ -2,19 +2,10 @@ import { createRoot } from "react-dom/client";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useToolOutput } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
-import { ExerciseIcon, MUSCLE_COLOR } from "./shared/exercise-icons.js";
 import { sp, radius, font, weight, opacity, maxWidth } from "../tokens.js";
 import "../styles.css";
 
 // ── Types ──
-
-interface PrevSetData {
-  set_number: number;
-  reps: number;
-  weight: number | null;
-  rpe: number | null;
-  set_type: string;
-}
 
 interface SetData {
   set_id: number;
@@ -41,7 +32,7 @@ interface ExerciseData {
   exercise_type?: string | null;
   rep_type?: string | null;
   sets: SetData[];
-  previous?: { date: string; sets: PrevSetData[] } | null;
+  previous?: { date: string; sets: { set_number: number; reps: number; weight: number | null; rpe: number | null; set_type: string }[] } | null;
   prs?: Record<string, number> | null;
   pr_baseline?: Record<string, number> | null;
 }
@@ -60,6 +51,21 @@ interface ToolData {
   session: SessionData | null;
   readonly?: boolean;
 }
+
+// ── Constants ──
+
+const REP_UNIT: Record<string, string> = {
+  reps: "r",
+  seconds: "s",
+  meters: "m",
+  calories: "cal",
+};
+
+const GROUP_LABELS: Record<string, string> = {
+  superset: "Superset",
+  paired: "Paired",
+  circuit: "Circuit",
+};
 
 // ── Helpers ──
 
@@ -83,6 +89,15 @@ function formatDuration(minutes: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
+function formatRestSeconds(seconds: number): string {
+  if (seconds >= 60) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return s ? `${m}′${s}″` : `${m}′`;
+  }
+  return `${seconds}″`;
+}
+
 function isPR(set: SetData, baseline: Record<string, number> | null | undefined): string | null {
   if (!baseline || !set.weight || set.set_type === "warmup") return null;
   if (baseline.max_weight != null && set.weight > baseline.max_weight) return "Weight PR";
@@ -91,13 +106,65 @@ function isPR(set: SetData, baseline: Record<string, number> | null | undefined)
   return null;
 }
 
-function weightRange(sets: SetData[]): string {
+function exerciseHasPR(exercise: ExerciseData): boolean {
+  return exercise.sets.some(s => isPR(s, exercise.pr_baseline) != null);
+}
+
+/** Format sets summary: "3×10r" or "3×(12/10/8)r" if variable reps */
+function formatSetsSummary(sets: SetData[], repType?: string | null): string {
+  if (sets.length === 0) return "";
+  const unit = repType && REP_UNIT[repType] ? REP_UNIT[repType] : "r";
+  const reps = sets.map(s => s.reps);
+  const allSame = reps.every(r => r === reps[0]);
+  if (allSame) {
+    return `${sets.length}×${reps[0]}${unit}`;
+  }
+  return `${sets.length}×(${reps.join("/")})${unit}`;
+}
+
+/** Format weight range: "35kg" or "100→115kg" */
+function formatWeightRange(sets: SetData[]): string | null {
   const weights = sets.map(s => s.weight).filter((w): w is number => w != null && w > 0);
-  if (weights.length === 0) return "bodyweight";
+  if (weights.length === 0) return null;
   const min = Math.min(...weights);
   const max = Math.max(...weights);
-  return min === max ? `${min}kg` : `${min}-${max}kg`;
+  if (min === max) return `${min}`;
+  return `${min}→${max}`;
 }
+
+/** Monochromatic SVG icons for group types */
+function GroupIcon({ type, size = 14 }: { type: string; size?: number }) {
+  const s = { width: size, height: size, display: "block" };
+  const color = "currentColor";
+  if (type === "superset") {
+    return (
+      <svg viewBox="0 0 16 16" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={s}>
+        <path d="M2 5.5h10m-2.5-2.5L12 5.5 9.5 8" />
+        <path d="M14 10.5H4m2.5-2.5L4 10.5 6.5 13" />
+      </svg>
+    );
+  }
+  if (type === "paired") {
+    return (
+      <svg viewBox="0 0 16 16" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={s}>
+        <path d="M6.5 9.5l3-3" />
+        <path d="M9 5l1.5-1.5a2.12 2.12 0 0 1 3 3L12 8" />
+        <path d="M7 8L5.5 9.5a2.12 2.12 0 0 0 3 3L10 11" />
+      </svg>
+    );
+  }
+  // circuit
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={s}>
+      <path d="M13.5 8a5.5 5.5 0 0 1-9.17 4.1" />
+      <path d="M2.5 8a5.5 5.5 0 0 1 9.17-4.1" />
+      <path d="M11 1.5L11.67 3.9 9.27 4.57" />
+      <path d="M5 14.5L4.33 12.1 6.73 11.43" />
+    </svg>
+  );
+}
+
+// ── Grouping logic ──
 
 interface ExerciseGroup {
   exercises: ExerciseData[];
@@ -110,313 +177,39 @@ interface ExerciseGroup {
 
 function groupExercises(exercises: ExerciseData[]): ExerciseGroup[] {
   const groups: ExerciseGroup[] = [];
-  let currentGroup: ExerciseData[] = [];
-  let currentGroupId: number | null = null;
-
-  for (const ex of exercises) {
-    if (ex.group_id != null && ex.group_id === currentGroupId) {
-      currentGroup.push(ex);
-    } else {
-      if (currentGroup.length > 0) {
-        const first = currentGroup[0];
-        groups.push({
-          exercises: currentGroup,
-          groupId: currentGroupId,
-          groupType: first.group_type || null,
-          groupLabel: first.group_label || null,
-          groupNotes: first.group_notes || null,
-          groupRestSeconds: first.group_rest_seconds || null,
-        });
+  let i = 0;
+  while (i < exercises.length) {
+    const ex = exercises[i];
+    if (ex.group_id != null) {
+      const gid = ex.group_id;
+      const block: ExerciseData[] = [];
+      while (i < exercises.length && exercises[i].group_id === gid) {
+        block.push(exercises[i]);
+        i++;
       }
-      currentGroup = [ex];
-      currentGroupId = ex.group_id;
+      const first = block[0];
+      groups.push({
+        exercises: block,
+        groupId: gid,
+        groupType: first.group_type || null,
+        groupLabel: first.group_label || null,
+        groupNotes: first.group_notes || null,
+        groupRestSeconds: first.group_rest_seconds || null,
+      });
+    } else {
+      groups.push({
+        exercises: [ex],
+        groupId: null,
+        groupType: null,
+        groupLabel: null,
+        groupNotes: null,
+        groupRestSeconds: null,
+      });
+      i++;
     }
-  }
-  if (currentGroup.length > 0) {
-    const first = currentGroup[0];
-    groups.push({
-      exercises: currentGroup,
-      groupId: currentGroupId,
-      groupType: first.group_type || null,
-      groupLabel: first.group_label || null,
-      groupNotes: first.group_notes || null,
-      groupRestSeconds: first.group_rest_seconds || null,
-    });
   }
   return groups;
 }
-
-// ── Set type badge (read-only) ──
-
-const SET_TYPE_COLORS: Record<string, string> = {
-  working: "var(--primary)",
-  warmup: "var(--warning)",
-  drop: "var(--success)",
-  failure: "var(--danger)",
-};
-
-const SET_TYPE_LABELS: Record<string, string> = {
-  working: "W",
-  warmup: "WU",
-  drop: "D",
-  failure: "F",
-};
-
-function SetTypeBadge({ type }: { type: string }) {
-  return (
-    <span
-      style={{
-        fontSize: font.xs,
-        fontWeight: weight.semibold,
-        color: SET_TYPE_COLORS[type] || "var(--text-secondary)",
-        opacity: opacity.high,
-        width: 18,
-        textAlign: "center",
-      }}
-    >
-      {SET_TYPE_LABELS[type] || type[0]?.toUpperCase() || "?"}
-    </span>
-  );
-}
-
-// ── Set row (read-only) ──
-
-function SetRow({ set, prevSet, prLabel }: {
-  set: SetData;
-  prevSet?: PrevSetData | null;
-  prLabel?: string | null;
-}) {
-  return (
-    <div style={{
-      display: "flex",
-      alignItems: "center",
-      gap: sp[3],
-      minHeight: 28,
-      padding: `${sp[1]}px 0`,
-    }}>
-      {/* Set number */}
-      <span style={{
-        width: sp[10], height: sp[10], borderRadius: radius.full,
-        background: "var(--bg)", border: "1px solid var(--border)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: font.xs, fontWeight: weight.semibold, color: "var(--text-secondary)",
-        flexShrink: 0,
-      }}>
-        {set.set_number}
-      </span>
-
-      {/* Set type */}
-      <SetTypeBadge type={set.set_type || "working"} />
-
-      {/* Reps × Weight */}
-      <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
-        {set.reps}
-        {set.weight != null && (
-          <>
-            <span style={{ fontSize: font.base, color: "var(--text-secondary)", margin: `0 ${sp[1]}px` }}>×</span>
-            {set.weight}
-            <span style={{ fontSize: font.xs, color: "var(--text-secondary)", marginLeft: sp[0.5] }}>kg</span>
-          </>
-        )}
-      </span>
-
-      {/* RPE */}
-      {set.rpe != null && (
-        <span style={{
-          fontSize: font.base,
-          color: set.rpe >= 9 ? "var(--danger)" : set.rpe >= 8 ? "var(--warning)" : "var(--success)",
-        }}>
-          @{set.rpe}
-        </span>
-      )}
-
-      <span style={{ flex: 1 }} />
-
-      {/* Previous ref */}
-      {prevSet && prevSet.weight != null && (
-        <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium, whiteSpace: "nowrap" }}>
-          prev: {prevSet.weight}×{prevSet.reps}
-        </span>
-      )}
-
-      {/* PR badge */}
-      {prLabel && (
-        <span style={{
-          fontSize: font["2xs"], fontWeight: weight.bold, color: "var(--warning)",
-          background: "var(--pr-badge-bg)",
-          padding: `${sp[0.5]}px ${sp[3]}px`, borderRadius: radius.sm,
-          whiteSpace: "nowrap",
-        }}>
-          PR
-        </span>
-      )}
-    </div>
-  );
-}
-
-// ── Exercise accordion row (read-only) ──
-
-function ExerciseAccordionRow({ exercise, expanded, onToggle }: {
-  exercise: ExerciseData;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  const muscleColor = exercise.muscle_group ? MUSCLE_COLOR[exercise.muscle_group.toLowerCase()] || "var(--text-secondary)" : "var(--text-secondary)";
-  const hasPRs = exercise.sets.some(s => isPR(s, exercise.pr_baseline) != null);
-  const prevSets = exercise.previous?.sets || [];
-
-  return (
-    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-      {/* Collapsed header */}
-      <div
-        onClick={onToggle}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: sp[4],
-          padding: `${sp[5]}px ${sp[6]}px`,
-          cursor: "pointer",
-          userSelect: "none",
-          transition: "background 0.1s",
-          background: expanded ? "var(--bg-secondary)" : "transparent",
-        }}
-      >
-        <ExerciseIcon name={exercise.name} color={muscleColor} size={18} />
-
-        <span style={{ fontWeight: weight.semibold, fontSize: font.md, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {exercise.name}
-        </span>
-
-        {exercise.muscle_group && (
-          <span style={{
-            fontSize: font["2xs"], padding: `${sp[0.5]}px ${sp[3]}px`, borderRadius: radius.sm,
-            background: `color-mix(in srgb, ${muscleColor} 9%, transparent)`,
-            color: muscleColor,
-            fontWeight: weight.medium, textTransform: "capitalize",
-            whiteSpace: "nowrap", flexShrink: 0,
-          }}>
-            {exercise.muscle_group}
-          </span>
-        )}
-
-        {hasPRs && (
-          <span style={{
-            fontSize: font["2xs"], fontWeight: weight.bold, color: "var(--warning)",
-            background: "var(--pr-badge-bg)",
-            padding: `${sp[0.5]}px ${sp[3]}px`, borderRadius: radius.sm,
-            whiteSpace: "nowrap", flexShrink: 0,
-          }}>
-            PR
-          </span>
-        )}
-
-        <span style={{ fontSize: font.sm, color: "var(--text-secondary)", whiteSpace: "nowrap", flexShrink: 0 }}>
-          {exercise.sets.length} set{exercise.sets.length !== 1 ? "s" : ""}
-          {" · "}
-          {weightRange(exercise.sets)}
-        </span>
-
-        <span style={{
-          fontSize: font.sm, color: "var(--text-secondary)",
-          transition: "transform 0.15s",
-          transform: expanded ? "rotate(90deg)" : "none",
-          flexShrink: 0,
-        }}>
-          ▸
-        </span>
-      </div>
-
-      {/* Expanded detail */}
-      {expanded && (
-        <div style={{ padding: `${sp[2]}px ${sp[6]}px ${sp[5]}px` }}>
-          {/* Previous workout summary */}
-          {exercise.previous && (
-            <div style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium, marginBottom: sp[3] }}>
-              Previous ({new Date(exercise.previous.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}):
-              {" "}{exercise.previous.sets.map((s) =>
-                s.weight != null ? `${s.weight}×${s.reps}` : `${s.reps}r`
-              ).join(", ")}
-            </div>
-          )}
-
-          {/* Sets */}
-          {exercise.sets.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              {exercise.sets.map((set) => {
-                const matchingPrev = prevSets.find((p) => p.set_number === set.set_number) || null;
-                const prLabel = isPR(set, exercise.pr_baseline);
-                return (
-                  <SetRow
-                    key={set.set_id}
-                    set={set}
-                    prevSet={matchingPrev}
-                    prLabel={prLabel}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Group wrapper (superset / paired / circuit) ──
-
-const GROUP_STYLES: Record<string, { icon: string; label: string; border: string }> = {
-  superset: { icon: "\u26A1", label: "Superset", border: "3px solid var(--primary)" },
-  paired:   { icon: "\uD83D\uDD17", label: "Paired",   border: "3px dashed var(--primary)" },
-  circuit:  { icon: "\uD83D\uDD04", label: "Circuit",  border: "3px double var(--primary)" },
-};
-
-function formatRestSeconds(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return s > 0 ? `${m}\u2032${s.toString().padStart(2, "0")}\u2033` : `${m}\u2032`;
-}
-
-function GroupWrapper({ groupType, groupLabel, groupNotes, groupRestSeconds, children }: {
-  groupType: string | null;
-  groupLabel: string | null;
-  groupNotes: string | null;
-  groupRestSeconds: number | null;
-  children: React.ReactNode;
-}) {
-  const style = GROUP_STYLES[groupType || "superset"] || GROUP_STYLES.superset;
-  return (
-    <div style={{
-      borderLeft: style.border,
-      paddingLeft: sp[4],
-      marginLeft: sp[1],
-    }}>
-      <div style={{ fontSize: font.xs, fontWeight: weight.semibold, color: "var(--primary)", marginBottom: sp[1], textTransform: "uppercase", letterSpacing: "0.5px", display: "flex", alignItems: "center", gap: sp[2] }}>
-        <span>{style.icon}</span>
-        <span>{style.label}</span>
-        {groupLabel && <span style={{ textTransform: "none", fontWeight: weight.medium, opacity: opacity.high }}>{"\u2014"} {groupLabel}</span>}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: sp[2] }}>
-        {children}
-      </div>
-      {(groupRestSeconds || groupNotes) && (
-        <div style={{ marginTop: sp[2], fontSize: font.xs, color: "var(--text-secondary)" }}>
-          {groupRestSeconds != null && groupRestSeconds > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: sp[1] }}>
-              <span>{"\u23F1"}</span>
-              <span>{formatRestSeconds(groupRestSeconds)} entre rondas</span>
-            </div>
-          )}
-          {groupNotes && (
-            <div style={{ fontStyle: "italic", marginTop: sp[1], opacity: opacity.high }}>{groupNotes}</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Section container ──
 
 interface WorkoutSection {
   sectionId: number;
@@ -425,20 +218,16 @@ interface WorkoutSection {
   groups: ExerciseGroup[];
 }
 
-function groupIntoWorkoutSections(exerciseGroups: ExerciseGroup[]): Array<{ type: "section"; section: WorkoutSection } | { type: "groups"; groups: ExerciseGroup[] }> {
+function groupIntoSections(exerciseGroups: ExerciseGroup[]): Array<{ type: "section"; section: WorkoutSection } | { type: "groups"; groups: ExerciseGroup[] }> {
   const result: Array<{ type: "section"; section: WorkoutSection } | { type: "groups"; groups: ExerciseGroup[] }> = [];
   let currentUnsectioned: ExerciseGroup[] = [];
-
-  // Group exercise groups by section
   const sectionMap = new Map<number, WorkoutSection>();
-  const sectionOrder: number[] = [];
 
   for (const group of exerciseGroups) {
     const firstEx = group.exercises[0];
     const sectionId = firstEx?.section_id;
 
     if (sectionId != null) {
-      // Flush unsectioned
       if (currentUnsectioned.length > 0) {
         result.push({ type: "groups", groups: currentUnsectioned });
         currentUnsectioned = [];
@@ -452,7 +241,6 @@ function groupIntoWorkoutSections(exerciseGroups: ExerciseGroup[]): Array<{ type
           groups: [],
         };
         sectionMap.set(sectionId, section);
-        sectionOrder.push(sectionId);
         result.push({ type: "section", section });
       }
       sectionMap.get(sectionId)!.groups.push(group);
@@ -468,53 +256,281 @@ function groupIntoWorkoutSections(exerciseGroups: ExerciseGroup[]): Array<{ type
   return result;
 }
 
-function SectionContainer({ section, expandedExercise, onToggle, children }: {
+// ── Components ──
+
+function ExerciseRow({ exercise, exNum, isLast }: {
+  exercise: ExerciseData;
+  exNum: number;
+  isLast: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasPR = exerciseHasPR(exercise);
+  const hasPerSet = exercise.sets.length > 1;
+  const setsSummary = formatSetsSummary(exercise.sets, exercise.rep_type);
+  const weightRange = formatWeightRange(exercise.sets);
+
+  return (
+    <div style={{ marginBottom: isLast ? 0 : sp[4] }}>
+      <div
+        className={hasPerSet ? "tappable exercise-row" : "exercise-row"}
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: sp[3],
+          cursor: hasPerSet ? "pointer" : "default",
+        }}
+        onClick={hasPerSet ? () => setExpanded(!expanded) : undefined}
+      >
+        {/* Left: number + name */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: sp[3], minWidth: 0 }}>
+          <span style={{ fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.muted, minWidth: "1.2em", textAlign: "right", flexShrink: 0 }}>{exNum}</span>
+          <span className="exercise-name" style={{
+            fontWeight: weight.medium,
+            fontSize: font.lg,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}>{exercise.name}</span>
+          {hasPR && (
+            <span style={{
+              fontSize: font["2xs"], fontWeight: weight.bold, color: "var(--warning)",
+              background: "var(--pr-badge-bg)",
+              padding: `${sp[0.5]}px ${sp[3]}px`, borderRadius: radius.sm,
+              whiteSpace: "nowrap", flexShrink: 0,
+            }}>
+              PR
+            </span>
+          )}
+        </div>
+        {/* Right: sets × reps · weight */}
+        <div className="exercise-metrics" style={{ flexShrink: 0, display: "flex", alignItems: "baseline", gap: sp[1], fontSize: font.md, whiteSpace: "nowrap" }}>
+          <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{setsSummary}</span>
+          {weightRange != null && (
+            <>
+              <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>
+              <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{weightRange}</span>
+              <span style={{ opacity: 0.5, fontSize: font.sm }}>kg</span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Per-set detail (expanded on row click) */}
+      {hasPerSet && expanded && (
+        <div className="per-set-detail">
+          {exercise.sets.map((set, si) => {
+            const prLabel = isPR(set, exercise.pr_baseline);
+            const prevSet = exercise.previous?.sets?.find(p => p.set_number === set.set_number);
+            return (
+              <div key={set.set_id} style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: `${sp[1]}px 0`,
+                fontSize: font.sm,
+                color: "var(--text-secondary)",
+                borderBottom: si < exercise.sets.length - 1 ? "1px solid color-mix(in srgb, var(--border) 30%, transparent)" : "none",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
+                  <span style={{ minWidth: "3em" }}>Set {set.set_number}</span>
+                  {set.set_type !== "working" && (
+                    <span style={{
+                      fontSize: font["2xs"],
+                      color: set.set_type === "warmup" ? "var(--warning)" : set.set_type === "drop" ? "var(--success)" : "var(--danger)",
+                      textTransform: "uppercase",
+                    }}>
+                      {set.set_type}
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
+                  {prevSet && prevSet.weight != null && (
+                    <span style={{ fontSize: font.xs, opacity: opacity.medium }}>
+                      prev: {prevSet.reps}×{prevSet.weight}
+                    </span>
+                  )}
+                  <span>
+                    <span style={{ fontWeight: weight.medium, color: "var(--text)" }}>{set.reps}</span>
+                    {set.weight != null && (
+                      <>
+                        <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>×</span>
+                        <span style={{ fontWeight: weight.medium, color: "var(--text)" }}>{set.weight}</span>
+                        <span style={{ opacity: 0.5 }}> kg</span>
+                      </>
+                    )}
+                  </span>
+                  {set.rpe != null && (
+                    <span style={{
+                      color: set.rpe >= 9 ? "var(--danger)" : set.rpe >= 8 ? "var(--warning)" : "var(--text-secondary)",
+                    }}>
+                      @{set.rpe}
+                    </span>
+                  )}
+                  {prLabel && (
+                    <span style={{
+                      fontSize: font["2xs"], fontWeight: weight.bold, color: "var(--warning)",
+                      background: "var(--pr-badge-bg)",
+                      padding: `${sp[0.5]}px ${sp[2]}px`, borderRadius: radius.sm,
+                    }}>
+                      PR
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExerciseGroupBlock({ group, startIndex, collapsible = true }: {
+  group: ExerciseGroup;
+  startIndex: number;
+  collapsible?: boolean;
+}) {
+  const isGrouped = group.exercises.length > 1 && group.groupId != null;
+  const [expanded, setExpanded] = useState(true);
+  const type = group.groupType || "superset";
+  const headerLabel = group.groupLabel || GROUP_LABELS[type] || "Superset";
+
+  if (!isGrouped) {
+    return (
+      <div style={{ marginBottom: sp[2] }}>
+        {group.exercises.map((ex, i) => (
+          <ExerciseRow key={ex.name} exercise={ex} exNum={startIndex + i} isLast={i >= group.exercises.length - 1} />
+        ))}
+      </div>
+    );
+  }
+
+  const canCollapse = collapsible;
+  const showExercises = canCollapse ? expanded : true;
+
+  return (
+    <div style={{ marginBottom: sp[2] }}>
+      {/* Header */}
+      <div
+        className={canCollapse ? "tappable section-header" : undefined}
+        onClick={canCollapse ? () => setExpanded(!expanded) : undefined}
+        style={{
+          cursor: canCollapse ? "pointer" : "default",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: showExercises ? sp[3] : 0,
+          userSelect: "none",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: sp[2] }}>
+          {canCollapse && (
+            <span style={{ fontSize: font.sm, color: "var(--text-secondary)", transition: "transform 0.15s", transform: expanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
+              ▼
+            </span>
+          )}
+          <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
+            {headerLabel}
+          </span>
+          <span style={{ color: "var(--text-secondary)", opacity: opacity.subtle, display: "inline-flex" }}>
+            <GroupIcon type={type} size={font.md} />
+          </span>
+        </div>
+        {canCollapse && (
+          <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
+            {group.exercises.length} ej.
+          </span>
+        )}
+      </div>
+      {/* Exercises */}
+      {showExercises && (
+        <div style={{ paddingLeft: sp[3] }}>
+          {group.exercises.map((ex, i) => (
+            <ExerciseRow key={ex.name} exercise={ex} exNum={startIndex + i} isLast={i >= group.exercises.length - 1} />
+          ))}
+          {/* Footer: group rest + notes */}
+          {(group.groupRestSeconds != null || group.groupNotes) && (
+            <div style={{ marginTop: sp[3], display: "flex", alignItems: "center", justifyContent: "flex-end", gap: sp[3] }}>
+              {group.groupRestSeconds != null && (
+                <span className="rest-badge">⏱ {formatRestSeconds(group.groupRestSeconds)}</span>
+              )}
+              {group.groupNotes && (
+                <span style={{ fontSize: font.xs, color: "var(--text-secondary)", fontStyle: "italic", opacity: opacity.medium }}>
+                  {group.groupNotes}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SectionCard({ section, startNumber }: {
   section: WorkoutSection;
-  expandedExercise: string | null;
-  onToggle: (name: string) => void;
-  children: React.ReactNode;
+  startNumber: number;
 }) {
   const [expanded, setExpanded] = useState(true);
   const exerciseCount = section.groups.reduce((sum, g) => sum + g.exercises.length, 0);
 
+  let currentIdx = startNumber;
+
   return (
-    <div style={{
-      border: "1px solid var(--border)",
-      borderRadius: radius.lg,
-      padding: `${sp[4]}px ${sp[5]}px`,
-      background: "color-mix(in srgb, var(--bg-secondary) 50%, transparent)",
-    }}>
+    <div style={{ marginBottom: sp[5] }}>
       <div
+        className="tappable section-header"
         onClick={() => setExpanded(!expanded)}
         style={{
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
           marginBottom: expanded ? sp[3] : 0,
           userSelect: "none",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
-          <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
-            {expanded ? "\u25BC" : "\u25B6"}
-          </span>
-          <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
-            {section.label}
-          </span>
-          {section.notes && (
-            <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium, fontStyle: "italic" }}>
-              {section.notes}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
+            <span style={{ fontSize: font.sm, color: "var(--text-secondary)", transition: "transform 0.15s", transform: expanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
+              ▼
             </span>
-          )}
+            <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
+              {section.label}
+            </span>
+          </div>
+          <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
+            {exerciseCount} ej.
+          </span>
         </div>
-        <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
-          {exerciseCount} ej.
-        </span>
+        {section.notes && (
+          <div style={{
+            fontSize: font.xs,
+            color: "var(--text-secondary)",
+            opacity: opacity.medium,
+            fontStyle: "italic",
+            marginTop: sp[1],
+            paddingLeft: `calc(${font.sm}px + ${sp[3]}px)`,
+          }}>
+            {section.notes}
+          </div>
+        )}
       </div>
       {expanded && (
-        <div style={{ display: "flex", flexDirection: "column", gap: sp[2] }}>
-          {children}
+        <div style={{ paddingLeft: sp[3] }}>
+          {section.groups.map((group, gi) => {
+            const startIdx = currentIdx;
+            currentIdx += group.exercises.length;
+            const hasSiblings = section.groups.length > 1;
+            return (
+              <div key={gi}>
+                <ExerciseGroupBlock group={group} startIndex={startIdx} collapsible={hasSiblings} />
+                {gi < section.groups.length - 1 && (
+                  <div style={{
+                    borderBottom: "1px solid color-mix(in srgb, var(--border) 30%, transparent)",
+                    marginBottom: sp[4],
+                  }} />
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -552,12 +568,6 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
     0,
   );
 
-  const [expandedExercise, setExpandedExercise] = useState<string | null>(null);
-
-  const toggleExercise = useCallback((name: string) => {
-    setExpandedExercise(prev => prev === name ? null : name);
-  }, []);
-
   const muscleGroups = useMemo(() => {
     const groups = new Set<string>();
     for (const ex of session.exercises) {
@@ -567,125 +577,120 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
   }, [session.exercises]);
 
   const exerciseGroups = useMemo(() => groupExercises(session.exercises), [session.exercises]);
+  const hasSections = session.exercises.some(e => e.section_id != null);
 
   return (
-    <div style={{ maxWidth: maxWidth.widget, padding: `0 ${sp[8]}px ${sp[2]}px` }}>
+    <div className="profile-card">
       {/* Header */}
-      <div style={{ marginBottom: sp[5] }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: sp[4], minWidth: 0 }}>
-            <span style={{ fontWeight: weight.semibold, fontSize: font.xl }}>
-              {isActive ? "Active Workout" : "Workout"}
-            </span>
-            {session.program_day && (
-              <span className="badge badge-primary" style={{ fontSize: font.xs }}>{session.program_day}</span>
-            )}
-            {!isActive && session.ended_at && (
-              <span className="badge" style={{ background: "var(--bg-secondary)", color: "var(--text-secondary)", fontSize: font.xs }}>
-                Completed
-              </span>
-            )}
+      <div style={{ marginBottom: sp[6] }}>
+        <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginBottom: sp[1] }}>
+          <div className="title" style={{ marginBottom: 0 }}>
+            {isActive ? "Active Workout" : "Workout"}
           </div>
-          <span style={{ fontWeight: weight.semibold, fontSize: font.lg, color: isActive ? "var(--primary)" : "var(--text-secondary)" }}>
+          {!isActive && session.ended_at && (
+            <span className="badge badge-muted">Completed</span>
+          )}
+          {isActive && (
+            <span className="badge badge-success">Active</span>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: sp[4], flexWrap: "wrap" }}>
+          {session.program_day && (
+            <span style={{ fontSize: font.md, color: "var(--text-secondary)" }}>{session.program_day}</span>
+          )}
+          <span style={{ fontSize: font.base, color: "var(--text-secondary)" }}>
+            {!isActive && session.ended_at && (
+              <>{new Date(session.started_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} · </>
+            )}
+            {session.exercises.length} exercises · {totalSets} sets
+            {totalVolume > 0 && <> · {Math.round(totalVolume).toLocaleString()} kg</>}
+          </span>
+          <span style={{ fontWeight: weight.semibold, fontSize: font.base, color: isActive ? "var(--primary)" : "var(--text-secondary)" }}>
             {formatDuration(minutes)}
           </span>
         </div>
-
-        {/* Summary stats + muscle groups + tags */}
-        <div style={{ display: "flex", gap: sp[6], marginTop: sp[2], fontSize: font.sm, color: "var(--text-secondary)", flexWrap: "wrap", alignItems: "center" }}>
-          {!isActive && session.ended_at && (
-            <span>{new Date(session.started_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
-          )}
-          <span>{session.exercises.length} exercise{session.exercises.length !== 1 ? "s" : ""}</span>
-          <span>{totalSets} set{totalSets !== 1 ? "s" : ""}</span>
-          {totalVolume > 0 && <span>{Math.round(totalVolume).toLocaleString()} kg</span>}
-
-          {muscleGroups.map((mg) => {
-            const c = MUSCLE_COLOR[mg.toLowerCase()] || "var(--text-secondary)";
-            return (
-              <span key={mg} style={{
-                fontSize: font["2xs"], padding: `${sp[0.5]}px ${sp[3]}px`, borderRadius: radius.sm,
-                background: `color-mix(in srgb, ${c} var(--muscle-chip-alpha, 9%), transparent)`,
-                color: c,
-                fontWeight: weight.medium, textTransform: "capitalize",
-              }}>
-                {mg}
+        {/* Muscle groups + tags */}
+        {(muscleGroups.length > 0 || session.tags.length > 0) && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: sp[2], marginTop: sp[3] }}>
+            {muscleGroups.map(g => (
+              <span key={g} style={{
+                fontSize: font.xs,
+                padding: `${sp[0.5]}px ${sp[3]}px`,
+                borderRadius: radius.lg,
+                background: "var(--border)",
+                color: "var(--text-secondary)",
+                textTransform: "capitalize",
+              }}>{g}</span>
+            ))}
+            {session.tags.map(tag => (
+              <span key={tag} className="badge badge-success" style={{ fontSize: font.xs }}>
+                {tag}
               </span>
-            );
-          })}
-
-          {session.tags.map((tag) => (
-            <span key={tag} className="badge badge-success" style={{ fontSize: font["2xs"] }}>
-              {tag}
-            </span>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Exercise accordion */}
+      {/* Divider */}
+      <div style={{
+        borderBottom: "1px solid color-mix(in srgb, var(--border) 40%, transparent)",
+        marginBottom: sp[4],
+      }} />
+
+      {/* Exercise list */}
       {(() => {
-        const hasSections = session.exercises.some(e => e.section_id != null);
-
-        const renderGroups = (groups: ExerciseGroup[]) => groups.map((group, gi) => {
-          if (group.groupId != null && group.exercises.length > 1) {
-            return (
-              <GroupWrapper
-                key={`g-${gi}`}
-                groupType={group.groupType}
-                groupLabel={group.groupLabel}
-                groupNotes={group.groupNotes}
-                groupRestSeconds={group.groupRestSeconds}
-              >
-                {group.exercises.map((ex) => (
-                  <ExerciseAccordionRow
-                    key={ex.name}
-                    exercise={ex}
-                    expanded={expandedExercise === ex.name}
-                    onToggle={() => toggleExercise(ex.name)}
-                  />
-                ))}
-              </GroupWrapper>
-            );
-          }
-          return group.exercises.map((ex) => (
-            <ExerciseAccordionRow
-              key={ex.name}
-              exercise={ex}
-              expanded={expandedExercise === ex.name}
-              onToggle={() => toggleExercise(ex.name)}
-            />
-          ));
-        });
-
         if (!hasSections) {
+          let globalNum = 1;
           return (
-            <div style={{ display: "flex", flexDirection: "column", gap: sp[2] }}>
-              {renderGroups(exerciseGroups)}
+            <div>
+              {exerciseGroups.map((group, gi) => {
+                const startNum = globalNum;
+                globalNum += group.exercises.length;
+                const hasSiblings = exerciseGroups.length > 1;
+                return (
+                  <div key={gi}>
+                    <ExerciseGroupBlock group={group} startIndex={startNum} collapsible={hasSiblings} />
+                    {gi < exerciseGroups.length - 1 && (
+                      <div style={{
+                        borderBottom: "1px solid color-mix(in srgb, var(--border) 30%, transparent)",
+                        marginBottom: sp[4],
+                      }} />
+                    )}
+                  </div>
+                );
+              })}
             </div>
           );
         }
 
-        const sectionedItems = groupIntoWorkoutSections(exerciseGroups);
+        const sectionedItems = groupIntoSections(exerciseGroups);
+        let globalNum = 1;
+
         return (
-          <div style={{ display: "flex", flexDirection: "column", gap: sp[2] }}>
+          <div>
             {sectionedItems.map((item, i) => {
               if (item.type === "section") {
+                const startNum = globalNum;
+                const exerciseCount = item.section.groups.reduce((sum, g) => sum + g.exercises.length, 0);
+                globalNum += exerciseCount;
                 return (
-                  <SectionContainer
+                  <SectionCard
                     key={`section-${item.section.sectionId}`}
                     section={item.section}
-                    expandedExercise={expandedExercise}
-                    onToggle={toggleExercise}
-                  >
-                    {renderGroups(item.section.groups)}
-                  </SectionContainer>
+                    startNumber={startNum}
+                  />
                 );
+              } else {
+                return item.groups.map((group, gi) => {
+                  const startNum = globalNum;
+                  globalNum += group.exercises.length;
+                  return (
+                    <div key={`unsectioned-${i}-${gi}`}>
+                      <ExerciseGroupBlock group={group} startIndex={startNum} collapsible={true} />
+                    </div>
+                  );
+                });
               }
-              return (
-                <div key={`unsectioned-${i}`}>
-                  {renderGroups(item.groups)}
-                </div>
-              );
             })}
           </div>
         );
