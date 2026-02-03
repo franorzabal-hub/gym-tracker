@@ -837,23 +837,6 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
   );
 }
 
-function PaginationDots({ total, active, onDotClick }: { total: number; active: number; onDotClick?: (idx: number) => void }) {
-  if (total <= 1) return null;
-  return (
-    <div className="pagination-dots">
-      {Array.from({ length: total }).map((_, i) => (
-        <button
-          key={i}
-          className={`pagination-dot${i === active ? " active" : ""}`}
-          onClick={() => onDotClick?.(i)}
-          aria-label={`Go to day ${i + 1}`}
-          style={{ border: "none", padding: 0, cursor: onDotClick ? "pointer" : "default" }}
-        />
-      ))}
-    </div>
-  );
-}
-
 export function DayCarousel({ days, activeIdx, goTo }: { days: Day[]; activeIdx: number; goTo: (idx: number) => void }) {
   const touchRef = useRef<{ startX: number; startY: number } | null>(null);
 
@@ -877,7 +860,6 @@ export function DayCarousel({ days, activeIdx, goTo }: { days: Day[]; activeIdx:
       onTouchEnd={onTouchEnd}
     >
       <DayCard day={days[activeIdx]} alwaysExpanded />
-      <PaginationDots total={days.length} active={activeIdx} onDotClick={goTo} />
     </div>
   );
 }

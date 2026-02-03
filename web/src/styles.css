@@ -238,26 +238,6 @@ body {
   margin-left: 20px;
 }
 
-/* Pagination dots for carousel */
-.pagination-dots {
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  padding: 12px 0 4px;
-}
-.pagination-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--border);
-  transition: all 0.2s;
-}
-.pagination-dot.active {
-  background: var(--primary);
-  width: 18px;
-  border-radius: 3px;
-}
-
 /* Sticky confirm bar */
 .confirm-bar-sticky {
   position: sticky;
