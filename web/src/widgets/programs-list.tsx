@@ -115,6 +115,7 @@ function ProgramCard({ program }: { program: UserProgram }) {
 
   const totalExercises = program.days.reduce((sum, d) => sum + d.exercises.length, 0);
   const viewingWeekdays = program.days[viewingIdx]?.weekdays || [];
+  const hasAnyWeekdays = program.days.some(d => d.weekdays && d.weekdays.length > 0);
 
   return (
     <article aria-label={`Program: ${program.name}`}>
@@ -135,7 +136,7 @@ function ProgramCard({ program }: { program: UserProgram }) {
             {program.days.length} days · {totalExercises} exercises
           </span>
         </div>
-        {program.days.length > 1 && (
+        {hasAnyWeekdays && (
           <nav style={{ marginTop: sp[4] }} aria-label="Program days">
             <WeekdayPills days={program.days} highlightedDays={viewingWeekdays} onDayClick={goTo} />
           </nav>
