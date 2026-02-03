@@ -274,6 +274,7 @@ El `exercise_type` describe la **naturaleza del ejercicio**, no su ubicacion en 
 | `strength` | Ejercicios con carga, compuestos o aislamiento | Si | Sin tag (default) |
 | `mobility` | Movilidad, elongacion, foam rolling, respiracion | No | Tag "Movilidad" en gris |
 | `cardio` | Trabajo cardiovascular | No | Tag "Cardio" en gris |
+| `warmup` | Ejercicios de calentamiento (jumping jacks, activacion dinamica) | No | Tag "Warmup" en gris |
 
 ### Regla clave: exercise_type ≠ ubicacion en el workout
 
@@ -283,7 +284,7 @@ Un ejercicio de movilidad es `mobility` **siempre**, este en "Entrada en calor",
 ```json
 { "exercise": "Plancha lateral", "exercise_type": "warmup" }
 ```
-Plancha lateral es `strength` (o `mobility`), no "warmup". Que este en la seccion "Entrada en calor" ya comunica que es calentamiento.
+Plancha lateral es `strength` (o `mobility`), no "warmup". El `exercise_type: "warmup"` es para ejercicios inherentemente de calentamiento como jumping jacks o saltos de activación.
 
 **Buen uso:**
 ```json
@@ -291,9 +292,13 @@ Plancha lateral es `strength` (o `mobility`), no "warmup". Que este en la seccio
 ```
 El `exercise_type` se resuelve automaticamente del ejercicio existente en la DB. No hace falta pasarlo al crear el programa salvo que sea un ejercicio nuevo y se quiera especificar.
 
-### Regla: no existe exercise_type "warmup"
+### Regla: exercise_type "warmup" vs sección "Entrada en calor"
 
-No usar `"warmup"` como exercise_type. Si un ejercicio se usa para calentar, va dentro de la seccion "Entrada en calor". El exercise_type sigue siendo `strength` o `mobility` segun su naturaleza.
+El `exercise_type: "warmup"` existe y es válido para ejercicios específicos de calentamiento (jumping jacks, saltos, activación). Sin embargo, **la sección define cuándo se hace, no el tipo de ejercicio**:
+
+- Un ejercicio de movilidad en "Entrada en calor" sigue siendo `mobility`
+- Un ejercicio de fuerza liviano en "Entrada en calor" sigue siendo `strength`
+- Solo usar `warmup` para ejercicios que son inherentemente de calentamiento (cardio dinámico, activación general)
 
 ### exercise_type NO es un campo del programa
 

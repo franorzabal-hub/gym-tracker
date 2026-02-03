@@ -7,8 +7,8 @@ Guía de diseño para mantener consistencia visual en todos los widgets.
 Los tokens de diseño están definidos en `src/tokens.ts`:
 
 ```typescript
-// Spacing (px)
-sp: { 0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 12, 16 }
+// Spacing scale: key = scale, value = px
+sp: { 0: 0, 0.5: 1, 1: 2, 1.5: 3, 2: 4, 3: 6, 4: 8, 5: 10, 6: 12, 8: 16, 10: 20, 12: 24, 16: 32 }
 
 // Font sizes (px)
 font: { "2xs": 10, xs: 11, sm: 12, base: 13, md: 14, lg: 15, xl: 16, "2xl": 20, "3xl": 24, "4xl": 28 }
@@ -21,6 +21,9 @@ opacity: { muted: 0.4, medium: 0.6, subtle: 0.7, high: 0.8 }
 
 // Border radius (px)
 radius: { xs: 3, sm: 4, md: 8, lg: 12, xl: 16, full: "50%" }
+
+// Widget max width
+maxWidth: { widget: 600 }
 ```
 
 **Regla:** Siempre usar tokens en lugar de valores hardcodeados.
@@ -181,19 +184,19 @@ Todos los colores usan `light-dark()` o CSS variables que se adaptan automática
 
 Guías oficiales para widgets que corren en ChatGPT.
 
-### UI Kit Oficial
+### UI Kit Oficial (Referencia)
 
-Usar `@openai/apps-sdk-ui` para componentes consistentes:
+El paquete `@openai/apps-sdk-ui` está instalado como dependencia pero **actualmente usamos CSS custom** (clases `.badge`, `.chip`, etc. en `styles.css`) para mayor control y consistencia con el sistema de diseño existente.
 
-```bash
-npm install @openai/apps-sdk-ui
-```
+El SDK UI Kit puede usarse para nuevos componentes si se prefiere:
 
 ```tsx
 import { Badge } from "@openai/apps-sdk-ui/components/Badge"
 import { Button } from "@openai/apps-sdk-ui/components/Button"
 import { Calendar, Check, X } from "@openai/apps-sdk-ui/components/Icon"
 ```
+
+**Nota:** Al migrar a componentes del SDK UI Kit, verificar que el theming sea consistente con las CSS variables existentes.
 
 ### Theming
 

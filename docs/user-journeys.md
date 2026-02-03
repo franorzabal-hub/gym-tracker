@@ -35,7 +35,7 @@
 - Ver progreso en tiempo real (sets completados vs pendientes)
 - Opción de loguear toda la rutina de golpe con overrides
 
-**Tools:** `start_session`, `log_exercise`, `log_routine`, `get_active_session`
+**Tools:** `log_workout` (unificado: inicia sesión automáticamente, logea ejercicios individuales o rutina completa)
 **Widget:** Active Session
 
 ### 2c. Terminar sesión
@@ -44,7 +44,7 @@
 - Comparación vs última vez que hizo ese día/rutina
 - Volumen total, duración
 
-**Tools:** `end_session`
+**Tools:** `end_workout`
 **Widget:** Session Summary
 
 ---
@@ -59,7 +59,7 @@
 - Detalle de una sesión específica
 - Filtrar por ejercicio, programa, tags
 
-**Tools:** `get_history`
+**Tools:** `get_workouts`
 **Widget:** History
 
 ### 3b. Ver estadísticas y progresión
@@ -122,7 +122,7 @@
 3. Agregar set olvidado
 4. Eliminar sesión completa o restaurar sesión borrada
 
-**Tools:** `edit_log` (update, delete sets, delete_session, restore_session)
+**Tools:** `edit_workout` (update, delete sets, delete_workout, restore_workout, delete_workouts[])
 **Widget:** History (con capacidad de edición) o modal de edición
 
 ---
