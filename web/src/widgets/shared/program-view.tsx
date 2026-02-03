@@ -928,8 +928,6 @@ export function ProgramView({
   renderDescription,
 }: ProgramViewProps) {
   const totalExercises = program.days.reduce((sum, d) => sum + d.exercises.length, 0);
-  const viewingWeekdays = program.days[viewingIdx]?.weekdays || [];
-  const hasAnyWeekdays = program.days.some(d => d.weekdays && d.weekdays.length > 0);
   const active = program.is_active ?? false;
 
   const TitleTag = isMainHeading ? "h1" : "h2";
@@ -957,14 +955,10 @@ export function ProgramView({
             {program.days.length} days · {totalExercises} exercises
           </span>
         </div>
-        {/* Day navigation: WeekdayPills if weekdays exist, otherwise DayTabs (only if multiple days) */}
+        {/* Day navigation tabs (only if multiple days) */}
         {program.days.length > 1 && (
           <nav style={{ marginTop: sp[4] }} aria-label="Program days navigation">
-            {hasAnyWeekdays ? (
-              <WeekdayPills days={program.days} highlightedDays={viewingWeekdays} onDayClick={onDayChange} />
-            ) : (
-              <DayTabs days={program.days} activeIdx={viewingIdx} goTo={onDayChange} />
-            )}
+            <DayTabs days={program.days} activeIdx={viewingIdx} goTo={onDayChange} />
           </nav>
         )}
       </header>
