@@ -82,7 +82,7 @@ function ProgramsWidget() {
   const handleValidate = useCallback(async () => {
     if (!data?.program) return;
     setValidating(true);
-    const result = await callTool("manage_program", { action: "validate", id: data.program.id });
+    const result = await callTool("manage_program", { action: "validate", program_id: data.program.id });
     setValidating(false);
     if (result) {
       setLocalProgram(prev => ({

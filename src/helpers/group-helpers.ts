@@ -1,5 +1,21 @@
 import { PoolClient } from "pg";
 
+// Whitelist of allowed table/column names to prevent SQL injection
+const ALLOWED_TABLES = new Set(["program_exercise_groups", "session_exercise_groups"]);
+const ALLOWED_COLUMNS = new Set(["day_id", "session_id"]);
+
+function validateTableName(table: string): void {
+  if (!ALLOWED_TABLES.has(table)) {
+    throw new Error(`Invalid table name: ${table}`);
+  }
+}
+
+function validateColumnName(column: string): void {
+  if (!ALLOWED_COLUMNS.has(column)) {
+    throw new Error(`Invalid column name: ${column}`);
+  }
+}
+
 export interface GroupInput {
   group_type: "superset" | "paired" | "circuit";
   label?: string | null;
@@ -19,6 +35,8 @@ export async function insertGroup(
   sortOrder: number,
   client: PoolClient
 ): Promise<number> {
+  validateTableName(table);
+  validateColumnName(parentColumn);
   const { rows: [{ id }] } = await client.query(
     `INSERT INTO ${table} (${parentColumn}, group_type, label, notes, rest_seconds, sort_order)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
@@ -40,6 +58,11 @@ export async function cloneGroups(
   targetParentId: number,
   client: PoolClient
 ): Promise<Map<number, number>> {
+  validateTableName(sourceTable);
+  validateTableName(targetTable);
+  validateColumnName(sourceParentColumn);
+  validateColumnName(targetParentColumn);
+
   const { rows: sourceGroups } = await client.query(
     `SELECT id, group_type, label, notes, rest_seconds, sort_order
      FROM ${sourceTable}
@@ -76,21 +99,30 @@ export async function cloneGroupsBatch(
   targetParentId: number,
   client: PoolClient
 ): Promise<Map<number, number>> {
+  validateTableName(sourceTable);
+  validateTableName(targetTable);
+  validateColumnName(sourceParentColumn);
+  validateColumnName(targetParentColumn);
+
+  // Use row_number() to create unique ordering keys, avoiding issues with duplicate sort_order values
   const { rows } = await client.query(`
     WITH source AS (
-      SELECT id, group_type, label, notes, rest_seconds, sort_order
+      SELECT id, group_type, label, notes, rest_seconds, sort_order,
+             ROW_NUMBER() OVER (ORDER BY sort_order, id) as rn
       FROM ${sourceTable}
       WHERE ${sourceParentColumn} = $1
-      ORDER BY sort_order
     ),
     inserted AS (
       INSERT INTO ${targetTable} (${targetParentColumn}, group_type, label, notes, rest_seconds, sort_order)
-      SELECT $2, group_type, label, notes, rest_seconds, sort_order FROM source
-      RETURNING id, sort_order
+      SELECT $2, group_type, label, notes, rest_seconds, sort_order FROM source ORDER BY rn
+      RETURNING id
+    ),
+    inserted_numbered AS (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY id) as rn FROM inserted
     )
     SELECT s.id as old_id, i.id as new_id
     FROM source s
-    JOIN inserted i ON i.sort_order = s.sort_order
+    JOIN inserted_numbered i ON i.rn = s.rn
   `, [sourceParentId, targetParentId]);
 
   return new Map(rows.map(r => [r.old_id, r.new_id]));

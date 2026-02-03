@@ -161,7 +161,7 @@ function WorkoutsWidget() {
     return (
       <div className="profile-card" style={{ maxWidth: maxWidth.widget }}>
         <p style={{ fontSize: font.base, color: "var(--text-secondary)", padding: `${sp[8]}px 0` }}>
-          No workouts found for {periodLabel(filters.period).toLowerCase()}. Start a session to begin tracking!
+          No workouts found for {periodLabel(filters.period ?? "latest").toLowerCase()}. Start a session to begin tracking!
         </p>
       </div>
     );

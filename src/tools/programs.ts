@@ -759,7 +759,7 @@ To see the program visually, call show_program (not manage_program "get").`,
               [new_name, program.id, userId]
             );
           }
-          if (description !== undefined && description !== null) {
+          if (description !== undefined) {
             await client.query(
               "UPDATE programs SET description = $1 WHERE id = $2 AND user_id = $3",
               [description || null, program.id, userId]
