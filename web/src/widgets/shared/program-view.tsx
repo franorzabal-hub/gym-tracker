@@ -309,9 +309,9 @@ const EXERCISE_TYPE_LABELS: Record<string, string> = {
   cardio: "Cardio",
 };
 
-function ExerciseRow({ ex, exNum, showExerciseRest, isSecondary, hasMetaLine, hasPerSet, isLast }: {
+function ExerciseRow({ ex, exNum, showExerciseRest, isSecondary, hasRpeLine, hasPerSet, isLast }: {
   ex: Exercise; exNum: number; showExerciseRest: boolean;
-  isSecondary: boolean; hasMetaLine: boolean; hasPerSet: boolean; isLast: boolean;
+  isSecondary: boolean; hasRpeLine: boolean; hasPerSet: boolean; isLast: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const repsDisplay = ex.target_reps_per_set
@@ -346,7 +346,7 @@ function ExerciseRow({ ex, exNum, showExerciseRest, isSecondary, hasMetaLine, ha
             whiteSpace: "nowrap",
           }}>{ex.exercise_name}</span>
         </div>
-        {/* Right: sets × reps · weight */}
+        {/* Right: sets × reps · weight · rest (inline) */}
         <div className="exercise-metrics" style={{ flexShrink: 0, display: "flex", alignItems: "baseline", gap: sp[1], fontSize: font.md, whiteSpace: "nowrap" }}>
           <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{ex.target_sets}</span>
           <span style={{ opacity: opacity.muted }}>×</span>
@@ -363,10 +363,16 @@ function ExerciseRow({ ex, exNum, showExerciseRest, isSecondary, hasMetaLine, ha
               <span style={{ opacity: 0.5, fontSize: font.sm }}>kg</span>
             </>
           )}
+          {showExerciseRest && (
+            <>
+              <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>
+              <span style={{ opacity: 0.6, fontSize: font.sm }}>⏱ {formatRestSeconds(ex.rest_seconds!)}</span>
+            </>
+          )}
         </div>
       </div>
-      {/* Meta line: RPE + rest (below, right-aligned) */}
-      {hasMetaLine && (
+      {/* Meta line: RPE only (below, right-aligned) */}
+      {hasRpeLine && (
         <div style={{
           display: "flex",
           justifyContent: "flex-end",
@@ -375,11 +381,6 @@ function ExerciseRow({ ex, exNum, showExerciseRest, isSecondary, hasMetaLine, ha
           marginTop: sp[1],
         }}>
           {ex.target_rpe != null && <RpeBadge rpe={ex.target_rpe} />}
-          {showExerciseRest && (
-            <span className="rest-badge">
-              ⏱ {formatRestSeconds(ex.rest_seconds!)}
-            </span>
-          )}
         </div>
       )}
       {/* Per-set detail (expanded on row click) - compact style matching workout */}
@@ -433,11 +434,11 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, colla
         {exercises.map((ex, i) => {
           const showExerciseRest = ex.rest_seconds != null;
           const isSecondary = (ex as any).exercise_type === "warmup" || (ex as any).exercise_type === "mobility" || (ex as any).exercise_type === "cardio";
-          const hasMetaLine = ex.target_rpe != null || showExerciseRest;
+          const hasRpeLine = ex.target_rpe != null;
           const hasPerSet = ex.target_reps_per_set != null || ex.target_weight_per_set != null;
           return (
             <ExerciseRow key={i} ex={ex} exNum={startIndex + i} showExerciseRest={showExerciseRest}
-              isSecondary={isSecondary} hasMetaLine={hasMetaLine} hasPerSet={hasPerSet} isLast={i >= exercises.length - 1} />
+              isSecondary={isSecondary} hasRpeLine={hasRpeLine} hasPerSet={hasPerSet} isLast={i >= exercises.length - 1} />
           );
         })}
       </div>
@@ -491,7 +492,7 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, colla
         <div style={{ paddingLeft: sp[3] }}>
           {exercises.map((ex, i) => {
             const isSecondary = (ex as any).exercise_type === "warmup" || (ex as any).exercise_type === "mobility" || (ex as any).exercise_type === "cardio";
-            const hasMetaLine = ex.target_rpe != null;
+            const hasRpeLine = ex.target_rpe != null;
             const hasPerSet = ex.target_reps_per_set != null || ex.target_weight_per_set != null;
             return (
               <ExerciseRow
@@ -500,7 +501,7 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, colla
                 exNum={startIndex + i}
                 showExerciseRest={false}
                 isSecondary={isSecondary}
-                hasMetaLine={hasMetaLine}
+                hasRpeLine={hasRpeLine}
                 hasPerSet={hasPerSet}
                 isLast={i >= exercises.length - 1}
               />
