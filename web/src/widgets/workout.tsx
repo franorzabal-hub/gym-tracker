@@ -28,7 +28,7 @@ function WorkoutWidget() {
   const handleValidate = useCallback(async () => {
     if (!data?.session) return;
     setValidating(true);
-    const result = await callTool("edit_log", { validate_session: data.session.session_id });
+    const result = await callTool("edit_workout", { validate_workout: data.session.session_id });
     setValidating(false);
     if (result) {
       setLocalValidated(true);

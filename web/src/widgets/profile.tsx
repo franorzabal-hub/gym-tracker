@@ -382,27 +382,21 @@ function ProfileWidget() {
   const handleConfirm = useCallback(async () => {
     if (!data?.pendingChanges) return;
 
-    let cancelled = false;
-    const cleanup = () => { cancelled = true; };
-
     setConfirming(true);
     console.log("[profile] Confirming changes:", data.pendingChanges);
     try {
       const result = await callTool("manage_profile", { action: "update", data: data.pendingChanges });
       console.log("[profile] callTool result:", result);
-      if (cancelled) return cleanup;
       // Always apply changes locally on success (result may vary by host)
       setLocalProfile(prev => ({ ...(prev || data.profile), ...data.pendingChanges }));
       setChangesApplied(true);  // Permanently hide pending UI
       setError(null);
     } catch (err) {
       console.error("[profile] callTool error:", err);
-      if (!cancelled) setError("Failed to save changes. Please try again.");
+      setError("Failed to save changes. Please try again.");
     } finally {
-      if (!cancelled) setConfirming(false);
+      setConfirming(false);
     }
-
-    return cleanup;
   }, [data, callTool]);
 
   const handleValidationToggle = useCallback(async (enabled: boolean) => {
