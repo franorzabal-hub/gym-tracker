@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pool from "../db/connection.js";
-import { resolveExercise } from "../helpers/exercise-resolver.js";
+import { resolveExercise, resolveExercisesBatch, ResolvedExercise } from "../helpers/exercise-resolver.js";
 import {
   getActiveProgram,
   getLatestVersion,
@@ -11,8 +11,8 @@ import {
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
-import { insertGroup, cloneGroups } from "../helpers/group-helpers.js";
-import { insertSection, cloneSections } from "../helpers/section-helpers.js";
+import { insertGroup, cloneGroups, cloneGroupsBatch } from "../helpers/group-helpers.js";
+import { insertSection, cloneSections, cloneSectionsBatch } from "../helpers/section-helpers.js";
 
 const soloExerciseSchema = z.object({
   exercise: z.string(),
@@ -57,19 +57,62 @@ function isSectionItem(item: DayItem): item is z.infer<typeof sectionSchema> {
 }
 
 /**
- * Insert a single exercise into program_day_exercises.
+ * Collect all exercise names from a flat list of items (solo or group).
  */
-async function insertSoloExercise(
+function collectExerciseNamesFromItems(items: Array<z.infer<typeof soloExerciseSchema> | z.infer<typeof groupSchema>>): string[] {
+  const names: string[] = [];
+  for (const item of items) {
+    if (isGroupItem(item as DayItem)) {
+      const group = item as z.infer<typeof groupSchema>;
+      for (const ex of group.exercises) {
+        names.push(ex.exercise);
+      }
+    } else {
+      const solo = item as z.infer<typeof soloExerciseSchema>;
+      names.push(solo.exercise);
+    }
+  }
+  return names;
+}
+
+/**
+ * Collect all exercise names from a day's items (including nested in groups/sections).
+ */
+function collectExerciseNames(items: DayItem[]): string[] {
+  const names: string[] = [];
+  for (const item of items) {
+    if (isSectionItem(item)) {
+      names.push(...collectExerciseNamesFromItems(item.exercises));
+    } else if (isGroupItem(item)) {
+      for (const ex of item.exercises) {
+        names.push(ex.exercise);
+      }
+    } else {
+      names.push(item.exercise);
+    }
+  }
+  return names;
+}
+
+/**
+ * Insert a single exercise row into program_day_exercises using a pre-resolved exercise map.
+ */
+async function insertExerciseRow(
   dayId: number,
   ex: z.infer<typeof soloExerciseSchema>,
   sortOrder: number,
   groupId: number | null,
   sectionId: number | null,
   client: import("pg").PoolClient,
+  exerciseMap: Map<string, ResolvedExercise>,
   createdExercises: Set<string>,
   existingExercises: Set<string>
 ): Promise<void> {
-  const resolved = await resolveExercise(ex.exercise, undefined, undefined, undefined, undefined, client);
+  const resolved = exerciseMap.get(ex.exercise.trim().toLowerCase());
+  if (!resolved) {
+    throw new Error(`Exercise "${ex.exercise}" not found in batch resolution map`);
+  }
+
   if (resolved.isNew) createdExercises.add(resolved.name);
   else existingExercises.add(resolved.name);
 
@@ -93,15 +136,16 @@ async function insertSoloExercise(
 }
 
 /**
- * Insert items (solo exercises, groups, or sections) starting at a given sortOrder.
- * Returns { created, existing, nextSortOrder }.
+ * Insert items (solo exercises, groups) with pre-resolved exercise map.
+ * Returns next sortOrder.
  */
-async function insertItems(
+async function insertItemsWithMap(
   dayId: number,
   items: Array<z.infer<typeof soloExerciseSchema> | z.infer<typeof groupSchema>>,
   startSortOrder: number,
   sectionId: number | null,
   client: import("pg").PoolClient,
+  exerciseMap: Map<string, ResolvedExercise>,
   createdExercises: Set<string>,
   existingExercises: Set<string>
 ): Promise<number> {
@@ -117,12 +161,12 @@ async function insertItems(
       );
 
       for (const ex of group.exercises) {
-        await insertSoloExercise(dayId, ex, sortOrder, groupId, sectionId, client, createdExercises, existingExercises);
+        await insertExerciseRow(dayId, ex, sortOrder, groupId, sectionId, client, exerciseMap, createdExercises, existingExercises);
         sortOrder++;
       }
     } else {
       const solo = item as z.infer<typeof soloExerciseSchema>;
-      await insertSoloExercise(dayId, solo, sortOrder, null, sectionId, client, createdExercises, existingExercises);
+      await insertExerciseRow(dayId, solo, sortOrder, null, sectionId, client, exerciseMap, createdExercises, existingExercises);
       sortOrder++;
     }
   }
@@ -132,15 +176,25 @@ async function insertItems(
 
 /**
  * Insert a day's exercises (mix of solo, groups, and sections) into program_day_exercises.
+ * Uses batch exercise resolution: 1-2 queries for all exercises instead of 3N.
  * Returns { created, existing } exercise name sets.
  */
 async function insertDayItems(
   dayId: number,
   items: DayItem[],
-  client: import("pg").PoolClient
+  client: import("pg").PoolClient,
+  userId: number
 ): Promise<{ created: Set<string>; existing: Set<string> }> {
   const createdExercises = new Set<string>();
   const existingExercises = new Set<string>();
+
+  // Step 1: Collect all exercise names
+  const exerciseNames = collectExerciseNames(items);
+
+  // Step 2: Batch resolve (1-2 queries instead of 3N)
+  const exerciseMap = await resolveExercisesBatch(exerciseNames, userId, client);
+
+  // Step 3: Insert with map lookups
   let sortOrder = 0;
   let sectionSortOrder = 0;
 
@@ -154,9 +208,9 @@ async function insertDayItems(
       );
 
       // Insert the section's inner items (solo + groups) with this sectionId
-      sortOrder = await insertItems(
+      sortOrder = await insertItemsWithMap(
         dayId, item.exercises, sortOrder, sectionId,
-        client, createdExercises, existingExercises
+        client, exerciseMap, createdExercises, existingExercises
       );
     } else if (isGroupItem(item)) {
       const groupId = await insertGroup(
@@ -166,11 +220,11 @@ async function insertDayItems(
       );
 
       for (const ex of item.exercises) {
-        await insertSoloExercise(dayId, ex, sortOrder, groupId, null, client, createdExercises, existingExercises);
+        await insertExerciseRow(dayId, ex, sortOrder, groupId, null, client, exerciseMap, createdExercises, existingExercises);
         sortOrder++;
       }
     } else {
-      await insertSoloExercise(dayId, item, sortOrder, null, null, client, createdExercises, existingExercises);
+      await insertExerciseRow(dayId, item, sortOrder, null, null, client, exerciseMap, createdExercises, existingExercises);
       sortOrder++;
     }
   }
@@ -290,14 +344,24 @@ To see the program visually, call show_program (not manage_program "get").`,
       const days = parseJsonParam<any[]>(rawDays);
 
       if (action === "list") {
+        // Use CTE with DISTINCT ON to avoid correlated subqueries
         const { rows } = await pool.query(
-          `SELECT p.id, p.name, p.description, p.is_active,
-             (SELECT MAX(version_number) FROM program_versions WHERE program_id = p.id) as current_version,
-             (SELECT COUNT(*) FROM program_days pd
-              JOIN program_versions pv ON pv.id = pd.version_id
-              WHERE pv.program_id = p.id AND pv.version_number = (SELECT MAX(version_number) FROM program_versions WHERE program_id = p.id)
-             ) as days_count
-           FROM programs p WHERE p.user_id = $1 ORDER BY p.is_active DESC, p.name`,
+          `WITH latest_versions AS (
+             SELECT DISTINCT ON (program_id)
+               id, program_id, version_number
+             FROM program_versions
+             ORDER BY program_id, version_number DESC
+           )
+           SELECT
+             p.id, p.name, p.description, p.is_active,
+             lv.version_number as current_version,
+             COUNT(pd.id)::int as days_count
+           FROM programs p
+           LEFT JOIN latest_versions lv ON lv.program_id = p.id
+           LEFT JOIN program_days pd ON pd.version_id = lv.id
+           WHERE p.user_id = $1
+           GROUP BY p.id, p.name, p.description, p.is_active, lv.version_number
+           ORDER BY p.is_active DESC, p.name`,
           [userId]
         );
         const active = rows.find((r) => r.is_active);
@@ -412,7 +476,7 @@ To see the program visually, call show_program (not manage_program "get").`,
               [ver.id, day.day_label, day.weekdays || null, i]
             );
 
-            const { created, existing } = await insertDayItems(newDay.id, day.exercises, client);
+            const { created, existing } = await insertDayItems(newDay.id, day.exercises, client, userId);
             created.forEach(n => allCreated.add(n));
             existing.forEach(n => allExisting.add(n));
           }
@@ -503,16 +567,16 @@ To see the program visually, call show_program (not manage_program "get").`,
               [ver.id, day.day_label, day.weekdays || null, i]
             );
 
-            // Clone groups for this day
-            const groupMap = await cloneGroups(
+            // Clone groups for this day (batch: 1 query instead of N)
+            const groupMap = await cloneGroupsBatch(
               "program_exercise_groups", "program_exercise_groups",
               "day_id", "day_id",
               day.id, newDay.id,
               client
             );
 
-            // Clone sections for this day
-            const sectionMap = await cloneSections(
+            // Clone sections for this day (batch: 1 query instead of N)
+            const sectionMap = await cloneSectionsBatch(
               "program_sections", "program_sections",
               "day_id", "day_id",
               day.id, newDay.id,
@@ -629,7 +693,7 @@ To see the program visually, call show_program (not manage_program "get").`,
               [ver.id, day.day_label, day.weekdays || null, i]
             );
 
-            const { created, existing } = await insertDayItems(newDay.id, day.exercises, client);
+            const { created, existing } = await insertDayItems(newDay.id, day.exercises, client, userId);
             created.forEach(n => allCreated.add(n));
             existing.forEach(n => allExisting.add(n));
           }
@@ -745,7 +809,7 @@ To see the program visually, call show_program (not manage_program "get").`,
                 }
               }
 
-              await insertDayItems(newDay.id, day.exercises, client);
+              await insertDayItems(newDay.id, day.exercises, client, userId);
             }
           }
 
@@ -816,44 +880,41 @@ To see the program visually, call show_program (not manage_program "get").`,
           return toolResponse({ error: "names array required for delete_bulk" }, true);
         }
 
-        const client = await pool.connect();
-        try {
-          await client.query("BEGIN");
-          const deleted: string[] = [];
-          const not_found: string[] = [];
+        // Normalize names for case-insensitive comparison
+        const lowerNames = namesList.map(n => n.toLowerCase());
 
-          for (const n of namesList) {
-            if (hard_delete) {
-              const { rows } = await client.query(
-                "DELETE FROM programs WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
-                [userId, n]
-              );
-              if (rows.length === 0) {
-                not_found.push(n);
-              } else {
-                deleted.push(rows[0].name);
-              }
-            } else {
-              const { rows } = await client.query(
-                "UPDATE programs SET is_active = FALSE WHERE user_id = $1 AND LOWER(name) = LOWER($2) RETURNING name",
-                [userId, n]
-              );
-              if (rows.length === 0) {
-                not_found.push(n);
-              } else {
-                deleted.push(rows[0].name);
-              }
-            }
-          }
+        if (hard_delete) {
+          // Batch delete with single query
+          const { rows } = await pool.query(
+            `DELETE FROM programs
+             WHERE user_id = $1 AND LOWER(name) = ANY($2::text[])
+             RETURNING name`,
+            [userId, lowerNames]
+          );
+          const deletedNames = new Set(rows.map(r => r.name.toLowerCase()));
+          const deleted = rows.map(r => r.name);
+          const not_found = namesList.filter(n => !deletedNames.has(n.toLowerCase()));
 
-          await client.query("COMMIT");
-          const key = hard_delete ? "deleted" : "deactivated";
-          return toolResponse({ [key]: deleted, not_found: not_found.length > 0 ? not_found : undefined });
-        } catch (err) {
-          await client.query("ROLLBACK").catch((rbErr) => console.error("[delete_bulk] ROLLBACK failed:", rbErr));
-          throw err;
-        } finally {
-          client.release();
+          return toolResponse({
+            deleted,
+            not_found: not_found.length > 0 ? not_found : undefined
+          });
+        } else {
+          // Batch deactivate with single query
+          const { rows } = await pool.query(
+            `UPDATE programs SET is_active = FALSE
+             WHERE user_id = $1 AND LOWER(name) = ANY($2::text[])
+             RETURNING name`,
+            [userId, lowerNames]
+          );
+          const deactivatedNames = new Set(rows.map(r => r.name.toLowerCase()));
+          const deactivated = rows.map(r => r.name);
+          const not_found = namesList.filter(n => !deactivatedNames.has(n.toLowerCase()));
+
+          return toolResponse({
+            deactivated,
+            not_found: not_found.length > 0 ? not_found : undefined
+          });
         }
       }
 
@@ -892,14 +953,8 @@ To see the program visually, call show_program (not manage_program "get").`,
             .query("SELECT id, name, is_validated FROM programs WHERE user_id = $1 AND LOWER(name) = LOWER($2)", [userId, name])
             .then(r => r.rows[0]);
         } else {
+          // getActiveProgram() already returns is_validated
           program = await getActiveProgram();
-          if (program) {
-            const { rows } = await pool.query(
-              "SELECT is_validated FROM programs WHERE id = $1",
-              [program.id]
-            );
-            program = { ...program, is_validated: rows[0]?.is_validated };
-          }
         }
 
         if (!program) {

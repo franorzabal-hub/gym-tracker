@@ -59,3 +59,37 @@ export async function cloneSections(
 
   return sectionMap;
 }
+
+/**
+ * Batch clone sections from one parent to another in a single query.
+ * Uses CTE with RETURNING to map old IDs to new IDs via sort_order.
+ * Returns a map of oldSectionId → newSectionId for remapping exercises.
+ */
+export async function cloneSectionsBatch(
+  sourceTable: "program_sections" | "session_sections",
+  targetTable: "program_sections" | "session_sections",
+  sourceParentColumn: "day_id" | "session_id",
+  targetParentColumn: "day_id" | "session_id",
+  sourceParentId: number,
+  targetParentId: number,
+  client: PoolClient
+): Promise<Map<number, number>> {
+  const { rows } = await client.query(`
+    WITH source AS (
+      SELECT id, label, notes, sort_order
+      FROM ${sourceTable}
+      WHERE ${sourceParentColumn} = $1
+      ORDER BY sort_order
+    ),
+    inserted AS (
+      INSERT INTO ${targetTable} (${targetParentColumn}, label, notes, sort_order)
+      SELECT $2, label, notes, sort_order FROM source
+      RETURNING id, sort_order
+    )
+    SELECT s.id as old_id, i.id as new_id
+    FROM source s
+    JOIN inserted i ON i.sort_order = s.sort_order
+  `, [sourceParentId, targetParentId]);
+
+  return new Map(rows.map(r => [r.old_id, r.new_id]));
+}

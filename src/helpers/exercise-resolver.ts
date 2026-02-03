@@ -203,6 +203,102 @@ async function fillMetadataIfMissing(
   }
 }
 
+/**
+ * Batch resolve multiple exercise names in 1-2 queries instead of 3N.
+ * Returns a Map of lowercase exercise name → resolved exercise.
+ * Auto-creates missing exercises as user-owned (defaults: rep_type='reps', exercise_type='strength').
+ */
+export async function resolveExercisesBatch(
+  names: string[],
+  userId: number,
+  client?: PoolClient
+): Promise<Map<string, ResolvedExercise>> {
+  if (names.length === 0) {
+    return new Map();
+  }
+
+  const conn = client || pool;
+  const uniqueNames = [...new Set(names.map(n => n.trim().toLowerCase()))];
+
+  // Single query: exact matches + alias matches (prefer user-owned over global)
+  const { rows } = await conn.query(`
+    SELECT DISTINCT ON (lookup_name)
+      e.id, e.name, e.exercise_type, lookup_name
+    FROM (
+      SELECT e.id, e.name, e.exercise_type, e.user_id, LOWER(e.name) as lookup_name
+      FROM exercises e
+      WHERE LOWER(e.name) = ANY($1) AND (e.user_id IS NULL OR e.user_id = $2)
+      UNION ALL
+      SELECT e.id, e.name, e.exercise_type, e.user_id, LOWER(a.alias) as lookup_name
+      FROM exercise_aliases a
+      JOIN exercises e ON e.id = a.exercise_id
+      WHERE LOWER(a.alias) = ANY($1) AND (e.user_id IS NULL OR e.user_id = $2)
+    ) e
+    ORDER BY lookup_name, e.user_id NULLS LAST
+  `, [uniqueNames, userId]);
+
+  const resolved = new Map<string, ResolvedExercise>();
+  for (const row of rows) {
+    resolved.set(row.lookup_name, {
+      id: row.id,
+      name: row.name,
+      isNew: false,
+      exerciseType: row.exercise_type,
+    });
+  }
+
+  // Auto-create missing exercises
+  const missing = uniqueNames.filter(n => !resolved.has(n));
+  if (missing.length > 0) {
+    // Map lowercase name to original casing for INSERT
+    const originalNames = new Map<string, string>();
+    for (const name of names) {
+      const lower = name.trim().toLowerCase();
+      if (missing.includes(lower) && !originalNames.has(lower)) {
+        originalNames.set(lower, name.trim());
+      }
+    }
+
+    const namesToInsert = missing.map(lower => originalNames.get(lower) || lower);
+
+    const { rows: created } = await conn.query(`
+      INSERT INTO exercises (user_id, name, muscle_group, equipment, rep_type, exercise_type)
+      SELECT $1, unnest($2::text[]), 'other', 'other', 'reps', 'strength'
+      ON CONFLICT DO NOTHING
+      RETURNING id, name, exercise_type
+    `, [userId, namesToInsert]);
+
+    for (const row of created) {
+      resolved.set(row.name.toLowerCase(), {
+        id: row.id,
+        name: row.name,
+        isNew: true,
+        exerciseType: row.exercise_type,
+      });
+    }
+
+    // Handle race condition: if ON CONFLICT triggered, re-fetch the missing ones
+    const stillMissing = missing.filter(n => !resolved.has(n));
+    if (stillMissing.length > 0) {
+      const { rows: existing } = await conn.query(`
+        SELECT id, name, exercise_type FROM exercises
+        WHERE LOWER(name) = ANY($1) AND (user_id IS NULL OR user_id = $2)
+      `, [stillMissing, userId]);
+
+      for (const row of existing) {
+        resolved.set(row.name.toLowerCase(), {
+          id: row.id,
+          name: row.name,
+          isNew: false,
+          exerciseType: row.exercise_type,
+        });
+      }
+    }
+  }
+
+  return resolved;
+}
+
 export async function searchExercises(
   query?: string,
   muscleGroup?: string

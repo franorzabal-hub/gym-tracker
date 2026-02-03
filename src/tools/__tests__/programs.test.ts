@@ -22,6 +22,13 @@ vi.mock("../../db/connection.js", () => ({
 
 vi.mock("../../helpers/exercise-resolver.js", () => ({
   resolveExercise: vi.fn().mockResolvedValue({ id: 1, name: "Bench Press", isNew: false }),
+  resolveExercisesBatch: vi.fn().mockImplementation((names: string[]) => {
+    const map = new Map();
+    for (const name of names) {
+      map.set(name.trim().toLowerCase(), { id: 1, name: "Bench Press", isNew: false });
+    }
+    return Promise.resolve(map);
+  }),
 }));
 
 vi.mock("../../helpers/program-helpers.js", () => ({
@@ -34,11 +41,13 @@ vi.mock("../../helpers/program-helpers.js", () => ({
 vi.mock("../../helpers/group-helpers.js", () => ({
   insertGroup: mockInsertGroup,
   cloneGroups: mockCloneGroups,
+  cloneGroupsBatch: mockCloneGroups,
 }));
 
 vi.mock("../../helpers/section-helpers.js", () => ({
   insertSection: vi.fn().mockResolvedValue(1),
   cloneSections: vi.fn().mockResolvedValue(new Map()),
+  cloneSectionsBatch: vi.fn().mockResolvedValue(new Map()),
 }));
 
 vi.mock("../../context/user-context.js", () => ({
@@ -48,12 +57,13 @@ vi.mock("../../context/user-context.js", () => ({
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerProgramTool } from "../programs.js";
 import { getActiveProgram, getLatestVersion, getProgramDaysWithExercises } from "../../helpers/program-helpers.js";
-import { resolveExercise } from "../../helpers/exercise-resolver.js";
+import { resolveExercise, resolveExercisesBatch } from "../../helpers/exercise-resolver.js";
 
 const mockGetActiveProgram = getActiveProgram as ReturnType<typeof vi.fn>;
 const mockGetLatestVersion = getLatestVersion as ReturnType<typeof vi.fn>;
 const mockGetDays = getProgramDaysWithExercises as ReturnType<typeof vi.fn>;
 const mockResolveExercise = resolveExercise as ReturnType<typeof vi.fn>;
+const mockResolveExercisesBatch = resolveExercisesBatch as ReturnType<typeof vi.fn>;
 
 let toolHandler: Function;
 
@@ -67,6 +77,14 @@ describe("manage_program tool", () => {
     mockGetDays.mockReset();
     mockResolveExercise.mockReset();
     mockResolveExercise.mockResolvedValue({ id: 1, name: "Bench Press", isNew: false });
+    mockResolveExercisesBatch.mockReset();
+    mockResolveExercisesBatch.mockImplementation((names: string[]) => {
+      const map = new Map();
+      for (const name of names) {
+        map.set(name.trim().toLowerCase(), { id: 1, name: "Bench Press", isNew: false });
+      }
+      return Promise.resolve(map);
+    });
     mockInsertGroup.mockReset();
     let gid = 100;
     mockInsertGroup.mockImplementation(() => Promise.resolve(gid++));
@@ -278,11 +296,8 @@ describe("manage_program tool", () => {
     });
 
     it("soft-deletes multiple programs", async () => {
-      mockClientQuery
-        .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({ rows: [{ name: "PPL" }] })
-        .mockResolvedValueOnce({ rows: [{ name: "Upper/Lower" }] })
-        .mockResolvedValueOnce({}); // COMMIT
+      // Batch delete now uses pool.query directly (no transaction)
+      mockQuery.mockResolvedValueOnce({ rows: [{ name: "PPL" }, { name: "Upper/Lower" }] });
 
       const result = await toolHandler({
         action: "delete_bulk",
@@ -294,11 +309,8 @@ describe("manage_program tool", () => {
     });
 
     it("hard-deletes multiple programs", async () => {
-      mockClientQuery
-        .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({ rows: [{ name: "PPL" }] })
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({}); // COMMIT
+      // Batch delete now uses pool.query directly (no transaction)
+      mockQuery.mockResolvedValueOnce({ rows: [{ name: "PPL" }] });
 
       const result = await toolHandler({
         action: "delete_bulk",
@@ -312,10 +324,8 @@ describe("manage_program tool", () => {
     });
 
     it("handles JSON string workaround for names", async () => {
-      mockClientQuery
-        .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({ rows: [{ name: "PPL" }] })
-        .mockResolvedValueOnce({}); // COMMIT
+      // Batch delete now uses pool.query directly (no transaction)
+      mockQuery.mockResolvedValueOnce({ rows: [{ name: "PPL" }] });
 
       const result = await toolHandler({
         action: "delete_bulk",
@@ -904,7 +914,7 @@ describe("manage_program tool", () => {
       expect(insertArgs[9]).toBe("slow tempo"); // notes
     });
 
-    it("passes transaction client to resolveExercise", async () => {
+    it("passes transaction client to resolveExercisesBatch", async () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
@@ -922,8 +932,9 @@ describe("manage_program tool", () => {
         }],
       });
 
-      expect(mockResolveExercise).toHaveBeenCalledWith(
-        "Bench Press", undefined, undefined, undefined, undefined, mockClient
+      // Batch resolution: called with all exercise names, user_id, and transaction client
+      expect(mockResolveExercisesBatch).toHaveBeenCalledWith(
+        ["Bench Press"], 1, mockClient
       );
     });
 
@@ -1096,19 +1107,19 @@ describe("manage_program tool", () => {
       expect(parsed.error).toContain("No version found");
     });
 
-	    it("rolls back and releases client on exercise resolution error", async () => {
-	      mockResolveExercise.mockRejectedValueOnce(new Error("Exercise not found"));
+    it("rolls back and releases client on exercise resolution error", async () => {
+      mockResolveExercisesBatch.mockRejectedValueOnce(new Error("Exercise not found"));
 
-	      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
-	      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
-	      mockClientQuery
-	        .mockResolvedValueOnce({}) // BEGIN
-	        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
-	        .mockResolvedValueOnce({ rows: [{ id: 20 }] }); // INSERT day
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+      mockClientQuery
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
+        .mockResolvedValueOnce({ rows: [{ id: 20 }] }); // INSERT day
 
-	      const result = await toolHandler({
-	        action: "patch", program_id: 1,
-	        days: [{ day_label: "Push", exercises: [{ exercise: "Unknown", sets: 3, reps: 10 }] }],
+      const result = await toolHandler({
+        action: "patch", program_id: 1,
+        days: [{ day_label: "Push", exercises: [{ exercise: "Unknown", sets: 3, reps: 10 }] }],
       });
 
       expect(result.isError).toBe(true);

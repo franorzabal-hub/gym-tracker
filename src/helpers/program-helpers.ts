@@ -1,7 +1,7 @@
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
-import { cloneGroups } from "./group-helpers.js";
-import { cloneSections } from "./section-helpers.js";
+import { cloneGroupsBatch } from "./group-helpers.js";
+import { cloneSectionsBatch } from "./section-helpers.js";
 
 export async function getActiveProgram() {
   const userId = getUserId();
@@ -139,16 +139,16 @@ export async function cloneVersion(
         [newVersion.id, day.day_label, day.weekdays, day.sort_order]
       );
 
-      // Clone groups for this day
-      const groupMap = await cloneGroups(
+      // Clone groups for this day (batch: 1 query instead of N)
+      const groupMap = await cloneGroupsBatch(
         "program_exercise_groups", "program_exercise_groups",
         "day_id", "day_id",
         day.id, newDay.id,
         client
       );
 
-      // Clone sections for this day
-      const sectionMap = await cloneSections(
+      // Clone sections for this day (batch: 1 query instead of N)
+      const sectionMap = await cloneSectionsBatch(
         "program_sections", "program_sections",
         "day_id", "day_id",
         day.id, newDay.id,
