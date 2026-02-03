@@ -27,6 +27,7 @@ interface SetData {
 }
 
 interface ExerciseData {
+  exercise_id?: number;
   name: string;
   group_id: number | null;
   group_type?: string | null;
@@ -42,6 +43,7 @@ interface ExerciseData {
   sets: SetData[];
   previous?: { date: string; sets: PrevSetData[] } | null;
   prs?: Record<string, number> | null;
+  pr_baseline?: Record<string, number> | null;
 }
 
 interface SessionData {
@@ -81,11 +83,11 @@ function formatDuration(minutes: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-function isPR(set: SetData, prs: Record<string, number> | null | undefined): string | null {
-  if (!prs || !set.weight || set.set_type === "warmup") return null;
-  if (prs.max_weight != null && set.weight > prs.max_weight) return "Weight PR";
+function isPR(set: SetData, baseline: Record<string, number> | null | undefined): string | null {
+  if (!baseline || !set.weight || set.set_type === "warmup") return null;
+  if (baseline.max_weight != null && set.weight > baseline.max_weight) return "Weight PR";
   const e1rm = set.weight * (1 + (set.reps || 0) / 30);
-  if (prs.estimated_1rm != null && e1rm > prs.estimated_1rm) return "1RM PR";
+  if (baseline.estimated_1rm != null && e1rm > baseline.estimated_1rm) return "1RM PR";
   return null;
 }
 
@@ -260,7 +262,7 @@ function ExerciseAccordionRow({ exercise, expanded, onToggle }: {
   onToggle: () => void;
 }) {
   const muscleColor = exercise.muscle_group ? MUSCLE_COLOR[exercise.muscle_group.toLowerCase()] || "var(--text-secondary)" : "var(--text-secondary)";
-  const hasPRs = exercise.sets.some(s => isPR(s, exercise.prs) != null);
+  const hasPRs = exercise.sets.some(s => isPR(s, exercise.pr_baseline) != null);
   const prevSets = exercise.previous?.sets || [];
 
   return (
@@ -342,7 +344,7 @@ function ExerciseAccordionRow({ exercise, expanded, onToggle }: {
             <div style={{ display: "flex", flexDirection: "column" }}>
               {exercise.sets.map((set) => {
                 const matchingPrev = prevSets.find((p) => p.set_number === set.set_number) || null;
-                const prLabel = isPR(set, exercise.prs);
+                const prLabel = isPR(set, exercise.pr_baseline);
                 return (
                   <SetRow
                     key={set.set_id}

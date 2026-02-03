@@ -393,7 +393,11 @@ Cada dia puede tener `weekdays` opcional: array de enteros ISO (1=Lunes, 7=Domin
 
 ## Versionado
 
-Cada edicion con `update` (que incluya `days`) crea una **nueva version**. La version anterior queda inmutable en el historial. Esto permite:
+Cada edicion estructural (cambios en `days`/ejercicios) crea una **nueva version**. Esto aplica tanto a:
+- `manage_program` action `"update"` cuando se pasa `days`
+- `manage_program` action `"patch"` cuando se pasa `days` (usado por el widget editor)
+
+La version anterior queda inmutable en el historial. Esto permite:
 
 - Ver que cambio y cuando (`history`)
 - No perder configuraciones anteriores

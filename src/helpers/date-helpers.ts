@@ -13,11 +13,29 @@ export async function getUserTimezone(): Promise<string> {
 export async function getUserCurrentDate(): Promise<string> {
   const timezone = await getUserTimezone();
   const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  return formatter.format(now); // Returns YYYY-MM-DD format
+
+  const formatWithTimezone = (tz?: string) => {
+    const options: Intl.DateTimeFormatOptions = {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      ...(tz ? { timeZone: tz } : {}),
+    };
+    return new Intl.DateTimeFormat("en-CA", options).format(now); // YYYY-MM-DD
+  };
+
+  try {
+    return formatWithTimezone(timezone);
+  } catch (err) {
+    console.warn(
+      `[getUserCurrentDate] Invalid timezone "${timezone}", falling back to UTC:`,
+      err instanceof Error ? err.message : err,
+    );
+    try {
+      return formatWithTimezone("UTC");
+    } catch {
+      // As a last resort, fall back to server local time (should never throw)
+      return formatWithTimezone();
+    }
+  }
 }

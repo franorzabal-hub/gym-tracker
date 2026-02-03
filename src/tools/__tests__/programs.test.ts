@@ -454,12 +454,12 @@ describe("manage_program tool", () => {
       expect(parsed.program.version).toBe(2);
     });
 
-    it("patches days (deletes and re-inserts)", async () => {
+    it("patches days (creates new version)", async () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] }); // find by program_id
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
         .mockResolvedValueOnce({}) // INSERT exercise
         .mockResolvedValueOnce({}); // COMMIT
@@ -516,7 +516,7 @@ describe("manage_program tool", () => {
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockRejectedValueOnce(new Error("DB error")); // DELETE fails
+        .mockRejectedValueOnce(new Error("DB error")); // INSERT version fails
 
       const result = await toolHandler({
         action: "patch", program_id: 1,
@@ -534,7 +534,7 @@ describe("manage_program tool", () => {
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
         .mockResolvedValueOnce({}) // INSERT exercise
         .mockResolvedValueOnce({}); // COMMIT
@@ -564,7 +564,7 @@ describe("manage_program tool", () => {
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
         .mockResolvedValueOnce({}) // INSERT exercise
         .mockResolvedValueOnce({}); // COMMIT
@@ -591,7 +591,7 @@ describe("manage_program tool", () => {
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
         .mockResolvedValueOnce({}) // INSERT exercise 1
         .mockResolvedValueOnce({}) // INSERT exercise 2
@@ -729,7 +729,7 @@ describe("manage_program tool", () => {
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 1
         .mockResolvedValueOnce({}) // INSERT exercise 1
         .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 2
@@ -753,7 +753,7 @@ describe("manage_program tool", () => {
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day (no exercises)
         .mockResolvedValueOnce({}); // COMMIT
 
@@ -778,7 +778,7 @@ describe("manage_program tool", () => {
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 1
         .mockResolvedValueOnce({}) // INSERT ex 1
         .mockResolvedValueOnce({}) // INSERT ex 2
@@ -815,7 +815,7 @@ describe("manage_program tool", () => {
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 0
         .mockResolvedValueOnce({}) // INSERT ex
         .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 1
@@ -848,7 +848,7 @@ describe("manage_program tool", () => {
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 1 (weekdays null)
         .mockResolvedValueOnce({}) // INSERT ex
         .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 2 (weekdays [1,3,5])
@@ -876,7 +876,7 @@ describe("manage_program tool", () => {
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
         .mockResolvedValueOnce({}) // INSERT exercise
         .mockResolvedValueOnce({}); // COMMIT
@@ -905,7 +905,7 @@ describe("manage_program tool", () => {
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
         .mockResolvedValueOnce({}) // INSERT exercise
         .mockResolvedValueOnce({}); // COMMIT
@@ -934,7 +934,7 @@ describe("manage_program tool", () => {
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
         // insertGroup is mocked (returns 100), then 2 INSERT exercises
         .mockResolvedValueOnce({}) // INSERT ex 1
@@ -983,7 +983,7 @@ describe("manage_program tool", () => {
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
         .mockResolvedValueOnce({}) // INSERT solo ex (Bench)
         // insertGroup mocked (returns 100)
@@ -1041,7 +1041,7 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({}) // UPDATE name
         .mockResolvedValueOnce({}) // UPDATE description
-        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
         .mockResolvedValueOnce({}) // INSERT exercise
         .mockResolvedValueOnce({}); // COMMIT
@@ -1092,19 +1092,19 @@ describe("manage_program tool", () => {
       expect(parsed.error).toContain("No version found");
     });
 
-    it("rolls back and releases client on exercise resolution error", async () => {
-      mockResolveExercise.mockRejectedValueOnce(new Error("Exercise not found"));
+	    it("rolls back and releases client on exercise resolution error", async () => {
+	      mockResolveExercise.mockRejectedValueOnce(new Error("Exercise not found"));
 
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
-      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
-      mockClientQuery
-        .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE
-        .mockResolvedValueOnce({ rows: [{ id: 20 }] }); // INSERT day
+	      mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
+	      mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
+	      mockClientQuery
+	        .mockResolvedValueOnce({}) // BEGIN
+	        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
+	        .mockResolvedValueOnce({ rows: [{ id: 20 }] }); // INSERT day
 
-      const result = await toolHandler({
-        action: "patch", program_id: 1,
-        days: [{ day_label: "Push", exercises: [{ exercise: "Unknown", sets: 3, reps: 10 }] }],
+	      const result = await toolHandler({
+	        action: "patch", program_id: 1,
+	        days: [{ day_label: "Push", exercises: [{ exercise: "Unknown", sets: 3, reps: 10 }] }],
       });
 
       expect(result.isError).toBe(true);
@@ -1134,7 +1134,7 @@ describe("manage_program tool", () => {
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // DELETE program_days
+        .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
         .mockResolvedValueOnce({}) // INSERT exercise
         .mockResolvedValueOnce({}); // COMMIT

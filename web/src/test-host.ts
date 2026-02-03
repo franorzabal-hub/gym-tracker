@@ -247,7 +247,8 @@ const sampleData: Record<string, { content?: Array<{ type: string; text: string 
                 { set_number: 3, reps: 6, weight: 85, rpe: 9, set_type: "working" },
               ],
             },
-            prs: { max_weight: 87.5, estimated_1rm: 108 },
+            prs: { max_weight: 90, estimated_1rm: 108 },
+            pr_baseline: { max_weight: 87.5, estimated_1rm: 106 },
           },
           {
             name: "Incline DB Press",

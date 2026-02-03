@@ -5,7 +5,7 @@ import { resolve } from "path";
 import { readdirSync } from "fs";
 
 // Discover all HTML entry points in the project root
-const htmlFiles = readdirSync(__dirname).filter((f) => f.endsWith(".html"));
+const htmlFiles = readdirSync(__dirname).filter((f) => f.endsWith(".html")).sort();
 
 // Build a single widget at a time via WIDGET env var, or default to first.
 // The build script loops over all widgets.

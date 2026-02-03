@@ -6,7 +6,7 @@ El usuario acaba de conectar el MCP server por primera vez. No tiene perfil, no 
 
 ## Detección
 
-Claude llama `manage_profile` get → respuesta vacía → sabe que es usuario nuevo.
+Claude llama `initialize_gym_session` en el primer mensaje de cada conversación (antes de responder). Si la respuesta trae `required_next_tool = "show_profile"`, es un usuario nuevo y se inicia el onboarding. Si trae `required_next_tool = "show_programs"`, falta elegir programa.
 
 ---
 

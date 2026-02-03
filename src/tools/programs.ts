@@ -190,7 +190,7 @@ Actions:
 - "create": Create program with days/exercises (auto-activates)
 - "clone": Clone a program (global template or user's). Pass source_id. Optionally pass name. Auto-activates.
 - "update": If "days" provided → new version + change_description. If only metadata (new_name/description) → no new version.
-- "patch": Update current version in-place (no new version). Pass program_id. For widget inline editing.
+- "patch": Save edits coming from widgets. If "days" are provided, creates a new version to preserve history. If only metadata is provided, updates in place. Pass program_id when available.
 - "activate": Set as active (deactivates others). Only one active at a time.
 - "delete": Soft delete. hard_delete=true for permanent removal.
 - "delete_bulk": Delete multiple by "names" array. Optional hard_delete=true.
@@ -438,9 +438,9 @@ To see the program visually, call show_program (not manage_program "get").`,
           `SELECT p.id, p.name, p.description, pv.id as version_id
            FROM programs p
            JOIN program_versions pv ON pv.program_id = p.id
-           WHERE p.id = $1
+           WHERE p.id = $1 AND (p.user_id IS NULL OR p.user_id = $2)
            ORDER BY pv.version_number DESC LIMIT 1`,
-          [source_id]
+          [source_id, userId]
         );
         if (!source) {
           return toolResponse({ error: `Program with id ${source_id} not found.` }, true);
@@ -639,6 +639,11 @@ To see the program visually, call show_program (not manage_program "get").`,
       }
 
       if (action === "patch") {
+        // If caller provided days but they failed to parse, fail fast (avoid silently ignoring edits)
+        if (rawDays !== undefined && (!days || !Array.isArray(days))) {
+          return toolResponse({ error: "Invalid days array" }, true);
+        }
+
         // Find program by program_id, name, or active
         let program: any;
         if (program_id) {
@@ -662,6 +667,8 @@ To see the program visually, call show_program (not manage_program "get").`,
           return toolResponse({ error: "No version found" }, true);
         }
 
+        const replaceDays = Array.isArray(days) && days.length > 0;
+
         const client = await pool.connect();
         try {
           await client.query("BEGIN");
@@ -683,20 +690,26 @@ To see the program visually, call show_program (not manage_program "get").`,
           let daysCount = 0;
           let exercisesCount = 0;
 
-          // Replace days if provided
-          if (days && days.length > 0) {
-            // Delete existing days (CASCADE deletes exercises and groups)
-            await client.query(
-              "DELETE FROM program_days WHERE version_id = $1",
-              [latestVersion.id]
+          // If days are provided, create a new version (preserves history/session links)
+          let effectiveVersionNumber: number = latestVersion.version_number;
+          let targetVersionId: number = latestVersion.id;
+
+          if (replaceDays) {
+            effectiveVersionNumber = latestVersion.version_number + 1;
+
+            const { rows: [ver] } = await client.query(
+              `INSERT INTO program_versions (program_id, version_number, change_description)
+               VALUES ($1, $2, $3) RETURNING id`,
+              [program.id, effectiveVersionNumber, change_description || "Updated via widget"]
             );
+            targetVersionId = ver.id;
 
             for (let i = 0; i < days.length; i++) {
               const day = days[i];
               const { rows: [newDay] } = await client.query(
                 `INSERT INTO program_days (version_id, day_label, weekdays, sort_order)
                  VALUES ($1, $2, $3, $4) RETURNING id`,
-                [latestVersion.id, day.day_label, day.weekdays || null, i]
+                [targetVersionId, day.day_label, day.weekdays || null, i]
               );
               daysCount++;
 
@@ -728,7 +741,7 @@ To see the program visually, call show_program (not manage_program "get").`,
               id: program.id,
               name: new_name || program.name,
               description: description !== undefined ? (description || null) : undefined,
-              version: latestVersion.version_number,
+              version: effectiveVersionNumber,
             },
             days_count: daysCount || undefined,
             exercises_count: exercisesCount || undefined,

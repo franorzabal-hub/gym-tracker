@@ -66,7 +66,7 @@ The widget already shows all information visually — do NOT repeat exercises or
 
     // Get exercises + sets (with logged_at, muscle_group, exercise_type, rep_type, group info, section info)
     const { rows: exerciseDetails } = await pool.query(
-      `SELECT e.name, se.group_id, seg.group_type, seg.label as group_label, seg.notes as group_notes, seg.rest_seconds as group_rest_seconds,
+      `SELECT e.id as exercise_id, e.name, se.group_id, seg.group_type, seg.label as group_label, seg.notes as group_notes, seg.rest_seconds as group_rest_seconds,
          se.section_id, ss.label as section_label, ss.notes as section_notes,
          e.muscle_group, e.exercise_type, e.rep_type,
          COALESCE(json_agg(json_build_object(
@@ -79,7 +79,7 @@ The widget already shows all information visually — do NOT repeat exercises or
        LEFT JOIN session_exercise_groups seg ON seg.id = se.group_id
        LEFT JOIN session_sections ss ON ss.id = se.section_id
        WHERE se.session_id = $1
-       GROUP BY se.id, e.name, se.group_id, seg.group_type, seg.label, seg.notes, seg.rest_seconds, se.section_id, ss.label, ss.notes, se.sort_order, e.muscle_group, e.exercise_type, e.rep_type
+       GROUP BY se.id, e.id, e.name, se.group_id, seg.group_type, seg.label, seg.notes, seg.rest_seconds, se.section_id, ss.label, ss.notes, se.sort_order, e.muscle_group, e.exercise_type, e.rep_type
        ORDER BY se.sort_order`,
       [session.id]
     );
@@ -130,6 +130,33 @@ The widget already shows all information visually — do NOT repeat exercises or
       prMap.get(row.name)![row.record_type] = parseFloat(row.value);
     }
 
+    // PR baselines per exercise (values before this session started) for accurate in-session PR badges
+    const exerciseIds = Array.from(
+      new Set(
+        exerciseDetails
+          .map((e: any) => Number(e.exercise_id))
+          .filter((id: number) => Number.isFinite(id))
+      )
+    );
+    const prBaselineMap = new Map<number, Record<string, number>>();
+    if (exerciseIds.length > 0) {
+      const { rows: baselineRows } = await pool.query(
+        `SELECT DISTINCT ON (exercise_id, record_type) exercise_id, record_type, value
+         FROM pr_history
+         WHERE user_id = $1
+           AND exercise_id = ANY($2)
+           AND achieved_at < $3
+           AND record_type IN ('max_weight', 'estimated_1rm')
+         ORDER BY exercise_id, record_type, achieved_at DESC`,
+        [userId, exerciseIds, session.started_at]
+      );
+      for (const row of baselineRows) {
+        const exId = Number(row.exercise_id);
+        if (!prBaselineMap.has(exId)) prBaselineMap.set(exId, {});
+        prBaselineMap.get(exId)![row.record_type] = Number(row.value);
+      }
+    }
+
     return widgetResponse(
       `Workout widget displayed. The user can see the full session visually. Do NOT describe, list, or summarize any workout details in text.`,
       {
@@ -142,6 +169,7 @@ The widget already shows all information visually — do NOT repeat exercises or
           tags: session.tags || [],
           exercises: exerciseDetails.map((e: any) => ({
             name: e.name,
+            exercise_id: e.exercise_id,
             group_id: e.group_id,
             group_type: e.group_type,
             group_label: e.group_label,
@@ -156,6 +184,7 @@ The widget already shows all information visually — do NOT repeat exercises or
             sets: e.sets,
             previous: prevMap.get(e.name) || null,
             prs: prMap.has(e.name) ? prMap.get(e.name) : null,
+            pr_baseline: prBaselineMap.get(Number(e.exercise_id)) || null,
           })),
         },
         ...(isEnded ? { readonly: true } : {}),

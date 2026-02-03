@@ -94,7 +94,7 @@ Call this when the user wants to browse available programs, pick a new program, 
 Use the filter param to show only relevant global programs (max ~5) based on user goals/level/experience. If omitted, all global programs are returned.
 After a user clones a program from the widget, follow up with show_program so the user can review, edit, and activate it.`,
     inputSchema: {
-      filter: z.array(z.string()).optional()
+      filter: z.union([z.array(z.string()), z.string()]).optional()
         .describe("Program names to show from global templates (LLM filters based on user context). If omitted, returns all global programs."),
     },
     annotations: { readOnlyHint: true },
@@ -103,7 +103,7 @@ After a user clones a program from the widget, follow up with show_program so th
       "openai/toolInvocation/invoking": "Loading programs...",
       "openai/toolInvocation/invoked": "Programs loaded",
     },
-  }, safeHandler("show_available_programs", async ({ filter }: { filter?: string[] }) => {
+  }, safeHandler("show_available_programs", async ({ filter }: { filter?: string[] | string }) => {
     const userId = getUserId();
 
     // Fetch profile

@@ -78,6 +78,7 @@ describe("show_workout display tool", () => {
       // Exercise details
       .mockResolvedValueOnce({
         rows: [{
+          exercise_id: 123,
           name: "Bench Press", group_id: null, group_type: null, group_label: null, group_notes: null, group_rest_seconds: null, muscle_group: "chest",
           exercise_type: "strength", rep_type: "reps",
           sets: [{ set_id: 1, set_number: 1, reps: 10, weight: 80, rpe: 7, set_type: "working", logged_at: startedAt }],
@@ -86,13 +87,18 @@ describe("show_workout display tool", () => {
       // Previous workout
       .mockResolvedValueOnce({ rows: [] })
       // PRs
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [] })
+      // PR baselines (pr_history before session started)
+      .mockResolvedValueOnce({
+        rows: [{ exercise_id: 123, record_type: "max_weight", value: 75 }],
+      });
 
     const result = await toolHandlers["show_workout"]({});
 
     expect(result.structuredContent.session).toBeTruthy();
     expect(result.structuredContent.session.session_id).toBe(42);
     expect(result.structuredContent.exerciseCatalog).toBeUndefined();
+    expect(result.structuredContent.session.exercises[0].pr_baseline).toEqual({ max_weight: 75 });
     expect(result.content[0].text).toContain("Do NOT describe");
     expect(result.content[0].text).not.toContain("inline editing");
   });

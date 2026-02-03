@@ -11,7 +11,7 @@
     "build:widgets": "cd web && npm run build",
     "serve": "node dist/server.js",
     "migrate": "tsx src/db/migrate.ts",
-    "test": "vitest run",
+    "test": "npx tsc --noEmit && vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
