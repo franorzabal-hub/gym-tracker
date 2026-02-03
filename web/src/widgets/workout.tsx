@@ -110,26 +110,27 @@ function exerciseHasPR(exercise: ExerciseData): boolean {
   return exercise.sets.some(s => isPR(s, exercise.pr_baseline) != null);
 }
 
-/** Format sets summary: "3×10r" or "3×(12/10/8)r" if variable reps */
+/** Format sets summary: "3×10r" or "3×8-12r" if variable reps (min-max range) */
 function formatSetsSummary(sets: SetData[], repType?: string | null): string {
   if (sets.length === 0) return "";
   const unit = repType && REP_UNIT[repType] ? REP_UNIT[repType] : "r";
   const reps = sets.map(s => s.reps);
-  const allSame = reps.every(r => r === reps[0]);
-  if (allSame) {
-    return `${sets.length}×${reps[0]}${unit}`;
+  const min = Math.min(...reps);
+  const max = Math.max(...reps);
+  if (min === max) {
+    return `${sets.length}×${min}${unit}`;
   }
-  return `${sets.length}×(${reps.join("/")})${unit}`;
+  return `${sets.length}×${min}-${max}${unit}`;
 }
 
-/** Format weight range: "35kg" or "100→115kg" */
+/** Format weight range: "35kg" or "35-50kg" if variable */
 function formatWeightRange(sets: SetData[]): string | null {
   const weights = sets.map(s => s.weight).filter((w): w is number => w != null && w > 0);
   if (weights.length === 0) return null;
   const min = Math.min(...weights);
   const max = Math.max(...weights);
   if (min === max) return `${min}`;
-  return `${min}→${max}`;
+  return `${min}-${max}`;
 }
 
 /** Monochromatic SVG icons for group types */
@@ -270,7 +271,11 @@ function ExerciseRow({ exercise, exNum, isLast }: {
   const weightRange = formatWeightRange(exercise.sets);
 
   return (
-    <div style={{ marginBottom: isLast ? 0 : sp[4] }}>
+    <div style={{
+      paddingBottom: isLast ? 0 : sp[3],
+      marginBottom: isLast ? 0 : sp[3],
+      borderBottom: isLast ? "none" : "1px solid color-mix(in srgb, var(--border) 20%, transparent)",
+    }}>
       <div
         className={hasPerSet ? "tappable exercise-row" : "exercise-row"}
         style={{
@@ -283,15 +288,23 @@ function ExerciseRow({ exercise, exNum, isLast }: {
         onClick={hasPerSet ? () => setExpanded(!expanded) : undefined}
       >
         {/* Left: number + name */}
-        <div style={{ display: "flex", alignItems: "baseline", gap: sp[3], minWidth: 0 }}>
-          <span style={{ fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.muted, minWidth: "1.2em", textAlign: "right", flexShrink: 0 }}>{exNum}</span>
+        <div style={{ display: "flex", alignItems: "baseline", gap: sp[2], minWidth: 0 }}>
+          <span style={{
+            fontSize: font.xs,
+            color: "var(--text-secondary)",
+            opacity: 0.4,
+            minWidth: 14,
+            flexShrink: 0,
+          }}>{exNum}</span>
           <span className="exercise-name" style={{
             fontWeight: weight.medium,
-            fontSize: font.lg,
+            fontSize: font.base,
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
-          }}>{exercise.name}</span>
+          }}>
+            {exercise.name}
+          </span>
           {hasPR && (
             <span style={{
               fontSize: font["2xs"], fontWeight: weight.bold, color: "var(--warning)",
@@ -304,13 +317,12 @@ function ExerciseRow({ exercise, exNum, isLast }: {
           )}
         </div>
         {/* Right: sets × reps · weight */}
-        <div className="exercise-metrics" style={{ flexShrink: 0, display: "flex", alignItems: "baseline", gap: sp[1], fontSize: font.md, whiteSpace: "nowrap" }}>
-          <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{setsSummary}</span>
+        <div className="exercise-metrics" style={{ flexShrink: 0, display: "flex", alignItems: "baseline", gap: sp[1], fontSize: font.sm, whiteSpace: "nowrap", color: "var(--text-secondary)" }}>
+          <span style={{ fontWeight: weight.semibold }}>{setsSummary}</span>
           {weightRange != null && (
             <>
-              <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>
-              <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{weightRange}</span>
-              <span style={{ opacity: 0.5, fontSize: font.sm }}>kg</span>
+              <span style={{ opacity: 0.4 }}>·</span>
+              <span style={{ fontWeight: weight.semibold }}>{weightRange}kg</span>
             </>
           )}
         </div>
@@ -445,7 +457,7 @@ function ExerciseGroupBlock({ group, startIndex, collapsible = true }: {
       </div>
       {/* Exercises */}
       {showExercises && (
-        <div style={{ paddingLeft: sp[3] }}>
+        <div>
           {group.exercises.map((ex, i) => (
             <ExerciseRow key={ex.name} exercise={ex} exNum={startIndex + i} isLast={i >= group.exercises.length - 1} />
           ))}
@@ -514,7 +526,7 @@ function SectionCard({ section, startNumber }: {
         )}
       </div>
       {expanded && (
-        <div style={{ paddingLeft: sp[3] }}>
+        <div>
           {section.groups.map((group, gi) => {
             const startIdx = currentIdx;
             currentIdx += group.exercises.length;
@@ -562,11 +574,6 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
   const liveMinutes = useLiveTimer(session.started_at);
   const isActive = !readonly && !session.ended_at;
   const minutes = isActive ? liveMinutes : session.duration_minutes;
-  const totalSets = session.exercises.reduce((sum, e) => sum + e.sets.length, 0);
-  const totalVolume = session.exercises.reduce(
-    (sum, e) => sum + e.sets.reduce((s, set) => s + (set.weight || 0) * (set.reps || 0), 0),
-    0,
-  );
 
   const muscleGroups = useMemo(() => {
     const groups = new Set<string>();
@@ -576,125 +583,52 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
     return Array.from(groups);
   }, [session.exercises]);
 
-  const exerciseGroups = useMemo(() => groupExercises(session.exercises), [session.exercises]);
-  const hasSections = session.exercises.some(e => e.section_id != null);
-
   return (
     <div className="profile-card">
       {/* Header */}
-      <div style={{ marginBottom: sp[6] }}>
-        <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginBottom: sp[1] }}>
-          <div className="title" style={{ marginBottom: 0 }}>
-            {isActive ? "Active Workout" : "Workout"}
+      <div style={{ marginBottom: sp[5] }}>
+        {/* Title row: title + badge (left), date (right) */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: sp[2] }}>
+          <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
+            <span className="title" style={{ marginBottom: 0 }}>
+              {isActive ? "Active Workout" : "Workout"}
+            </span>
+            {isActive && <span className="badge badge-success">Active</span>}
+            {!isActive && session.ended_at && <span className="badge badge-muted">Completed</span>}
           </div>
           {!isActive && session.ended_at && (
-            <span className="badge badge-muted">Completed</span>
-          )}
-          {isActive && (
-            <span className="badge badge-success">Active</span>
+            <span style={{ fontSize: font.md, color: "var(--text-secondary)" }}>
+              {new Date(session.started_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+            </span>
           )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: sp[4], flexWrap: "wrap" }}>
-          {session.program_day && (
-            <span style={{ fontSize: font.md, color: "var(--text-secondary)" }}>{session.program_day}</span>
-          )}
-          <span style={{ fontSize: font.base, color: "var(--text-secondary)" }}>
-            {!isActive && session.ended_at && (
-              <>{new Date(session.started_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} · </>
-            )}
-            {session.exercises.length} exercises · {totalSets} sets
-            {totalVolume > 0 && <> · {Math.round(totalVolume).toLocaleString()} kg</>}
-          </span>
-          <span style={{ fontWeight: weight.semibold, fontSize: font.base, color: isActive ? "var(--primary)" : "var(--text-secondary)" }}>
-            {formatDuration(minutes)}
-          </span>
-        </div>
-        {/* Muscle groups + tags */}
-        {(muscleGroups.length > 0 || session.tags.length > 0) && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: sp[2], marginTop: sp[3] }}>
+        {/* Chips (left) + stats (right) */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: sp[2] }}>
+          <div style={{ display: "flex", alignItems: "center", gap: sp[2] }}>
             {muscleGroups.map(g => (
-              <span key={g} style={{
-                fontSize: font.xs,
-                padding: `${sp[0.5]}px ${sp[3]}px`,
-                borderRadius: radius.lg,
-                background: "var(--border)",
-                color: "var(--text-secondary)",
-                textTransform: "capitalize",
-              }}>{g}</span>
-            ))}
-            {session.tags.map(tag => (
-              <span key={tag} className="badge badge-success" style={{ fontSize: font.xs }}>
-                {tag}
-              </span>
+              <span key={g} className="badge badge-muted" style={{ textTransform: "capitalize" }}>{g}</span>
             ))}
           </div>
-        )}
+          <span style={{ fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.medium }}>
+            {session.exercises.length} ej · {isActive ? (
+              <span style={{ color: "var(--primary)", fontWeight: weight.semibold }}>{formatDuration(minutes)}</span>
+            ) : formatDuration(minutes)}
+          </span>
+        </div>
       </div>
 
-      {/* Divider */}
+      {/* Divider with more spacing */}
       <div style={{
         borderBottom: "1px solid color-mix(in srgb, var(--border) 40%, transparent)",
-        marginBottom: sp[4],
+        marginBottom: sp[5],
       }} />
 
-      {/* Exercise list */}
-      {(() => {
-        if (!hasSections) {
-          let globalNum = 1;
-          return (
-            <div>
-              {exerciseGroups.map((group, gi) => {
-                const startNum = globalNum;
-                globalNum += group.exercises.length;
-                const hasSiblings = exerciseGroups.length > 1;
-                return (
-                  <div key={gi}>
-                    <ExerciseGroupBlock group={group} startIndex={startNum} collapsible={hasSiblings} />
-                    {gi < exerciseGroups.length - 1 && (
-                      <div style={{
-                        borderBottom: "1px solid color-mix(in srgb, var(--border) 30%, transparent)",
-                        marginBottom: sp[4],
-                      }} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        }
-
-        const sectionedItems = groupIntoSections(exerciseGroups);
-        let globalNum = 1;
-
-        return (
-          <div>
-            {sectionedItems.map((item, i) => {
-              if (item.type === "section") {
-                const startNum = globalNum;
-                const exerciseCount = item.section.groups.reduce((sum, g) => sum + g.exercises.length, 0);
-                globalNum += exerciseCount;
-                return (
-                  <SectionCard
-                    key={`section-${item.section.sectionId}`}
-                    section={item.section}
-                    startNumber={startNum}
-                  />
-                );
-              } else {
-                return item.groups.map((group, gi) => {
-                  const startNum = globalNum;
-                  globalNum += group.exercises.length;
-                  return (
-                    <div key={`unsectioned-${i}-${gi}`}>
-                      <ExerciseGroupBlock group={group} startIndex={startNum} collapsible={true} />
-                    </div>
-                  );
-                });
-              }
-            })}
-          </div>
-        );
-      })()}
+      {/* Exercise list - flat, no grouping */}
+      <div>
+        {session.exercises.map((exercise, i) => (
+          <ExerciseRow key={exercise.name + i} exercise={exercise} exNum={i + 1} isLast={i === session.exercises.length - 1} />
+        ))}
+      </div>
     </div>
   );
 }
