@@ -7,7 +7,7 @@ import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response
 
 export function registerBodyMeasurementsTool(server: McpServer) {
   server.registerTool(
-    "manage_body_measurements",
+    "manage_measurements",
     {
       description: `${APP_CONTEXT}Track body measurements over time. Use action "log" to record a measurement, "history" to see trends for a specific type, "latest" to get the most recent value of each type.
 
@@ -28,7 +28,7 @@ Examples:
       },
       annotations: {},
     },
-    safeHandler("manage_body_measurements", async ({ action, measurement_type, value, measured_at, notes, period, limit }) => {
+    safeHandler("manage_measurements", async ({ action, measurement_type, value, measured_at, notes, period, limit }) => {
       const userId = getUserId();
 
       if (action === "log") {

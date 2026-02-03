@@ -9,35 +9,35 @@ import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerEditLogTool(server: McpServer) {
-  server.registerTool("edit_log", {
-    description: `${APP_CONTEXT}Edit or delete previously logged sets, or delete entire sessions.
+  server.registerTool("edit_workout", {
+    description: `${APP_CONTEXT}Edit or delete previously logged sets, or delete entire workouts.
 
 Examples:
 - "No, eran 80kg" → update weight on the last logged exercise
 - "Borrá el último set" → delete specific sets
-- "Corregí el press banca de hoy: 4x10 con 70kg" → update all sets of an exercise in today's session
+- "Corregí el press banca de hoy: 4x10 con 70kg" → update all sets of an exercise in today's workout
 - "Borrá todos los warmup de press banca" → delete sets filtered by type
 - "Corregí press banca y sentadilla de hoy" → bulk edit multiple exercises
-- "Borrá la sesión 42" → soft-delete an entire session
-- "Restaurá la sesión 42" → restore a soft-deleted session
-- "Validá la sesión 42" → validate a pending session (recalculates PRs)
+- "Borrá el workout 42" → soft-delete an entire workout
+- "Restaurá el workout 42" → restore a soft-deleted workout
+- "Validá el workout 42" → validate a pending workout (recalculates PRs)
 
 Parameters:
-- exercise: name or alias (required for single mode, ignored if bulk or delete_session is used)
-- session: "today" (default), "last", or a date string
+- exercise: name or alias (required for single mode, ignored if bulk or delete_workout is used)
+- workout: "today" (default), "last", or a date string
 - action: "update" or "delete"
 - updates: { reps?, weight?, rpe?, set_type?, notes? } — fields to change
 - set_numbers: specific set numbers to edit (if omitted, edits all sets)
 - set_ids: specific set IDs to edit directly (alternative to set_numbers)
 - set_type_filter: filter sets by type ("warmup", "working", "drop", "failure")
 - bulk: array of { exercise, action?, set_numbers?, set_ids?, set_type_filter?, updates? } for multi-exercise edits
-- delete_session: session ID to soft-delete (sets deleted_at timestamp, can be restored)
-- restore_session: session ID to restore (clears deleted_at timestamp)
-- delete_sessions: array of session IDs for bulk soft-delete. Returns { deleted, not_found }.
-- validate_session: session ID to validate. Marks as validated and recalculates PRs.`,
+- delete_workout: workout ID to soft-delete (sets deleted_at timestamp, can be restored)
+- restore_workout: workout ID to restore (clears deleted_at timestamp)
+- delete_workouts: array of workout IDs for bulk soft-delete. Returns { deleted, not_found }.
+- validate_workout: workout ID to validate. Marks as validated and recalculates PRs.`,
     inputSchema: {
       exercise: z.string().optional(),
-      session: z
+      workout: z
         .union([z.enum(["today", "last"]), z.string()])
         .optional()
         .default("today"),
@@ -68,53 +68,53 @@ Parameters:
           notes: z.string().optional(),
         }).optional(),
       })).optional(),
-      delete_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to soft-delete. Sets deleted_at timestamp; can be restored later."),
-      restore_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to restore from soft-delete. Clears the deleted_at timestamp."),
-      delete_sessions: z.union([z.array(z.number().int()), z.string()]).optional().describe("Array of session IDs for bulk soft-delete."),
-      validate_session: z.union([z.number().int(), z.string()]).optional().describe("Session ID to validate. Marks as validated and recalculates PRs."),
+      delete_workout: z.union([z.number().int(), z.string()]).optional().describe("Workout ID to soft-delete. Sets deleted_at timestamp; can be restored later."),
+      restore_workout: z.union([z.number().int(), z.string()]).optional().describe("Workout ID to restore from soft-delete. Clears the deleted_at timestamp."),
+      delete_workouts: z.union([z.array(z.number().int()), z.string()]).optional().describe("Array of workout IDs for bulk soft-delete."),
+      validate_workout: z.union([z.number().int(), z.string()]).optional().describe("Workout ID to validate. Marks as validated and recalculates PRs."),
     },
     annotations: { destructiveHint: true },
   },
-    safeHandler("edit_log", async ({ exercise, session, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_session, restore_session, delete_sessions: rawDeleteSessions, validate_session }) => {
+    safeHandler("edit_workout", async ({ exercise, workout, action, updates, set_numbers, set_ids, set_type_filter, bulk, delete_workout, restore_workout, delete_workouts: rawDeleteWorkouts, validate_workout }) => {
       const userId = getUserId();
 
-      // --- Validate session mode ---
-      if (validate_session !== undefined && validate_session !== null) {
-        const sessionId = Number(validate_session);
-        if (Number.isNaN(sessionId)) {
-          return toolResponse({ error: "Invalid session ID" }, true);
+      // --- Validate workout mode ---
+      if (validate_workout !== undefined && validate_workout !== null) {
+        const workoutId = Number(validate_workout);
+        if (Number.isNaN(workoutId)) {
+          return toolResponse({ error: "Invalid workout ID" }, true);
         }
 
-        // Get session and verify ownership
-        const { rows: sessionRows } = await pool.query(
+        // Get workout and verify ownership
+        const { rows: workoutRows } = await pool.query(
           "SELECT id, started_at, is_validated FROM sessions WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",
-          [sessionId, userId]
+          [workoutId, userId]
         );
-        if (sessionRows.length === 0) {
-          return toolResponse({ error: `Session ${validate_session} not found` }, true);
+        if (workoutRows.length === 0) {
+          return toolResponse({ error: `Workout ${validate_workout} not found` }, true);
         }
-        if (sessionRows[0].is_validated) {
-          return toolResponse({ message: "Session is already validated", session_id: sessionId });
+        if (workoutRows[0].is_validated) {
+          return toolResponse({ message: "Workout is already validated", workout_id: workoutId });
         }
 
-        // Mark session as validated
+        // Mark workout as validated
         await pool.query(
           "UPDATE sessions SET is_validated = true WHERE id = $1 AND user_id = $2",
-          [sessionId, userId]
+          [workoutId, userId]
         );
 
-        // Recalculate PRs for all exercises in this session
-        const { rows: sessionExercises } = await pool.query(
+        // Recalculate PRs for all exercises in this workout
+        const { rows: workoutExercises } = await pool.query(
           `SELECT se.id, se.exercise_id, e.name as exercise_name, e.exercise_type
            FROM session_exercises se
            JOIN exercises e ON e.id = se.exercise_id
            WHERE se.session_id = $1`,
-          [sessionId]
+          [workoutId]
         );
 
         const allPRs: any[] = [];
-        for (const se of sessionExercises) {
-          // Get all sets for this session_exercise
+        for (const se of workoutExercises) {
+          // Get all sets for this workout exercise
           const { rows: sets } = await pool.query(
             `SELECT id, reps, weight FROM sets WHERE session_exercise_id = $1`,
             [se.id]
@@ -138,47 +138,47 @@ Parameters:
 
         return toolResponse({
           validated: true,
-          session_id: sessionId,
-          started_at: sessionRows[0].started_at,
+          workout_id: workoutId,
+          started_at: workoutRows[0].started_at,
           new_prs: allPRs.length > 0 ? allPRs : undefined,
         });
       }
 
-      // --- Restore session mode ---
-      if (restore_session !== undefined && restore_session !== null) {
-        const sessionId = Number(restore_session);
-        if (Number.isNaN(sessionId)) {
-          return toolResponse({ error: "Invalid session ID" }, true);
+      // --- Restore workout mode ---
+      if (restore_workout !== undefined && restore_workout !== null) {
+        const workoutId = Number(restore_workout);
+        if (Number.isNaN(workoutId)) {
+          return toolResponse({ error: "Invalid workout ID" }, true);
         }
-        const { rows: sessionRows } = await pool.query(
+        const { rows: workoutRows } = await pool.query(
           "SELECT id, started_at, deleted_at FROM sessions WHERE id = $1 AND user_id = $2",
-          [sessionId, userId]
+          [workoutId, userId]
         );
-        if (sessionRows.length === 0) {
-          return toolResponse({ error: `Session ${restore_session} not found` }, true);
+        if (workoutRows.length === 0) {
+          return toolResponse({ error: `Workout ${restore_workout} not found` }, true);
         }
-        if (!sessionRows[0].deleted_at) {
-          return toolResponse({ error: `Session ${restore_session} is not deleted` }, true);
+        if (!workoutRows[0].deleted_at) {
+          return toolResponse({ error: `Workout ${restore_workout} is not deleted` }, true);
         }
-        await pool.query("UPDATE sessions SET deleted_at = NULL WHERE id = $1 AND user_id = $2", [sessionId, userId]);
+        await pool.query("UPDATE sessions SET deleted_at = NULL WHERE id = $1 AND user_id = $2", [workoutId, userId]);
         return toolResponse({
-          restored_session: sessionId,
-          started_at: sessionRows[0].started_at,
+          restored_workout: workoutId,
+          started_at: workoutRows[0].started_at,
         });
       }
 
-      // --- Bulk delete sessions mode ---
-      if (rawDeleteSessions !== undefined && rawDeleteSessions !== null) {
-        const sessionIds = parseJsonArrayParam<number>(rawDeleteSessions);
-        if (!sessionIds || !Array.isArray(sessionIds) || sessionIds.length === 0) {
-          return toolResponse({ error: "delete_sessions requires an array of session IDs" }, true);
+      // --- Bulk delete workouts mode ---
+      if (rawDeleteWorkouts !== undefined && rawDeleteWorkouts !== null) {
+        const workoutIds = parseJsonArrayParam<number>(rawDeleteWorkouts);
+        if (!workoutIds || !Array.isArray(workoutIds) || workoutIds.length === 0) {
+          return toolResponse({ error: "delete_workouts requires an array of workout IDs" }, true);
         }
 
         const deleted: number[] = [];
         const not_found: number[] = [];
 
-        for (const sid of sessionIds) {
-          const id = Number(sid);
+        for (const wid of workoutIds) {
+          const id = Number(wid);
           const { rows } = await pool.query(
             "UPDATE sessions SET deleted_at = NOW() WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL RETURNING id",
             [id, userId]
@@ -196,26 +196,26 @@ Parameters:
         });
       }
 
-      // --- Delete session mode (soft delete) ---
-      if (delete_session !== undefined && delete_session !== null) {
-        const sessionId = Number(delete_session);
-        if (Number.isNaN(sessionId)) {
-          return toolResponse({ error: "Invalid session ID" }, true);
+      // --- Delete workout mode (soft delete) ---
+      if (delete_workout !== undefined && delete_workout !== null) {
+        const workoutId = Number(delete_workout);
+        if (Number.isNaN(workoutId)) {
+          return toolResponse({ error: "Invalid workout ID" }, true);
         }
         // Verify ownership
-        const { rows: sessionRows } = await pool.query(
+        const { rows: workoutRows } = await pool.query(
           "SELECT id, started_at, ended_at FROM sessions WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",
-          [sessionId, userId]
+          [workoutId, userId]
         );
-        if (sessionRows.length === 0) {
-          return toolResponse({ error: `Session ${delete_session} not found` }, true);
+        if (workoutRows.length === 0) {
+          return toolResponse({ error: `Workout ${delete_workout} not found` }, true);
         }
 
-        await pool.query("UPDATE sessions SET deleted_at = NOW() WHERE id = $1 AND user_id = $2", [sessionId, userId]);
+        await pool.query("UPDATE sessions SET deleted_at = NOW() WHERE id = $1 AND user_id = $2", [workoutId, userId]);
 
         return toolResponse({
-          deleted_session: sessionId,
-          started_at: sessionRows[0].started_at,
+          deleted_workout: workoutId,
+          started_at: workoutRows[0].started_at,
         });
       }
 
@@ -229,7 +229,7 @@ Parameters:
           const result = await processSingleEdit({
             userId,
             exercise: entry.exercise,
-            session,
+            workout,
             action: entryAction,
             updates: entryUpdates,
             set_numbers: entry.set_numbers,
@@ -254,7 +254,7 @@ Parameters:
       const result = await processSingleEdit({
         userId,
         exercise,
-        session,
+        workout,
         action,
         updates,
         set_numbers,
@@ -275,7 +275,7 @@ Parameters:
 async function processSingleEdit(params: {
   userId: number;
   exercise: string;
-  session?: string;
+  workout?: string;
   action: string;
   updates?: { reps?: number; weight?: number; rpe?: number; set_type?: string; notes?: string };
   set_numbers?: number[];
@@ -283,50 +283,50 @@ async function processSingleEdit(params: {
   set_type_filter?: string;
   userDate: string;
 }): Promise<Record<string, any>> {
-  const { userId, exercise, session, action, updates, set_numbers, set_ids, set_type_filter, userDate } = params;
+  const { userId, exercise, workout, action, updates, set_numbers, set_ids, set_type_filter, userDate } = params;
 
   const resolved = await findExercise(exercise);
   if (!resolved) {
     return { error: `Exercise "${exercise}" not found` };
   }
 
-  // Find the session
+  // Find the workout
   const queryParams: any[] = [resolved.id, userId];
-  let sessionFilter: string;
-  if (!session || session === "today") {
+  let workoutFilter: string;
+  if (!workout || workout === "today") {
     queryParams.push(userDate);
-    sessionFilter = `AND s.started_at >= $${queryParams.length}::date AND s.started_at < $${queryParams.length}::date + INTERVAL '1 day'`;
-  } else if (session === "last") {
-    sessionFilter = "";
+    workoutFilter = `AND s.started_at >= $${queryParams.length}::date AND s.started_at < $${queryParams.length}::date + INTERVAL '1 day'`;
+  } else if (workout === "last") {
+    workoutFilter = "";
   } else {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(session)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(workout)) {
       return { error: "Invalid date format. Use YYYY-MM-DD" };
     }
-    const parsed = new Date(session + 'T00:00:00Z');
+    const parsed = new Date(workout + 'T00:00:00Z');
     if (isNaN(parsed.getTime())) {
       return { error: "Invalid date. Use a valid YYYY-MM-DD date" };
     }
-    queryParams.push(session);
-    sessionFilter = `AND s.started_at >= $${queryParams.length}::date AND s.started_at < $${queryParams.length}::date + INTERVAL '1 day'`;
+    queryParams.push(workout);
+    workoutFilter = `AND s.started_at >= $${queryParams.length}::date AND s.started_at < $${queryParams.length}::date + INTERVAL '1 day'`;
   }
 
-  // Get ALL session_exercises for that exercise in that session (handles legacy data with multiple entries)
-  const { rows: sessionExercises } = await pool.query(
+  // Get ALL session_exercises for that exercise in that workout (handles legacy data with multiple entries)
+  const { rows: workoutExercises } = await pool.query(
     `SELECT se.id, s.id as session_id, s.started_at
      FROM session_exercises se
      JOIN sessions s ON s.id = se.session_id
-     WHERE se.exercise_id = $1 AND s.user_id = $2 AND s.deleted_at IS NULL ${sessionFilter}
+     WHERE se.exercise_id = $1 AND s.user_id = $2 AND s.deleted_at IS NULL ${workoutFilter}
      ORDER BY s.started_at DESC`,
     queryParams
   );
 
-  if (sessionExercises.length === 0) {
-    return { error: `No sets found for ${resolved.name} in the specified session` };
+  if (workoutExercises.length === 0) {
+    return { error: `No sets found for ${resolved.name} in the specified workout` };
   }
 
-  // Collect all session_exercise IDs (for the most recent session)
-  const targetSessionId = sessionExercises[0].session_id;
-  const seIds = sessionExercises
+  // Collect all session_exercise IDs (for the most recent workout)
+  const targetSessionId = workoutExercises[0].session_id;
+  const seIds = workoutExercises
     .filter((se: any) => se.session_id === targetSessionId)
     .map((se: any) => se.id);
 

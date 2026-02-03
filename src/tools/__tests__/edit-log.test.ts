@@ -25,7 +25,7 @@ import { registerEditLogTool } from "../edit-log.js";
 
 let toolHandler: Function;
 
-describe("edit_log tool", () => {
+describe("edit_workout tool", () => {
   beforeEach(() => {
     mockQuery.mockReset();
 
@@ -113,13 +113,13 @@ describe("edit_log tool", () => {
     });
   });
 
-  describe("restore_session", () => {
+  describe("restore_workout", () => {
     it("includes user_id in UPDATE query", async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 1, started_at: "2024-01-15", deleted_at: "2024-01-16" }] })
         .mockResolvedValueOnce({});
 
-      await toolHandler({ restore_session: 1 });
+      await toolHandler({ restore_workout: 1 });
 
       // The UPDATE query should include AND user_id = $2
       const updateCall = mockQuery.mock.calls[1];
@@ -128,13 +128,13 @@ describe("edit_log tool", () => {
     });
   });
 
-  describe("delete_session", () => {
+  describe("delete_workout", () => {
     it("includes user_id in UPDATE query", async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 1, started_at: "2024-01-15", ended_at: "2024-01-15" }] })
         .mockResolvedValueOnce({});
 
-      await toolHandler({ delete_session: 1 });
+      await toolHandler({ delete_workout: 1 });
 
       // The UPDATE query should include AND user_id = $2
       const updateCall = mockQuery.mock.calls[1];
@@ -143,31 +143,31 @@ describe("edit_log tool", () => {
     });
   });
 
-  describe("delete_sessions bulk", () => {
-    it("rejects without session IDs array", async () => {
-      const result = await toolHandler({ delete_sessions: "[]" });
+  describe("delete_workouts bulk", () => {
+    it("rejects without workout IDs array", async () => {
+      const result = await toolHandler({ delete_workouts: "[]" });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain("array of session IDs");
+      expect(parsed.error).toContain("array of workout IDs");
     });
 
-    it("soft-deletes multiple sessions and reports not_found", async () => {
+    it("soft-deletes multiple workouts and reports not_found", async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 1 }] })
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [{ id: 3 }] });
 
-      const result = await toolHandler({ delete_sessions: [1, 2, 3] });
+      const result = await toolHandler({ delete_workouts: [1, 2, 3] });
       const parsed = JSON.parse(result.content[0].text);
 
       expect(parsed.deleted).toEqual([1, 3]);
       expect(parsed.not_found).toEqual([2]);
     });
 
-    it("handles JSON string workaround for delete_sessions", async () => {
+    it("handles JSON string workaround for delete_workouts", async () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 5 }] });
 
-      const result = await toolHandler({ delete_sessions: JSON.stringify([5]) });
+      const result = await toolHandler({ delete_workouts: JSON.stringify([5]) });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.deleted).toEqual([5]);
     });

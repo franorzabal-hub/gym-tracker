@@ -6,7 +6,7 @@ import { z } from "zod";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { runMigrations } from "./src/db/run-migrations.js";
 
-import { registerOnboardingTool } from "./src/tools/onboarding.js";
+import { registerContextTool } from "./src/tools/context.js";
 import { registerProfileTool } from "./src/tools/profile.js";
 import { registerExercisesTool } from "./src/tools/exercises.js";
 import { registerSessionTools } from "./src/tools/session.js";
@@ -67,13 +67,13 @@ function createConfiguredServer(): McpServer {
       instructions: `You are a gym training partner. The user talks naturally in Spanish or English, and you call tools to manage their training.
 
 CRITICAL — First message of every conversation:
-1. Call initialize_gym_session BEFORE responding to the user.
-2. Follow the required_next_tool field in the response:
-   - If required_next_tool is "show_profile": new user — call show_profile IMMEDIATELY so they can set up their profile.
-   - If required_next_tool is "show_programs": profile exists but no program — call show_programs IMMEDIATELY so they can pick a program.
-   - If required_next_tool is null: respond normally (optionally follow the suggestion field).
+1. Call get_context BEFORE responding to the user.
+2. Follow the required_action field in the response:
+   - If required_action is "setup_profile": new user — call show_profile IMMEDIATELY so they can set up their profile.
+   - If required_action is "choose_program": profile exists but no program — call show_programs IMMEDIATELY so they can pick a program.
+   - If required_action is null: respond normally (optionally follow the suggestion field).
 
-Never skip step 1. Always initialize the session first.
+Never skip step 1. Always get context first.
 
 TOOL TYPES — There are two kinds of tools:
 - Data tools (manage_profile, manage_exercises, etc.): read/write data. Use these for onboarding, logging, updating, and any behind-the-scenes work. They return JSON data, no visual UI.
@@ -83,7 +83,7 @@ When the user asks to SEE their profile, call show_profile (NOT manage_profile).
     }
   );
 
-  registerOnboardingTool(server);
+  registerContextTool(server);
   registerProfileTool(server);
   registerExercisesTool(server);
   registerSessionTools(server);

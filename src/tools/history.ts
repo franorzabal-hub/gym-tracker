@@ -7,11 +7,11 @@ import { parseJsonArrayParam, escapeIlike } from "../helpers/parse-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
 
 export function registerHistoryTool(server: McpServer) {
-  server.registerTool("get_history", {
-    description: `${APP_CONTEXT}Get workout history. Shows past sessions with exercises and sets.
+  server.registerTool("get_workouts", {
+    description: `${APP_CONTEXT}Get workout history. Shows past workouts with exercises and sets.
 Use period to filter: "today", "week", "month", "year", or a number of days.
 Optionally filter by exercise name or program_day label.
-Use session_id to fetch a specific session by ID (ignores other filters).
+Use workout_id to fetch a specific workout by ID (ignores other filters).
 Use limit/offset for pagination. Use summary_only for lightweight summaries.
 
 Examples:
@@ -29,7 +29,7 @@ Examples:
       exercise: z.string().optional(),
       program_day: z.string().optional(),
       tags: z.union([z.array(z.string()), z.string()]).optional().describe("Filter sessions that have ALL of these tags"),
-      session_id: z.number().int().optional().describe("Fetch a specific session by ID (ignores period/filters)"),
+      workout_id: z.number().int().optional().describe("Fetch a specific workout by ID (ignores period/filters)"),
       limit: z.number().int().optional().describe("Max sessions to return. Defaults to 50"),
       offset: z.number().int().optional().describe("Skip first N sessions for pagination. Defaults to 0"),
       summary_only: z.boolean().optional().describe("If true, return only session summaries without exercise/set details"),
@@ -37,7 +37,7 @@ Examples:
     },
     annotations: { readOnlyHint: true },
   },
-    safeHandler("get_history", async ({ period, exercise, program_day, tags: rawTags, session_id, limit: rawLimit, offset: rawOffset, summary_only, include_sets }) => {
+    safeHandler("get_workouts", async ({ period, exercise, program_day, tags: rawTags, workout_id, limit: rawLimit, offset: rawOffset, summary_only, include_sets }) => {
       const tags = parseJsonArrayParam<string>(rawTags);
       const userId = getUserId();
       const effectiveLimit = rawLimit ?? 50;
@@ -46,9 +46,9 @@ Examples:
 
       const params: any[] = [userId];
 
-      // --- session_id mode: fetch single session, ignore other filters ---
-      if (session_id != null) {
-        params.push(session_id);
+      // --- workout_id mode: fetch single workout, ignore other filters ---
+      if (workout_id != null) {
+        params.push(workout_id);
 
         if (summary_only) {
           const sql = `

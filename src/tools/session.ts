@@ -7,24 +7,24 @@ import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response
 
 export function registerSessionTools(server: McpServer) {
   server.registerTool(
-    "end_session",
+    "end_workout",
     {
-      description: `${APP_CONTEXT}Use this when you need to end the current active workout session. Returns a summary with duration, exercises count, total sets, and total volume.
-Optionally add or update tags on the session.`,
+      description: `${APP_CONTEXT}End the current active workout. Returns a summary with duration, exercises count, total sets, total volume, and comparison vs last time.
+Optionally add or update tags on the workout.`,
       inputSchema: {
         notes: z.string().optional(),
         force: z.boolean().optional().default(false),
-        tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to set on this session (replaces existing tags)"),
+        tags: z.union([z.array(z.string()), z.string()]).optional().describe("Tags to set on this workout (replaces existing tags)"),
         summary_only: z.boolean().optional().describe("If true, return only summary totals without per-exercise set details"),
-        include_comparison: z.boolean().optional().describe("If true, include comparison with previous session. Defaults to true"),
+        include_comparison: z.boolean().optional().describe("If true, include comparison with previous workout. Defaults to true"),
       },
       annotations: {},
       _meta: {
-        "openai/toolInvocation/invoking": "Ending session...",
-        "openai/toolInvocation/invoked": "Session ended",
+        "openai/toolInvocation/invoking": "Ending workout...",
+        "openai/toolInvocation/invoked": "Workout ended",
       },
     },
-    safeHandler("end_session", async ({ notes, force, tags: rawTags, summary_only, include_comparison }) => {
+    safeHandler("end_workout", async ({ notes, force, tags: rawTags, summary_only, include_comparison }) => {
       const tags = parseJsonArrayParam<string>(rawTags);
       const userId = getUserId();
 
@@ -33,12 +33,12 @@ Optionally add or update tags on the session.`,
         [userId]
       );
       if (active.rows.length === 0) {
-        return toolResponse({ error: "No active session" }, true);
+        return toolResponse({ error: "No active workout" }, true);
       }
 
       const sessionId = active.rows[0].id;
 
-      // Check if session has any exercises with actual sets logged
+      // Check if workout has any exercises with actual sets logged
       const { rows: [exerciseCheck] } = await pool.query(
         `SELECT
            COUNT(DISTINCT se.id) as exercise_count,
@@ -54,21 +54,21 @@ Optionally add or update tags on the session.`,
 
       if (exerciseCount === 0 && !force) {
         return toolResponse({
-          warning: "Session has no exercises logged. Pass force: true to close anyway, or log exercises first.",
-          session_id: sessionId,
+          warning: "Workout has no exercises logged. Pass force: true to close anyway, or log exercises first.",
+          workout_id: sessionId,
           started_at: active.rows[0].started_at,
         });
       }
 
       if (exerciseCount > 0 && setCount === 0 && !force) {
         return toolResponse({
-          warning: `Session has ${exerciseCount} planned exercise(s) but no sets logged. Log sets with log_workout or pass force: true to close anyway.`,
-          session_id: sessionId,
+          warning: `Workout has ${exerciseCount} planned exercise(s) but no sets logged. Log sets with log_workout or pass force: true to close anyway.`,
+          workout_id: sessionId,
           started_at: active.rows[0].started_at,
         });
       }
 
-      // If session was backdated, set ended_at relative to started_at instead of NOW()
+      // If workout was backdated, set ended_at relative to started_at instead of NOW()
       const sessionStarted = new Date(active.rows[0].started_at);
       const isBackdated = (Date.now() - sessionStarted.getTime()) > 24 * 60 * 60 * 1000;
       const endedAt = isBackdated
@@ -98,7 +98,7 @@ Optionally add or update tags on the session.`,
 
       // If summary_only, return minimal response without exercise details or comparison
       if (summary_only) {
-        // Get new PRs achieved during this session
+        // Get new PRs achieved during this workout
         const { rows: newPrs } = await pool.query(
           `SELECT e.name as exercise, ph.record_type, ph.value
            FROM pr_history ph
@@ -110,7 +110,7 @@ Optionally add or update tags on the session.`,
         );
 
         const summaryData = {
-          session_id: sessionId,
+          workout_id: sessionId,
           duration_minutes: Math.round(summary.duration_minutes),
           exercises_count: Number(summary.exercises_count),
           total_sets: Number(summary.total_sets),
@@ -147,7 +147,7 @@ Optionally add or update tags on the session.`,
         }
       }
 
-      // Session comparison - find previous session with same program_day
+      // Workout comparison - find previous workout with same program_day
       let comparison: any = undefined;
       if (include_comparison !== false) {
         const { rows: [currentSession] } = await pool.query(
@@ -165,7 +165,7 @@ Optionally add or update tags on the session.`,
           if (prevSessions.length > 0) {
             const prevId = prevSessions[0].id;
 
-            // Get previous session volume
+            // Get previous workout volume
             const { rows: [prevSummary] } = await pool.query(
               `SELECT COALESCE(SUM(CASE WHEN st.set_type != 'warmup' THEN st.weight * st.reps ELSE 0 END), 0) as volume
                FROM session_exercises se
@@ -219,7 +219,7 @@ Optionally add or update tags on the session.`,
       }
 
       const endData = {
-        session_id: sessionId,
+        workout_id: sessionId,
         duration_minutes: Math.round(summary.duration_minutes),
         exercises_count: Number(summary.exercises_count),
         total_sets: Number(summary.total_sets),
@@ -229,69 +229,6 @@ Optionally add or update tags on the session.`,
         comparison: comparison || undefined,
       };
       return toolResponse(endData);
-    })
-  );
-
-  server.registerTool(
-    "get_active_session",
-    {
-      description: `${APP_CONTEXT}Use this when you need to check if there is an active (open) workout session. Returns session details with exercises logged so far, or indicates no active session.`,
-      inputSchema: {},
-      annotations: { readOnlyHint: true },
-    },
-    safeHandler("get_active_session", async () => {
-      const userId = getUserId();
-
-      const { rows } = await pool.query(
-        "SELECT id, started_at, program_day_id, tags FROM sessions WHERE user_id = $1 AND ended_at IS NULL AND deleted_at IS NULL ORDER BY started_at DESC LIMIT 1",
-        [userId]
-      );
-
-      if (rows.length === 0) {
-        return toolResponse({ active: false });
-      }
-
-      const session = rows[0];
-      const durationMinutes = Math.round((Date.now() - new Date(session.started_at).getTime()) / 60000);
-
-      // Get program day label
-      let programDay: string | undefined;
-      if (session.program_day_id) {
-        const { rows: dayRows } = await pool.query(
-          "SELECT day_label FROM program_days WHERE id = $1",
-          [session.program_day_id]
-        );
-        if (dayRows.length > 0) programDay = dayRows[0].day_label;
-      }
-
-      // Get exercises + sets
-      const { rows: exerciseDetails } = await pool.query(
-        `SELECT e.name, se.group_id, seg.group_type, seg.label as group_label,
-           se.section_id, ss.label as section_label, ss.notes as section_notes,
-           COALESCE(json_agg(json_build_object(
-             'set_id', st.id, 'set_number', st.set_number, 'reps', st.reps, 'weight', st.weight, 'rpe', st.rpe, 'set_type', st.set_type
-           ) ORDER BY st.set_number) FILTER (WHERE st.id IS NOT NULL), '[]') as sets
-         FROM session_exercises se
-         JOIN exercises e ON e.id = se.exercise_id
-         LEFT JOIN sets st ON st.session_exercise_id = se.id
-         LEFT JOIN session_exercise_groups seg ON seg.id = se.group_id
-         LEFT JOIN session_sections ss ON ss.id = se.section_id
-         WHERE se.session_id = $1
-         GROUP BY se.id, e.name, se.group_id, seg.group_type, seg.label, se.section_id, ss.label, ss.notes, se.sort_order
-         ORDER BY se.sort_order`,
-        [session.id]
-      );
-
-      const activeData = {
-        active: true,
-        session_id: session.id,
-        started_at: session.started_at,
-        duration_minutes: durationMinutes,
-        program_day: programDay,
-        tags: session.tags || [],
-        exercises: exerciseDetails.map((e: any) => ({ name: e.name, group_id: e.group_id, group_type: e.group_type, group_label: e.group_label, section_id: e.section_id, section_label: e.section_label, section_notes: e.section_notes, sets: e.sets })),
-      };
-      return toolResponse(activeData);
     })
   );
 }

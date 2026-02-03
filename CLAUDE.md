@@ -105,7 +105,7 @@ server.ts                    # Express + MCP server + auth middleware
 src/auth/                    # middleware.ts, oauth-routes.ts, workos.ts
 src/context/user-context.ts  # AsyncLocalStorage: getUserId() / runWithUser()
 src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-020
-src/tools/                   # 15 files → 20 MCP tools (13 data + 7 display)
+src/tools/                   # 15 files → 19 MCP tools (12 data + 7 display)
 src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts, log-exercise-helper.ts, group-helpers.ts, section-helpers.ts, date-helpers.ts, parse-helpers.ts, tool-response.ts
 src/helpers/__tests__/       # Vitest tests for helpers (exercise-resolver, program-helpers, stats-calculator, group-helpers, section-helpers)
 src/resources/               # register-widgets.ts — registers all widget resources
@@ -152,24 +152,23 @@ dynamic_clients (client_id PK, redirect_uris TEXT[])
 
 Key: per-set rows, program versioning, soft delete on sessions, GIN index on tags, `rep_type` (reps/seconds/meters/calories), `exercise_type` (strength/mobility/cardio/warmup — PRs only for strength). Exercise groups (superset/paired/circuit) are first-class entities with label, notes, rest_seconds — 2 tables (program/session) for referential integrity. Sections are optional containers between day and exercises (e.g. "Warm-up", "Main work") — 2 tables (program_sections/session_sections) with section_id FK on exercise tables (ON DELETE SET NULL). Auth tokens/codes persisted in Postgres with TTL cleanup every 15 min.
 
-## MCP Tools (20)
+## MCP Tools (19)
 
-### Data Tools (13) — return JSON, no UI
+### Data Tools (12) — return JSON, no UI
 
 | Tool | Actions / Params |
 |---|---|
-| `initialize_gym_session` | MANDATORY first call. Returns user state + `required_next_tool` routing. New users → `show_profile`, then `show_programs` |
+| `get_context` | MANDATORY first call. Returns full user context in single call: profile, program, active_workout, routing. Follow `required_action` field: "setup_profile" → show_profile, "choose_program" → show_programs |
 | `manage_profile` | get, update (JSONB) |
 | `manage_exercises` | list, search, add, add_bulk, update, update_bulk, delete, delete_bulk |
 | `manage_program` | list, get, create, clone, update, activate, delete, delete_bulk, history |
-| `log_workout` | Unified: start session, log exercise(s), log routine day. Auto-creates session, infers program day, supports overrides/skip, single/bulk exercises, PR check. Replaces start_session + log_exercise + log_routine |
-| `end_session` | notes?, force?, tags? — summary + comparison vs last |
-| `get_active_session` | no params — returns active session with exercises or `{active: false}` |
-| `get_today_plan` | no params — today's day + exercises + last workout (read-only, no session created) |
-| `get_history` | period, exercise?, program_day?, tags? filter |
+| `log_workout` | Unified: start workout, log exercise(s), log routine day. Auto-creates workout, infers program day, supports overrides/skip, single/bulk exercises, PR check |
+| `end_workout` | notes?, force?, tags? — summary + comparison vs last |
+| `get_today_plan` | no params — today's day + exercises + last workout (read-only, no workout created) |
+| `get_workouts` | period, exercise?, program_day?, tags? filter, workout_id for specific workout |
 | `get_stats` | single (`exercise`) or multi (`exercises[]`), period — PRs, progression, volume, frequency |
-| `edit_log` | update/delete sets, bulk[], delete_session, restore_session, delete_sessions[] |
-| `manage_body_measurements` | log, history, latest — temporal tracking (weight_kg, body_fat_pct, chest_cm, etc.) |
+| `edit_workout` | update/delete sets, bulk[], delete_workout, restore_workout, delete_workouts[], validate_workout |
+| `manage_measurements` | log, history, latest — temporal tracking (weight_kg, body_fat_pct, chest_cm, etc.) |
 | `export_data` | json or csv — scopes: all, sessions, exercises, programs, measurements, prs; period filter |
 
 ### Display Tools (7) — render visual widgets, LLM must NOT repeat data
@@ -199,7 +198,7 @@ For full widget documentation, see:
 ### JSON String Workaround
 MCP clients may serialize arrays as JSON strings. Two helpers in `src/helpers/parse-helpers.ts`:
 - `parseJsonParam<T>(value)`: parse JSON string or pass through. Returns `null` on failure. Used for complex object arrays (exercises bulk, days, overrides, skip).
-- `parseJsonArrayParam<T>(value)`: same but wraps plain strings into `[value]` instead of returning null. Used for simple string arrays (tags, names, delete_sessions, exercise names in stats).
+- `parseJsonArrayParam<T>(value)`: same but wraps plain strings into `[value]` instead of returning null. Used for simple string arrays (tags, names, delete_workouts, exercise names in stats).
 
 ### Tool Response Format
 All tools return `{ content: [{ type: "text", text: JSON.stringify({...}) }] }`. Errors add `isError: true`.

@@ -21,7 +21,7 @@ import { registerHistoryTool } from "../history.js";
 
 let toolHandler: Function;
 
-describe("get_history tool", () => {
+describe("get_workouts tool", () => {
   beforeEach(() => {
     mockQuery.mockReset();
 
