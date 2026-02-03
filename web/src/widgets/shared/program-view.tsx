@@ -818,6 +818,88 @@ export function DayCarousel({ days, activeIdx, goTo }: { days: Day[]; activeIdx:
   );
 }
 
+/** Program navigation tabs with accessibility and keyboard support */
+export function ProgramTabs({ programs, activeIdx, goTo }: { programs: Program[]; activeIdx: number; goTo: (idx: number) => void }) {
+  const tabsRef = useRef<HTMLDivElement>(null);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const len = programs.length;
+    switch (e.key) {
+      case "ArrowRight":
+        e.preventDefault();
+        goTo((activeIdx + 1) % len);
+        break;
+      case "ArrowLeft":
+        e.preventDefault();
+        goTo((activeIdx - 1 + len) % len);
+        break;
+      case "Home":
+        e.preventDefault();
+        goTo(0);
+        break;
+      case "End":
+        e.preventDefault();
+        goTo(len - 1);
+        break;
+    }
+  }, [programs.length, activeIdx, goTo]);
+
+  if (programs.length <= 1) return null;
+
+  return (
+    <div
+      ref={tabsRef}
+      role="tablist"
+      aria-label="Programs"
+      onKeyDown={handleKeyDown}
+      style={{
+        display: "flex",
+        borderBottom: "1px solid var(--border)",
+        overflowX: "auto",
+        scrollbarWidth: "none",
+        gap: sp[1],
+        marginBottom: sp[6],
+      }}
+    >
+      {programs.map((program, i) => {
+        const isActive = i === activeIdx;
+
+        return (
+          <button
+            key={program.id}
+            role="tab"
+            aria-selected={isActive}
+            aria-controls={`program-panel-${i}`}
+            tabIndex={isActive ? 0 : -1}
+            onClick={() => goTo(i)}
+            className="day-tab"
+            style={{
+              fontSize: font.sm,
+              fontWeight: isActive ? weight.semibold : weight.medium,
+              marginBottom: "-1px",
+              background: "transparent",
+              border: "none",
+              borderBottomWidth: "2px",
+              borderBottomStyle: "solid",
+              borderBottomColor: isActive ? "var(--primary)" : "transparent",
+              color: isActive ? "var(--primary)" : "var(--text-secondary)",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+              maxWidth: 150,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+            title={program.name}
+          >
+            {program.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Day navigation tabs with accessibility and keyboard support */
 export function DayTabs({ days, activeIdx, goTo }: { days: Day[]; activeIdx: number; goTo: (idx: number) => void }) {
   const tabsRef = useRef<HTMLDivElement>(null);

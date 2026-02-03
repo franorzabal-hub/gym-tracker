@@ -1,93 +1,13 @@
 import { createRoot } from "react-dom/client";
-import { useState, useRef, useCallback, KeyboardEvent } from "react";
+import { useState, useCallback } from "react";
 import { useToolOutput } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
 import { sp, radius, font, maxWidth } from "../tokens.js";
 import "../styles.css";
-import { type Program, ProgramView } from "./shared/program-view.js";
+import { type Program, ProgramView, ProgramTabs } from "./shared/program-view.js";
 
 interface ProgramsListData {
   programs: Program[];
-}
-
-// ── Dot indicators ──
-
-function DotIndicator({ total, active, onDot }: { total: number; active: number; onDot: (i: number) => void }) {
-  if (total <= 1) return null;
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    switch (e.key) {
-      case "ArrowRight":
-        e.preventDefault();
-        onDot(Math.min(active + 1, total - 1));
-        break;
-      case "ArrowLeft":
-        e.preventDefault();
-        onDot(Math.max(active - 1, 0));
-        break;
-      case "Home":
-        e.preventDefault();
-        onDot(0);
-        break;
-      case "End":
-        e.preventDefault();
-        onDot(total - 1);
-        break;
-    }
-  };
-
-  return (
-    <nav
-      role="tablist"
-      aria-label="Programs navigation"
-      onKeyDown={handleKeyDown}
-      style={{ display: "flex", gap: sp[3], justifyContent: "center", padding: `${sp[5]}px 0` }}
-    >
-      {Array.from({ length: total }, (_, i) => (
-        <button
-          key={i}
-          role="tab"
-          aria-selected={i === active}
-          aria-label={`Program ${i + 1} of ${total}`}
-          tabIndex={i === active ? 0 : -1}
-          onClick={() => onDot(i)}
-          style={{
-            width: i === active ? 18 : 8,
-            height: 8,
-            borderRadius: radius.sm,
-            background: i === active ? "var(--primary)" : "var(--border)",
-            cursor: "pointer",
-            transition: "all 0.2s",
-            boxSizing: "content-box",
-            border: `${sp[5]}px solid transparent`,
-            padding: 0,
-          }}
-        />
-      ))}
-    </nav>
-  );
-}
-
-// ── Swipe hook ──
-
-function useSwipe(onSwipe: (dir: -1 | 1) => void) {
-  const touchRef = useRef<{ startX: number; startY: number } | null>(null);
-
-  const onTouchStart = useCallback((e: React.TouchEvent) => {
-    touchRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY };
-  }, []);
-
-  const onTouchEnd = useCallback((e: React.TouchEvent) => {
-    if (!touchRef.current) return;
-    const dx = e.changedTouches[0].clientX - touchRef.current.startX;
-    const dy = e.changedTouches[0].clientY - touchRef.current.startY;
-    touchRef.current = null;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
-      onSwipe(dx < 0 ? 1 : -1);
-    }
-  }, [onSwipe]);
-
-  return { onTouchStart, onTouchEnd };
 }
 
 // ── Program card using shared ProgramView ──
@@ -113,6 +33,12 @@ function ProgramCard({ program }: { program: Program }) {
 function SkeletonProgramsList() {
   return (
     <div className="profile-card" role="status" aria-label="Loading programs">
+      {/* Tabs skeleton */}
+      <div style={{ display: "flex", gap: sp[2], borderBottom: "1px solid var(--border)", paddingBottom: sp[3], marginBottom: sp[6] }}>
+        {[1, 2, 3].map(i => (
+          <div key={i} className="skeleton" style={{ width: 80, height: 24, borderRadius: radius.sm }} />
+        ))}
+      </div>
       {/* Header skeleton */}
       <div style={{ marginBottom: sp[6] }}>
         <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginBottom: sp[2] }}>
@@ -120,12 +46,6 @@ function SkeletonProgramsList() {
           <div className="skeleton" style={{ width: 60, height: 20, borderRadius: radius.lg }} />
         </div>
         <div className="skeleton" style={{ width: 120, height: font.sm, marginBottom: sp[4] }} />
-        {/* Weekday pills skeleton */}
-        <div style={{ display: "flex", gap: sp[2] }}>
-          {[1, 2, 3, 4, 5, 6, 7].map(i => (
-            <div key={i} className="skeleton" style={{ width: 24, height: 24, borderRadius: radius.full }} />
-          ))}
-        </div>
       </div>
       {/* Day content skeleton */}
       <div>
@@ -154,8 +74,6 @@ function ProgramsListWidget() {
     setActiveIdx(Math.max(0, Math.min(idx, programs.length - 1)));
   }, [programs.length]);
 
-  const { onTouchStart, onTouchEnd } = useSwipe((dir) => goTo(activeIdx + dir));
-
   if (!data) return <SkeletonProgramsList />;
 
   if (programs.length === 0) {
@@ -168,34 +86,22 @@ function ProgramsListWidget() {
     );
   }
 
+  const activeProgram = programs[activeIdx];
+
   return (
     <div
       className="profile-card"
       style={{ maxWidth: maxWidth.widget }}
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
       role="region"
       aria-label="Your programs"
     >
-      {/* Grid stacks all programs in the same cell — container takes the tallest height */}
-      <div style={{ display: "grid" }} role="tabpanel" aria-live="polite">
-        {programs.map((prog, i) => (
-          <div
-            key={prog.id}
-            style={{
-              gridRow: 1,
-              gridColumn: 1,
-              visibility: i === activeIdx ? "visible" : "hidden",
-              pointerEvents: i === activeIdx ? "auto" : "none",
-            }}
-            aria-hidden={i !== activeIdx}
-          >
-            <ProgramCard program={prog} />
-          </div>
-        ))}
-      </div>
+      {/* Program tabs */}
+      <ProgramTabs programs={programs} activeIdx={activeIdx} goTo={goTo} />
 
-      <DotIndicator total={programs.length} active={activeIdx} onDot={goTo} />
+      {/* Active program content */}
+      <div role="tabpanel" id={`program-panel-${activeIdx}`} aria-live="polite">
+        <ProgramCard program={activeProgram} />
+      </div>
     </div>
   );
 }

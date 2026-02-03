@@ -1,10 +1,10 @@
 import { createRoot } from "react-dom/client";
-import { useState, useRef, useCallback, KeyboardEvent } from "react";
+import { useState, useCallback } from "react";
 import { useToolOutput, useCallTool } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
 import { sp, radius, font, maxWidth } from "../tokens.js";
 import "../styles.css";
-import { type Program, ProgramView } from "./shared/program-view.js";
+import { type Program, ProgramView, ProgramTabs } from "./shared/program-view.js";
 
 interface GlobalProgram extends Program {
   days_per_week: number;
@@ -14,86 +14,6 @@ interface AvailableProgramsData {
   profile: Record<string, any>;
   globalPrograms: GlobalProgram[];
   clonedNames: string[];
-}
-
-// ── Dot indicators ──
-
-function DotIndicator({ total, active, onDot }: { total: number; active: number; onDot: (i: number) => void }) {
-  if (total <= 1) return null;
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    switch (e.key) {
-      case "ArrowRight":
-        e.preventDefault();
-        onDot(Math.min(active + 1, total - 1));
-        break;
-      case "ArrowLeft":
-        e.preventDefault();
-        onDot(Math.max(active - 1, 0));
-        break;
-      case "Home":
-        e.preventDefault();
-        onDot(0);
-        break;
-      case "End":
-        e.preventDefault();
-        onDot(total - 1);
-        break;
-    }
-  };
-
-  return (
-    <nav
-      role="tablist"
-      aria-label="Programs navigation"
-      onKeyDown={handleKeyDown}
-      style={{ display: "flex", gap: sp[3], justifyContent: "center", padding: `${sp[5]}px 0` }}
-    >
-      {Array.from({ length: total }, (_, i) => (
-        <button
-          key={i}
-          role="tab"
-          aria-selected={i === active}
-          aria-label={`Program ${i + 1} of ${total}`}
-          tabIndex={i === active ? 0 : -1}
-          onClick={() => onDot(i)}
-          style={{
-            width: i === active ? 18 : 8,
-            height: 8,
-            borderRadius: radius.sm,
-            background: i === active ? "var(--primary)" : "var(--border)",
-            cursor: "pointer",
-            transition: "all 0.2s",
-            boxSizing: "content-box",
-            border: `${sp[5]}px solid transparent`,
-            padding: 0,
-          }}
-        />
-      ))}
-    </nav>
-  );
-}
-
-// ── Swipe hook ──
-
-function useSwipe(onSwipe: (dir: -1 | 1) => void) {
-  const touchRef = useRef<{ startX: number; startY: number } | null>(null);
-
-  const onTouchStart = useCallback((e: React.TouchEvent) => {
-    touchRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY };
-  }, []);
-
-  const onTouchEnd = useCallback((e: React.TouchEvent) => {
-    if (!touchRef.current) return;
-    const dx = e.changedTouches[0].clientX - touchRef.current.startX;
-    const dy = e.changedTouches[0].clientY - touchRef.current.startY;
-    touchRef.current = null;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
-      onSwipe(dx < 0 ? 1 : -1);
-    }
-  }, [onSwipe]);
-
-  return { onTouchStart, onTouchEnd };
 }
 
 // ── Program card using shared ProgramView ──
@@ -141,10 +61,18 @@ function ProgramCard({ program, badge, actionLabel, actionVariant, loading, onAc
 function SkeletonAvailablePrograms() {
   return (
     <div className="profile-card" role="status" aria-label="Loading programs">
+      {/* Header */}
       <div style={{ display: "flex", alignItems: "baseline", gap: sp[4], marginBottom: sp[6] }}>
         <div className="skeleton" style={{ width: 140, height: font.lg }} />
         <div className="skeleton" style={{ width: 20, height: font.sm }} />
       </div>
+      {/* Tabs skeleton */}
+      <div style={{ display: "flex", gap: sp[2], borderBottom: "1px solid var(--border)", paddingBottom: sp[3], marginBottom: sp[6] }}>
+        {[1, 2, 3].map(i => (
+          <div key={i} className="skeleton" style={{ width: 80, height: 24, borderRadius: radius.sm }} />
+        ))}
+      </div>
+      {/* Program content */}
       <div style={{ marginBottom: sp[6] }}>
         <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginBottom: sp[2] }}>
           <div className="skeleton" style={{ width: 160, height: font["2xl"] }} />
@@ -195,8 +123,6 @@ function AvailableProgramsWidget() {
     setGlobalIdx(Math.max(0, Math.min(idx, globalPrograms.length - 1)));
   }, [globalPrograms.length]);
 
-  const { onTouchStart, onTouchEnd } = useSwipe((dir) => goToGlobal(globalIdx + dir));
-
   if (!data) return <SkeletonAvailablePrograms />;
 
   // Success state after clone
@@ -237,6 +163,14 @@ function AvailableProgramsWidget() {
   };
 
   const globalProgram = globalPrograms[globalIdx];
+  const isCloned = clonedNamesLower.includes(globalProgram.name.toLowerCase());
+  const isRecommended = globalProgram.id === recommendedId;
+
+  const badge = isCloned
+    ? <span className="badge badge-muted">Already added</span>
+    : isRecommended
+      ? <span className="badge badge-primary">Recommended</span>
+      : null;
 
   return (
     <div
@@ -247,36 +181,25 @@ function AvailableProgramsWidget() {
     >
       {error && <div style={{ color: "var(--danger)", fontSize: font.base, marginBottom: sp[4] }}>{error}</div>}
 
-      <div style={{ display: "flex", alignItems: "baseline", gap: sp[4], marginBottom: sp[6] }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: sp[4], marginBottom: sp[4] }}>
         <span style={{ fontSize: font.lg, fontWeight: 700, color: "var(--text)" }}>Available Programs</span>
         <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>{globalPrograms.length}</span>
       </div>
 
-      <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} role="tabpanel" aria-live="polite">
-        {globalProgram && (() => {
-          const isCloned = clonedNamesLower.includes(globalProgram.name.toLowerCase());
-          const isRecommended = globalProgram.id === recommendedId;
+      {/* Program tabs */}
+      <ProgramTabs programs={globalPrograms} activeIdx={globalIdx} goTo={goToGlobal} />
 
-          const badge = isCloned
-            ? <span className="badge badge-muted">Already added</span>
-            : isRecommended
-              ? <span className="badge badge-primary">Recommended</span>
-              : null;
-
-          return (
-            <ProgramCard
-              program={globalProgram}
-              badge={badge}
-              actionLabel={isCloned ? undefined : "Use this program"}
-              actionVariant="primary"
-              loading={loading && actionId === `clone-${globalProgram.id}`}
-              onAction={isCloned ? undefined : () => handleCloneGlobal(globalProgram.id, globalProgram.name)}
-            />
-          );
-        })()}
+      {/* Active program content */}
+      <div role="tabpanel" id={`program-panel-${globalIdx}`} aria-live="polite">
+        <ProgramCard
+          program={globalProgram}
+          badge={badge}
+          actionLabel={isCloned ? undefined : "Use this program"}
+          actionVariant="primary"
+          loading={loading && actionId === `clone-${globalProgram.id}`}
+          onAction={isCloned ? undefined : () => handleCloneGlobal(globalProgram.id, globalProgram.name)}
+        />
       </div>
-
-      <DotIndicator total={globalPrograms.length} active={globalIdx} onDot={goToGlobal} />
     </div>
   );
 }
