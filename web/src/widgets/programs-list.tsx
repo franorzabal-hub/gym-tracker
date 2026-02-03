@@ -202,13 +202,13 @@ function ProgramsListWidget() {
     >
       {error && <div style={{ color: "var(--danger)", fontSize: font.base, marginBottom: sp[4] }}>{error}</div>}
 
-      {/* Header (available mode only) */}
-      {mode === "available" && (
-        <div style={{ display: "flex", alignItems: "baseline", gap: sp[4], marginBottom: sp[4] }}>
-          <span style={{ fontSize: font.lg, fontWeight: 700, color: "var(--text)" }}>Available Programs</span>
-          <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>{programs.length}</span>
-        </div>
-      )}
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: sp[4], marginBottom: sp[4] }}>
+        <span style={{ fontSize: font.lg, fontWeight: 700, color: "var(--text)" }}>
+          {mode === "available" ? "Available Programs" : "My Programs"}
+        </span>
+        <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>{programs.length}</span>
+      </div>
 
       {/* Program tabs */}
       <ProgramTabs programs={programs} activeIdx={activeIdx} goTo={goTo} />
