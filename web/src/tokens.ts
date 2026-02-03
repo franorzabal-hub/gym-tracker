@@ -13,7 +13,7 @@ export const radius = {
 
 /** Font size (px) */
 export const font = {
-  "2xs": 9, xs: 10, sm: 11, base: 12, md: 13, lg: 14, xl: 15, "2xl": 18, "3xl": 22, "4xl": 24,
+  "2xs": 10, xs: 11, sm: 12, base: 13, md: 14, lg: 15, xl: 16, "2xl": 20, "3xl": 24, "4xl": 28,
 } as const;
 
 /** Font weight */

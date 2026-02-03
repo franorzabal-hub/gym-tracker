@@ -89,11 +89,45 @@ export const SS_COLORS = ["var(--primary)", "#10b981", "var(--warning)", "var(--
 // Consistent left padding for the content rail
 export const RAIL_PX = 18;
 
-export const GROUP_LABELS: Record<string, { icon: string; label: string; pattern: string }> = {
-  superset: { icon: "⚡", label: "Superset", pattern: "2 ejercicios seguidos sin pausa, descanso al terminar la ronda" },
-  paired: { icon: "🔗", label: "Paired", pattern: "El segundo se hace durante el descanso del primero, no suma tiempo" },
-  circuit: { icon: "🔄", label: "Circuit", pattern: "3+ ejercicios en secuencia sin pausa, descanso al terminar la ronda" },
+export const GROUP_LABELS: Record<string, { label: string }> = {
+  superset: { label: "Superset" },
+  paired: { label: "Paired" },
+  circuit: { label: "Circuit" },
 };
+
+/** Monochromatic SVG icons for group types */
+function GroupIcon({ type, size = 14 }: { type: string; size?: number }) {
+  const s = { width: size, height: size, display: "block" };
+  const color = "currentColor";
+  if (type === "superset") {
+    // Two parallel horizontal arrows (exchange)
+    return (
+      <svg viewBox="0 0 16 16" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={s}>
+        <path d="M2 5.5h10m-2.5-2.5L12 5.5 9.5 8" />
+        <path d="M14 10.5H4m2.5-2.5L4 10.5 6.5 13" />
+      </svg>
+    );
+  }
+  if (type === "paired") {
+    // Two interlocking links
+    return (
+      <svg viewBox="0 0 16 16" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={s}>
+        <path d="M6.5 9.5l3-3" />
+        <path d="M9 5l1.5-1.5a2.12 2.12 0 0 1 3 3L12 8" />
+        <path d="M7 8L5.5 9.5a2.12 2.12 0 0 0 3 3L10 11" />
+      </svg>
+    );
+  }
+  // circuit — circular arrows
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={s}>
+      <path d="M13.5 8a5.5 5.5 0 0 1-9.17 4.1" />
+      <path d="M2.5 8a5.5 5.5 0 0 1 9.17-4.1" />
+      <path d="M11 1.5L11.67 3.9 9.27 4.57" />
+      <path d="M5 14.5L4.33 12.1 6.73 11.43" />
+    </svg>
+  );
+}
 
 export function MuscleGroupTags({ exercises }: { exercises: Exercise[] }) {
   const groups = [...new Set(exercises.map(e => e.muscle_group).filter(Boolean))] as string[];
@@ -331,9 +365,9 @@ const EXERCISE_TYPE_LABELS: Record<string, string> = {
   cardio: "Cardio",
 };
 
-function ExerciseRow({ ex, exNum, note, showExerciseRest, isSecondary, typeLabel, hasMetaLine, hasPerSet, isLast }: {
-  ex: Exercise; exNum: number; note: string | null; showExerciseRest: boolean;
-  isSecondary: boolean; typeLabel: string | null; hasMetaLine: boolean; hasPerSet: boolean; isLast: boolean;
+function ExerciseRow({ ex, exNum, showExerciseRest, isSecondary, hasMetaLine, hasPerSet, isLast }: {
+  ex: Exercise; exNum: number; showExerciseRest: boolean;
+  isSecondary: boolean; hasMetaLine: boolean; hasPerSet: boolean; isLast: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const repsDisplay = ex.target_reps_per_set
@@ -348,76 +382,67 @@ function ExerciseRow({ ex, exNum, note, showExerciseRest, isSecondary, typeLabel
       <div
         style={{
           display: "flex",
-          alignItems: hasMetaLine ? "center" : "baseline",
+          alignItems: "baseline",
           justifyContent: "space-between",
           gap: sp[3],
           cursor: hasPerSet ? "pointer" : "default",
         }}
         onClick={hasPerSet ? () => setExpanded(!expanded) : undefined}
       >
-        {/* Left: number + name + type tag + note */}
+        {/* Left: number + name + type tag */}
         <div style={{ display: "flex", alignItems: "baseline", gap: sp[3], minWidth: 0 }}>
           <span style={{ fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.muted, minWidth: "1.2em", textAlign: "right", flexShrink: 0 }}>{exNum}</span>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: sp[2] }}>
-              <span style={{
-                fontWeight: isSecondary ? weight.normal : weight.medium,
-                fontSize: font.lg,
-                opacity: isSecondary ? opacity.high : 1,
-              }}>{ex.exercise_name}</span>
-              {typeLabel && (
-                <span style={{
-                  fontSize: font.xs,
-                  color: "var(--text-secondary)",
-                  opacity: opacity.medium,
-                  whiteSpace: "nowrap",
-                  flexShrink: 0,
-                }}>{typeLabel}</span>
-              )}
-              {note && <NoteTooltip text={note} />}
-              {hasPerSet && (
-                <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
-                  {expanded ? "▲" : "▼"}
-                </span>
-              )}
-            </div>
-          </div>
+          <span style={{
+            fontWeight: isSecondary ? weight.normal : weight.medium,
+            fontSize: font.lg,
+            opacity: isSecondary ? opacity.high : 1,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}>{ex.exercise_name}</span>
         </div>
-        {/* Right: data lines stacked */}
-        <div style={{ flexShrink: 0, textAlign: "right" }}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "flex-end", gap: sp[1], fontSize: font.md, whiteSpace: "nowrap" }}>
-            <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{ex.target_sets}</span>
-            <span style={{ opacity: opacity.muted }}>×</span>
-            <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>
-              {repsDisplay}
-            </span>
-            {ex.rep_type && REP_UNIT[ex.rep_type] && (
-              <span style={{ opacity: 0.5, fontSize: font.sm }}>{REP_UNIT[ex.rep_type]}</span>
-            )}
-            {weightDisplay != null && (
-              <>
-                <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>
-                <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{weightDisplay}</span>
-                <span style={{ opacity: 0.5, fontSize: font.sm }}>kg</span>
-              </>
-            )}
-          </div>
-          {hasMetaLine && (
-            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "baseline", gap: sp[1], fontSize: font.sm, color: "var(--text-secondary)", marginTop: sp[0.5] }}>
-              {ex.target_rpe != null && <RpeBadge rpe={ex.target_rpe} />}
-              {showExerciseRest && (
-                <>
-                  {ex.target_rpe != null && <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>}
-                  <span style={{ opacity: opacity.medium }}>
-                    ⏱ {formatRestSeconds(ex.rest_seconds!)}
-                  </span>
-                </>
-              )}
-            </div>
+        {/* Right: sets × reps · weight */}
+        <div style={{ flexShrink: 0, display: "flex", alignItems: "baseline", gap: sp[1], fontSize: font.md, whiteSpace: "nowrap" }}>
+          <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{ex.target_sets}</span>
+          <span style={{ opacity: opacity.muted }}>×</span>
+          <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>
+            {repsDisplay}
+          </span>
+          {ex.rep_type && REP_UNIT[ex.rep_type] && (
+            <span style={{ opacity: 0.5, fontSize: font.sm }}>{REP_UNIT[ex.rep_type]}</span>
+          )}
+          {weightDisplay != null && (
+            <>
+              <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>
+              <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{weightDisplay}</span>
+              <span style={{ opacity: 0.5, fontSize: font.sm }}>kg</span>
+            </>
           )}
         </div>
       </div>
-      {/* Per-set detail (expanded) */}
+      {/* Meta line: RPE + rest (below, right-aligned) */}
+      {hasMetaLine && (
+        <div style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "baseline",
+          gap: sp[1],
+          fontSize: font.sm,
+          color: "var(--text-secondary)",
+          marginTop: sp[0.5],
+        }}>
+          {ex.target_rpe != null && <RpeBadge rpe={ex.target_rpe} />}
+          {showExerciseRest && (
+            <>
+              {ex.target_rpe != null && <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>}
+              <span style={{ opacity: opacity.medium }}>
+                ⏱ {formatRestSeconds(ex.rest_seconds!)}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+      {/* Per-set detail (expanded on row click) */}
       {hasPerSet && expanded && (
         <div style={{
           marginTop: sp[2],
@@ -472,25 +497,20 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, colla
     return (
       <div style={{ marginBottom: sp[2] }}>
         {exercises.map((ex, i) => {
-          const note = cleanNotes(ex.notes, isGrouped, ex.muscle_group, ex.rep_type);
           const showExerciseRest = ex.rest_seconds != null;
           const isSecondary = (ex as any).exercise_type === "warmup" || (ex as any).exercise_type === "mobility" || (ex as any).exercise_type === "cardio";
-          const typeLabel = EXERCISE_TYPE_LABELS[(ex as any).exercise_type || ""] || null;
           const hasMetaLine = ex.target_rpe != null || showExerciseRest;
           const hasPerSet = ex.target_reps_per_set != null || ex.target_weight_per_set != null;
           return (
-            <ExerciseRow key={i} ex={ex} exNum={startIndex + i} note={note} showExerciseRest={showExerciseRest}
-              isSecondary={isSecondary} typeLabel={typeLabel} hasMetaLine={hasMetaLine} hasPerSet={hasPerSet} isLast={i >= exercises.length - 1} />
+            <ExerciseRow key={i} ex={ex} exNum={startIndex + i} showExerciseRest={showExerciseRest}
+              isSecondary={isSecondary} hasMetaLine={hasMetaLine} hasPerSet={hasPerSet} isLast={i >= exercises.length - 1} />
           );
         })}
       </div>
     );
   }
 
-  // Group type as readable label for the header
-  const groupTypeLabel = (GROUP_LABELS[type] || GROUP_LABELS.superset).label;
-  const headerLabel = groupLabel || groupTypeLabel;
-  const headerDetail = groupLabel ? groupTypeLabel : null;
+  const headerLabel = groupLabel || (GROUP_LABELS[type] || GROUP_LABELS.superset).label;
   const canCollapse = collapsible;
   const showExercises = canCollapse ? expanded : true;
 
@@ -508,7 +528,7 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, colla
           userSelect: "none",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
+        <div style={{ display: "flex", alignItems: "center", gap: sp[2] }}>
           {canCollapse && (
             <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
               {expanded ? "▼" : "▶"}
@@ -517,12 +537,9 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, colla
           <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
             {headerLabel}
           </span>
-          {headerDetail && (
-            <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium, fontStyle: "italic" }}>
-              {headerDetail}
-            </span>
-          )}
-          <NoteTooltip text={(GROUP_LABELS[type] || GROUP_LABELS.superset).pattern} />
+          <span style={{ color: "var(--text-secondary)", opacity: opacity.subtle, display: "inline-flex" }}>
+            <GroupIcon type={type} size={font.md} />
+          </span>
         </div>
         {canCollapse && (
           <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
@@ -532,24 +549,18 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, colla
       </div>
       {/* Exercises — indented under the group header */}
       {showExercises && (
-        <div style={{ paddingLeft: sp[5] }}>
+        <div style={{ paddingLeft: sp[3] }}>
           {exercises.map((ex, i) => {
-            const note = cleanNotes(ex.notes, isGrouped, ex.muscle_group, ex.rep_type);
-            const showExerciseRest = false;
             const isSecondary = (ex as any).exercise_type === "warmup" || (ex as any).exercise_type === "mobility" || (ex as any).exercise_type === "cardio";
-            const typeLabel = EXERCISE_TYPE_LABELS[(ex as any).exercise_type || ""] || null;
             const hasMetaLine = ex.target_rpe != null;
-            const exNum = startIndex + i;
             const hasPerSet = ex.target_reps_per_set != null || ex.target_weight_per_set != null;
             return (
               <ExerciseRow
                 key={i}
                 ex={ex}
-                exNum={exNum}
-                note={note}
-                showExerciseRest={showExerciseRest}
+                exNum={startIndex + i}
+                showExerciseRest={false}
                 isSecondary={isSecondary}
-                typeLabel={typeLabel}
                 hasMetaLine={hasMetaLine}
                 hasPerSet={hasPerSet}
                 isLast={i >= exercises.length - 1}
@@ -617,32 +628,40 @@ export function SectionCard({ section, ssGroupColors, startNumber }: {
         onClick={() => setExpanded(!expanded)}
         style={{
           cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
           marginBottom: expanded ? sp[3] : 0,
           userSelect: "none",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
-          <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
-            {expanded ? "▼" : "▶"}
-          </span>
-          <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
-            {section.label}
-          </span>
-          {section.notes && (
-            <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium, fontStyle: "italic" }}>
-              {section.notes}
+        {/* Line 1: chevron + label + count */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
+            <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
+              {expanded ? "▼" : "▶"}
             </span>
-          )}
+            <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
+              {section.label}
+            </span>
+          </div>
+          <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
+            {section.exercises.length} ej.
+          </span>
         </div>
-        <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
-          {section.exercises.length} ej.
-        </span>
+        {/* Line 2: notes (if any) */}
+        {section.notes && (
+          <div style={{
+            fontSize: font.xs,
+            color: "var(--text-secondary)",
+            opacity: opacity.medium,
+            fontStyle: "italic",
+            marginTop: sp[1],
+            paddingLeft: `calc(${font.sm}px + ${sp[3]}px)`,
+          }}>
+            {section.notes}
+          </div>
+        )}
       </div>
       {expanded && (
-        <div style={{ paddingLeft: sp[5] }}>
+        <div style={{ paddingLeft: sp[3] }}>
           <ExerciseBlockList blocks={blocks} ssGroupColors={ssGroupColors} startNumber={startNumber} />
         </div>
       )}

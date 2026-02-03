@@ -31,7 +31,8 @@ function DayTabs({ days, activeIdx, goTo }: { days: Day[]; activeIdx: number; go
             key={i}
             onClick={() => goTo(i)}
             style={{
-              padding: `${sp[2]}px ${sp[5]}px`,
+              padding: `${sp[3]}px ${sp[6]}px`,
+              minHeight: 44,
               borderRadius: radius.lg,
               border: isActive ? "1.5px solid var(--primary)" : "1.5px solid var(--border)",
               background: isActive ? "var(--primary)" : "transparent",
