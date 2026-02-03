@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { useToolOutput } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
 import { ExerciseIcon, MUSCLE_COLOR } from "./shared/exercise-icons.js";
+import { sp, font, weight, maxWidth } from "../tokens.js";
 import "../styles.css";
 
 const PR_LABELS: Record<string, string> = {
@@ -23,9 +24,9 @@ function SessionWidget() {
   if (data.active !== undefined) {
     if (!data.active) return <div className="empty">No active session</div>;
     return (
-      <div style={{ maxWidth: 600 }}>
+      <div style={{ maxWidth: maxWidth.widget }}>
         <div className="title">Active Session</div>
-        <div className="grid grid-2" style={{ marginBottom: 8 }}>
+        <div className="grid grid-2" style={{ marginBottom: sp[4] }}>
           <div className="card" style={{ textAlign: "center" }}>
             <div className="stat-value">{data.duration_minutes ?? 0}m</div>
             <div className="stat-label">Duration</div>
@@ -38,11 +39,11 @@ function SessionWidget() {
         {data.exercises?.map((ex: any, i: number) => {
           const muscleColor = ex.muscle_group ? MUSCLE_COLOR[ex.muscle_group.toLowerCase()] || "var(--text-secondary)" : "var(--text-secondary)";
           return (
-            <div key={i} className="card" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px" }}>
+            <div key={i} className="card" style={{ display: "flex", alignItems: "center", gap: sp[4], padding: `${sp[4]}px ${sp[6]}px` }}>
               <ExerciseIcon name={ex.name} color={muscleColor} size={16} />
-              <span style={{ fontWeight: 600, fontSize: 13, flex: 1 }}>{ex.name}</span>
+              <span style={{ fontWeight: weight.semibold, fontSize: font.base, flex: 1 }}>{ex.name}</span>
               {ex.sets?.length > 0 && (
-                <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>{ex.sets.length} sets</span>
+                <span style={{ fontSize: font.xs, color: "var(--text-secondary)" }}>{ex.sets.length} sets</span>
               )}
             </div>
           );
@@ -55,12 +56,12 @@ function SessionWidget() {
   const isEnded = data.session_ended !== undefined;
 
   return (
-    <div style={{ maxWidth: 600 }}>
+    <div style={{ maxWidth: maxWidth.widget }}>
       <div className="title">{isEnded ? "Session Summary" : "Session Started"}</div>
 
       {/* Stats row */}
       {(data.duration_minutes || data.total_volume_kg) && (
-        <div className="grid grid-2" style={{ marginBottom: 8 }}>
+        <div className="grid grid-2" style={{ marginBottom: sp[4] }}>
           {data.duration_minutes && (
             <div className="card" style={{ textAlign: "center" }}>
               <div className="stat-value">{Math.round(data.duration_minutes)}m</div>
@@ -83,10 +84,10 @@ function SessionWidget() {
           const muscleColor = ex.muscle_group ? MUSCLE_COLOR[ex.muscle_group.toLowerCase()] || "var(--text-secondary)" : "var(--text-secondary)";
           const setCount = typeof ex.sets === "number" ? ex.sets : ex.sets?.length;
           return (
-            <div key={i} className="card" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px" }}>
+            <div key={i} className="card" style={{ display: "flex", alignItems: "center", gap: sp[4], padding: `${sp[4]}px ${sp[6]}px` }}>
               <ExerciseIcon name={name} color={muscleColor} size={16} />
-              <span style={{ fontWeight: 600, fontSize: 13, flex: 1 }}>{name}</span>
-              {setCount && <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>{setCount} sets</span>}
+              <span style={{ fontWeight: weight.semibold, fontSize: font.base, flex: 1 }}>{name}</span>
+              {setCount && <span style={{ fontSize: font.xs, color: "var(--text-secondary)" }}>{setCount} sets</span>}
             </div>
           );
         })
@@ -94,14 +95,14 @@ function SessionWidget() {
 
       {/* PRs */}
       {data.new_prs?.length > 0 && (
-        <div className="card" style={{ padding: "10px 12px", marginTop: 4 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--warning)", textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: 6 }}>
+        <div className="card" style={{ padding: `${sp[5]}px ${sp[6]}px`, marginTop: sp[2] }}>
+          <div style={{ fontSize: font.xs, fontWeight: weight.semibold, color: "var(--warning)", textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: sp[3] }}>
             New PRs
           </div>
           {data.new_prs.map((pr: any, i: number) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" }}>
-              <span style={{ fontWeight: 500, fontSize: 13 }}>{pr.exercise}</span>
-              <span style={{ fontSize: 12, color: "var(--warning)", fontWeight: 600 }}>
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: `${sp[1.5]}px 0` }}>
+              <span style={{ fontWeight: weight.medium, fontSize: font.base }}>{pr.exercise}</span>
+              <span style={{ fontSize: font.sm, color: "var(--warning)", fontWeight: weight.semibold }}>
                 {formatPRLabel(pr.record_type)}: {pr.value}
               </span>
             </div>
@@ -111,14 +112,14 @@ function SessionWidget() {
 
       {/* Comparison */}
       {data.comparison && (
-        <div className="card" style={{ padding: "10px 12px", marginTop: 4 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: 6 }}>
+        <div className="card" style={{ padding: `${sp[5]}px ${sp[6]}px`, marginTop: sp[2] }}>
+          <div style={{ fontSize: font.xs, fontWeight: weight.semibold, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: sp[3] }}>
             vs Last Session
           </div>
           {data.comparison.volume_change && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Volume</span>
-              <span className={`badge ${String(data.comparison.volume_change).startsWith("+") ? "badge-success" : "badge-danger"}`} style={{ fontSize: 11 }}>
+              <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>Volume</span>
+              <span className={`badge ${String(data.comparison.volume_change).startsWith("+") ? "badge-success" : "badge-danger"}`} style={{ fontSize: font.xs }}>
                 {data.comparison.volume_change}
               </span>
             </div>

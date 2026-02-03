@@ -354,19 +354,19 @@ function ExerciseRow({ ex, exNum, showExerciseRest, isSecondary, hasRpeLine, has
             {repsDisplay}
           </span>
           {ex.rep_type && REP_UNIT[ex.rep_type] && (
-            <span style={{ opacity: 0.5, fontSize: font.sm }}>{REP_UNIT[ex.rep_type]}</span>
+            <span style={{ opacity: opacity.muted, fontSize: font.sm }}>{REP_UNIT[ex.rep_type]}</span>
           )}
           {weightDisplay != null && (
             <>
-              <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>
+              <span style={{ opacity: opacity.muted, margin: `0 ${sp[1]}px` }}>·</span>
               <span style={{ fontWeight: weight.bold, color: "var(--text)" }}>{weightDisplay}</span>
-              <span style={{ opacity: 0.5, fontSize: font.sm }}>kg</span>
+              <span style={{ opacity: opacity.muted, fontSize: font.sm }}>kg</span>
             </>
           )}
           {showExerciseRest && (
             <>
-              <span style={{ opacity: 0.35, margin: `0 ${sp[1]}px` }}>·</span>
-              <span style={{ opacity: 0.6, fontSize: font.sm }}>⏱ {formatRestSeconds(ex.rest_seconds!)}</span>
+              <span style={{ opacity: opacity.muted, margin: `0 ${sp[1]}px` }}>·</span>
+              <span style={{ opacity: opacity.medium, fontSize: font.sm }}>⏱ {formatRestSeconds(ex.rest_seconds!)}</span>
             </>
           )}
         </div>

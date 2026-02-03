@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { useToolOutput } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
+import { font } from "../tokens.js";
 import "../styles.css";
 
 function ExportWidget() {
@@ -9,7 +10,7 @@ function ExportWidget() {
   return (
     <div>
       <div className="title">Export Data</div>
-      <pre style={{ fontSize: 12, overflow: "auto", maxHeight: 400 }}>
+      <pre style={{ fontSize: font.sm, overflow: "auto", maxHeight: 400 }}>
         {JSON.stringify(data, null, 2)}
       </pre>
     </div>

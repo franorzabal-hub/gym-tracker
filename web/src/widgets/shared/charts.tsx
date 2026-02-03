@@ -1,4 +1,5 @@
 /** Reusable SVG chart components for the dashboard widget */
+import { font } from "../../tokens.js";
 
 interface SparklineProps {
   data: number[];
@@ -104,7 +105,7 @@ export function BarChart({
               x={x + barW / 2}
               y={height - 2}
               textAnchor="middle"
-              fontSize={9}
+              fontSize={font["2xs"]}
               fill="var(--text-secondary)"
               fontFamily="var(--font)"
             >
@@ -154,7 +155,7 @@ export function HorizontalBars({
               x={labelW - 8}
               y={y + rowHeight / 2 + 1}
               textAnchor="end"
-              fontSize={12}
+              fontSize={font.sm}
               fill="var(--text)"
               fontFamily="var(--font)"
               dominantBaseline="middle"
@@ -174,7 +175,7 @@ export function HorizontalBars({
             <text
               x={labelW + barW + 6}
               y={y + rowHeight / 2 + 1}
-              fontSize={11}
+              fontSize={font.xs}
               fontWeight={600}
               fill="var(--text-secondary)"
               fontFamily="var(--font)"
