@@ -42,7 +42,7 @@ Without pending_changes: read-only view. With pending_changes: diff view + confi
 
   registerAppToolWithMeta(server, "show_programs", {
     title: "My Programs",
-    description: `${APP_CONTEXT}Display programs as a visual list widget.
+    description: `${APP_CONTEXT}Display programs as a visual list widget (max 5 programs).
 - mode="user" (default): Show user's programs with Active/Inactive status.
 - mode="available": Show global templates with Recommended/Already added badges and clone action.
 The widget already shows all information visually — do NOT repeat the data in your response. Just confirm it's displayed or offer next steps.
@@ -51,8 +51,8 @@ To edit programs, use manage_program. After a clone from available mode, follow 
     inputSchema: {
       mode: z.enum(["user", "available"]).optional().default("user")
         .describe("user = show user's programs. available = browse global templates."),
-      filter: z.union([z.array(z.string()), z.string()]).optional()
-        .describe("(available mode only) Program names to show from global templates. If omitted, returns all."),
+      ids: z.union([z.array(z.number()), z.number()]).optional()
+        .describe("Filter by program IDs. If omitted, returns all (up to 5)."),
     },
     annotations: { readOnlyHint: true },
     _meta: {
@@ -60,10 +60,16 @@ To edit programs, use manage_program. After a clone from available mode, follow 
       "openai/toolInvocation/invoking": "Loading programs...",
       "openai/toolInvocation/invoked": "Programs loaded",
     },
-  }, safeHandler("show_programs", async (args: { mode?: "user" | "available"; filter?: string[] | string } = {}) => {
-    const { mode, filter } = args;
+  }, safeHandler("show_programs", async (args: { mode?: "user" | "available"; ids?: number[] | number } = {}) => {
+    const { mode, ids } = args;
     const userId = getUserId();
     const effectiveMode = mode ?? "user";
+    const MAX_PROGRAMS = 5;
+
+    // Parse ids filter
+    const parsedIds = ids != null
+      ? (Array.isArray(ids) ? ids : [ids])
+      : null;
 
     if (effectiveMode === "available") {
       // === Available mode: global templates ===
@@ -87,13 +93,16 @@ To edit programs, use manage_program. After a clone from available mode, follow 
          ) sub ORDER BY name`
       );
 
-      const parsedFilter = parseJsonArrayParam<string>(filter);
-      const filteredGlobalRows = parsedFilter
-        ? globalRows.filter((p) => parsedFilter.some((f) => f.toLowerCase() === p.name.toLowerCase()))
+      // Filter by IDs if provided
+      const filteredRows = parsedIds
+        ? globalRows.filter((p) => parsedIds.includes(p.id))
         : globalRows;
 
+      // Limit to MAX_PROGRAMS
+      const limitedRows = filteredRows.slice(0, MAX_PROGRAMS);
+
       const programs = await Promise.all(
-        filteredGlobalRows.map(async (p) => {
+        limitedRows.map(async (p) => {
           const days = await getProgramDaysWithExercises(p.version_id);
           return {
             id: p.id,
@@ -130,8 +139,16 @@ To edit programs, use manage_program. After a clone from available mode, follow 
       [userId]
     );
 
+    // Filter by IDs if provided
+    const filteredRows = parsedIds
+      ? programRows.filter((p) => parsedIds.includes(p.id))
+      : programRows;
+
+    // Limit to MAX_PROGRAMS
+    const limitedRows = filteredRows.slice(0, MAX_PROGRAMS);
+
     const programs = await Promise.all(
-      programRows.map(async (p) => ({
+      limitedRows.map(async (p) => ({
         id: p.id,
         name: p.name,
         is_active: p.is_active,
