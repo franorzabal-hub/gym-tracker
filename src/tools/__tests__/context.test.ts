@@ -46,7 +46,7 @@ describe("get_context tool", () => {
 
   it("returns required_action=choose_program when profile complete but no program", async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ data: { name: "Juan", experience: "beginner", available_days: 3 } }] })
+      .mockResolvedValueOnce({ rows: [{ data: { name: "Juan", experience_level: "beginner", available_days: 3 } }] })
       .mockResolvedValueOnce({ rows: [] }) // no program
       .mockResolvedValueOnce({ rows: [] }) // no sessions
       .mockResolvedValueOnce({ rows: [] }); // no active workout
@@ -59,7 +59,7 @@ describe("get_context tool", () => {
 
   it("detects fully set up user with active program", async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ data: { name: "Juan" } }] })
+      .mockResolvedValueOnce({ rows: [{ data: { name: "Juan", experience_level: "intermediate" } }] })
       .mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL", version_id: 1 }] }) // has program
       .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // has sessions
       .mockResolvedValueOnce({ rows: [] }); // no active workout
@@ -87,7 +87,7 @@ describe("get_context tool", () => {
 
   it("returns active_workout info when workout in progress", async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ data: { name: "Juan" } }] })
+      .mockResolvedValueOnce({ rows: [{ data: { name: "Juan", experience_level: "advanced" } }] })
       .mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL", version_id: 1 }] })
       .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // has sessions
       .mockResolvedValueOnce({ rows: [{ id: 10, started_at: new Date(Date.now() - 30 * 60000).toISOString(), program_day_id: 5, tags: ["morning"] }] })

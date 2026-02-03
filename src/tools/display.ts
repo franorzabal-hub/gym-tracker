@@ -6,6 +6,7 @@ import { widgetResponse, registerAppToolWithMeta, safeHandler, APP_CONTEXT } fro
 import { getActiveProgram, getProgramDaysWithExercises } from "../helpers/program-helpers.js";
 import { parseJsonArrayParam, escapeIlike } from "../helpers/parse-helpers.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
+import { getProfile } from "../helpers/profile-helpers.js";
 
 export function registerDisplayTools(server: McpServer) {
   registerAppToolWithMeta(server, "show_profile", {
@@ -25,11 +26,7 @@ Without preview: standard view. With preview: comparison view. Let the user inte
       "openai/toolInvocation/invoked": "Profile loaded",
     },
   }, safeHandler("show_profile", async ({ preview }: { preview?: Record<string, any> }) => {
-    const userId = getUserId();
-    const { rows } = await pool.query(
-      "SELECT data FROM user_profile WHERE user_id = $1 LIMIT 1", [userId]
-    );
-    const profile = rows[0]?.data || {};
+    const profile = await getProfile();
     const hasPreview = preview && Object.keys(preview).length > 0;
     const llmNote = hasPreview
       ? `Profile widget displayed with preview. Let the user interact with the widget. Do NOT describe or list any data.`

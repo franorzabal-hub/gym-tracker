@@ -3,6 +3,7 @@ import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { inferTodayDay } from "../helpers/program-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
+import { getProfile, isProfileComplete } from "../helpers/profile-helpers.js";
 
 export function registerContextTool(server: McpServer) {
   server.registerTool(
@@ -31,12 +32,8 @@ CRITICAL ROUTING — you MUST follow the "required_action" field in the response
       const userId = getUserId();
 
       // --- Profile ---
-      const { rows: profileRows } = await pool.query(
-        "SELECT data FROM user_profile WHERE user_id = $1 LIMIT 1",
-        [userId]
-      );
-      const profileData = profileRows[0]?.data || null;
-      const profileComplete = !!(profileData && profileData.name);
+      const profileData = await getProfile();
+      const profileComplete = isProfileComplete(profileData);
 
       // --- Program ---
       const { rows: programRows } = await pool.query(
@@ -52,7 +49,7 @@ CRITICAL ROUTING — you MUST follow the "required_action" field in the response
       // Get today's day if there's an active program
       let todayDay: { day_label: string } | null = null;
       if (activeProgram) {
-        const timezone = profileData?.timezone || undefined;
+        const timezone = (profileData.timezone as string | undefined) || undefined;
         const inferred = await inferTodayDay(activeProgram.id, timezone);
         if (inferred) {
           todayDay = { day_label: inferred.day_label };

@@ -3,6 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
+import { profileSchema, normalizeProfileData, MAX_PROFILE_SIZE_BYTES } from "../helpers/profile-helpers.js";
 
 export function registerProfileTool(server: McpServer) {
   server.registerTool(
@@ -59,13 +60,28 @@ Example: user says "entreno lunes miercoles y viernes" → update with { "traini
         return toolResponse({ error: "No data provided" }, true);
       }
 
+      // Normalize the data (trim strings, filter empty injuries, etc.)
+      const normalized = normalizeProfileData(data);
+
+      // Check size limit
+      if (JSON.stringify(normalized).length > MAX_PROFILE_SIZE_BYTES) {
+        return toolResponse({ error: "Profile data exceeds maximum size limit" }, true);
+      }
+
+      // Validate with Zod schema
+      const parsed = profileSchema.safeParse(normalized);
+      if (!parsed.success) {
+        const errors = parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`);
+        return toolResponse({ error: "Invalid profile data", details: errors }, true);
+      }
+
       const { rows } = await pool.query(
         `INSERT INTO user_profile (user_id, data, updated_at)
          VALUES ($1, $2::jsonb, NOW())
          ON CONFLICT (user_id)
          DO UPDATE SET data = user_profile.data || EXCLUDED.data, updated_at = NOW()
          RETURNING data`,
-        [userId, JSON.stringify(data)]
+        [userId, JSON.stringify(parsed.data)]
       );
 
       const updated = rows[0].data;

@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useToolOutput, useCallTool } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
 import { WeekdayPills } from "./shared/weekday-pills.js";
+import { Toggle } from "./shared/toggle.js";
 import { sp, radius, font, weight } from "../tokens.js";
 import { DiffValue, ConfirmBar } from "./shared/diff-components.js";
 import "../styles.css";
@@ -22,50 +23,6 @@ interface ProfileData {
   pendingChanges?: Record<string, any>;
 }
 
-// ── Toggle Component ──
-
-function Toggle({ checked, onChange, disabled }: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      className={`toggle ${checked ? "toggle-checked" : ""}`}
-      onClick={() => onChange(!checked)}
-      style={{
-        width: 42,
-        height: 24,
-        borderRadius: 12,
-        border: "none",
-        padding: 2,
-        cursor: disabled ? "not-allowed" : "pointer",
-        background: checked ? "var(--primary)" : "var(--border)",
-        transition: "background 0.2s",
-        display: "flex",
-        alignItems: "center",
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      <span
-        style={{
-          width: 20,
-          height: 20,
-          borderRadius: "50%",
-          background: "white",
-          transform: checked ? "translateX(18px)" : "translateX(0)",
-          transition: "transform 0.2s",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-        }}
-      />
-    </button>
-  );
-}
-
 // ── Helpers ──
 
 function parseArray(value: unknown): string[] {
@@ -78,6 +35,11 @@ function parseArray(value: unknown): string[] {
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Check if profile requires validation before applying changes */
+function isValidationRequired(profile: Record<string, any>): boolean {
+  return profile.requires_validation === true || profile.requires_validation === "true";
 }
 
 function formatFieldLabel(s: string): string {
@@ -344,7 +306,7 @@ function PreferencesSection({ profile, onValidationToggle, saving }: {
   onValidationToggle: (enabled: boolean) => void;
   saving: boolean;
 }) {
-  const requiresValidation = profile.requires_validation === true || profile.requires_validation === "true";
+  const requiresValidation = isValidationRequired(profile);
 
   return (
     <div className="profile-section">
@@ -382,6 +344,7 @@ function ProfileWidget() {
   const [changesApplied, setChangesApplied] = useState(false);
   const [localProfile, setLocalProfile] = useState<Record<string, any> | null>(null);
   const [savingValidation, setSavingValidation] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const autoAppliedRef = useRef(false);
 
   // Auto-apply changes when requires_validation is false
@@ -389,42 +352,57 @@ function ProfileWidget() {
     if (!data?.pendingChanges || autoAppliedRef.current || changesApplied) return;
 
     const profile = data.profile || {};
-    const requiresValidation = profile.requires_validation === true || profile.requires_validation === "true";
 
-    if (!requiresValidation && Object.keys(data.pendingChanges).length > 0) {
+    if (!isValidationRequired(profile) && Object.keys(data.pendingChanges).length > 0) {
       autoAppliedRef.current = true;
       console.log("[profile] Auto-applying changes (requires_validation=false):", data.pendingChanges);
+
+      let cancelled = false;
 
       (async () => {
         setConfirming(true);
         try {
           await callTool("manage_profile", { action: "update", data: data.pendingChanges });
+          if (cancelled) return;
           setLocalProfile(prev => ({ ...(prev || profile), ...data.pendingChanges }));
           setChangesApplied(true);
+          setError(null);
         } catch (err) {
           console.error("[profile] Auto-apply error:", err);
+          if (!cancelled) setError("Failed to save changes. Please try again.");
         } finally {
-          setConfirming(false);
+          if (!cancelled) setConfirming(false);
         }
       })();
+
+      return () => { cancelled = true; };
     }
   }, [data, callTool, changesApplied]);
 
   const handleConfirm = useCallback(async () => {
     if (!data?.pendingChanges) return;
+
+    let cancelled = false;
+    const cleanup = () => { cancelled = true; };
+
     setConfirming(true);
     console.log("[profile] Confirming changes:", data.pendingChanges);
     try {
       const result = await callTool("manage_profile", { action: "update", data: data.pendingChanges });
       console.log("[profile] callTool result:", result);
+      if (cancelled) return cleanup;
       // Always apply changes locally on success (result may vary by host)
       setLocalProfile(prev => ({ ...(prev || data.profile), ...data.pendingChanges }));
       setChangesApplied(true);  // Permanently hide pending UI
+      setError(null);
     } catch (err) {
       console.error("[profile] callTool error:", err);
+      if (!cancelled) setError("Failed to save changes. Please try again.");
     } finally {
-      setConfirming(false);
+      if (!cancelled) setConfirming(false);
     }
+
+    return cleanup;
   }, [data, callTool]);
 
   const handleValidationToggle = useCallback(async (enabled: boolean) => {
@@ -439,7 +417,7 @@ function ProfileWidget() {
   if (!data) return <SkeletonCard />;
 
   const profile = localProfile || data.profile || {};
-  const requiresValidation = profile.requires_validation === true || profile.requires_validation === "true";
+  const requiresValidation = isValidationRequired(profile);
   // Only show pending diff if requires_validation is true
   const pending = (changesApplied || !requiresValidation) ? undefined : data.pendingChanges;
   const hasPending = !!pending && Object.keys(pending).length > 0;
@@ -485,6 +463,23 @@ function ProfileWidget() {
 
       {hasPending && (
         <ConfirmBar onConfirm={handleConfirm} confirming={confirming} confirmed={false} className="profile-confirm-bar" />
+      )}
+
+      {error && (
+        <div
+          role="alert"
+          style={{
+            padding: `${sp[3]}px ${sp[4]}px`,
+            marginTop: sp[4],
+            background: "var(--error-bg, #fef2f2)",
+            color: "var(--error, #dc2626)",
+            borderRadius: radius.md,
+            fontSize: font.sm,
+            fontWeight: weight.medium,
+          }}
+        >
+          {error}
+        </div>
       )}
     </article>
   );
