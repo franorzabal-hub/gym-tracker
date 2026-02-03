@@ -7,9 +7,9 @@ import {
   WEEKDAY_LABELS,
   WEEKDAY_NAMES,
   RAIL_PX,
-  GROUP_LABELS,
   parseNoteReps,
 } from "./program-view.js";
+import { GROUP_LABELS, GroupIcon } from "./exercise-utils.js";
 import {
   DndContext,
   closestCenter,
@@ -227,7 +227,7 @@ function SortableExerciseItem({
         onUngroup={onUngroup}
         adjacentGroups={adjacentGroups}
         activeColumns={activeColumns}
-        dragHandleProps={{ attributes, listeners }}
+        dragHandleProps={{ attributes: attributes as unknown as Record<string, unknown>, listeners }}
       />
     </div>
   );
@@ -1302,8 +1302,8 @@ function EditableExerciseRow({
                     ))}
                     {(["superset", "paired", "circuit"] as const).map((type) => (
                       <div key={type} style={itemStyle} onClick={() => { onGroup(type); setMenuOpen(false); }} onMouseEnter={hoverOn} onMouseLeave={hoverOff}>
-                        <span style={iconStyle}>{GROUP_LABELS[type].icon}</span>
-                        New {GROUP_LABELS[type].label.toLowerCase()}
+                        <span style={iconStyle}><GroupIcon type={type} size={14} /></span>
+                        New {GROUP_LABELS[type].toLowerCase()}
                       </div>
                     ))}
                     {sep}
@@ -1751,9 +1751,9 @@ function EditableDayCard({
                         background: `color-mix(in srgb, ${groupColor} 10%, transparent)`,
                       }}>
                         <span style={{ fontSize: 12 }}>
-                          {(GROUP_LABELS[groupType] || GROUP_LABELS.superset).icon}
+                          <GroupIcon type={groupType || "superset"} size={12} />
                         </span>
-                        {(GROUP_LABELS[groupType] || GROUP_LABELS.superset).label}
+                        {GROUP_LABELS[groupType] || GROUP_LABELS.superset}
                       </span>
                     ) : undefined}
                   >
@@ -1775,11 +1775,11 @@ function EditableDayCard({
                             const above = blockI > 0 ? blocks[blockI - 1] : null;
                             const below = blockI < blocks.length - 1 ? blocks[blockI + 1] : null;
                             if (above?.groupType) {
-                              const label = (GROUP_LABELS[above.groupType] || GROUP_LABELS.superset).label.toLowerCase();
+                              const label = (GROUP_LABELS[above.groupType] || GROUP_LABELS.superset).toLowerCase();
                               adjGroups.push({ direction: "above", label, onJoin: () => joinAdjacentGroup(blockI, blockI - 1) });
                             }
                             if (below?.groupType) {
-                              const label = (GROUP_LABELS[below.groupType] || GROUP_LABELS.superset).label.toLowerCase();
+                              const label = (GROUP_LABELS[below.groupType] || GROUP_LABELS.superset).toLowerCase();
                               adjGroups.push({ direction: "below", label, onJoin: () => joinAdjacentGroup(blockI, blockI + 1) });
                             }
                           }
