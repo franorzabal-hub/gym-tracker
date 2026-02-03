@@ -89,6 +89,8 @@ Manage via: `gcloud run services update gym-tracker --region us-central1 --proje
 
 Node.js + TypeScript, Express, CORS, `@modelcontextprotocol/sdk` (StreamableHTTP), `@modelcontextprotocol/ext-apps` (MCP Apps widgets), PostgreSQL via `pg`, Zod, Vitest, WorkOS OAuth 2.1, AsyncLocalStorage.
 
+**Web/Widgets:** React 19, Vite, Tailwind CSS 4, `@openai/apps-sdk-ui` (official UI kit for ChatGPT Apps).
+
 ## Project Structure
 
 ```
@@ -185,7 +187,9 @@ React-based HTML widgets rendered by MCP hosts (Claude Desktop, claude.ai, ChatG
 
 **Key principle:** The LLM is the editor; the widget is the reviewer. All editing goes through conversation + `pending_changes` param → visual diff → user confirms.
 
-For full widget documentation (architecture, theming, component patterns, dev workflow), see [`web/README.md`](web/README.md).
+For full widget documentation, see:
+- [`web/README.md`](web/README.md) — architecture, theming, component patterns, dev workflow
+- [`web/DESIGN.md`](web/DESIGN.md) — design system: tokens, badges, layout, OpenAI Apps SDK best practices
 
 ## Code Patterns
 

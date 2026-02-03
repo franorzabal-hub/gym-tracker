@@ -174,3 +174,135 @@ Todos los colores usan `light-dark()` o CSS variables que se adaptan automática
 - `var(--primary)`, `var(--success)`, `var(--warning)`, `var(--danger)`
 
 **Regla:** Nunca usar colores hardcodeados. Siempre usar variables CSS.
+
+---
+
+## OpenAI Apps SDK - Best Practices
+
+Guías oficiales para widgets que corren en ChatGPT.
+
+### UI Kit Oficial
+
+Usar `@openai/apps-sdk-ui` para componentes consistentes:
+
+```bash
+npm install @openai/apps-sdk-ui
+```
+
+```tsx
+import { Badge } from "@openai/apps-sdk-ui/components/Badge"
+import { Button } from "@openai/apps-sdk-ui/components/Button"
+import { Calendar, Check, X } from "@openai/apps-sdk-ui/components/Icon"
+```
+
+### Theming
+
+ChatGPT provee el tema via `window.openai.theme` ("light" | "dark").
+
+```tsx
+const theme = window.openai?.theme ?? "light"
+document.body.dataset.theme = theme
+```
+
+Nuestras CSS variables (`--bg`, `--text`, etc.) ya soportan dark mode via `light-dark()`.
+
+### Display Modes
+
+Los widgets pueden correr en diferentes modos:
+
+| Modo | Descripción | Consideraciones |
+|------|-------------|-----------------|
+| `inline` | Embebido en el chat | Respetar `maxHeight` |
+| `pip` | Picture-in-picture | Max width ~400px |
+| `fullscreen` | Pantalla completa | Más espacio, agregar padding |
+
+```tsx
+const displayMode = window.openai?.displayMode
+const maxHeight = window.openai?.maxHeight
+
+// Ajustar layout según modo
+```
+
+### Safe Area (Mobile)
+
+Respetar notches y áreas seguras en iOS:
+
+```tsx
+const safeArea = window.openai?.safeArea
+// { top, bottom, left, right }
+```
+
+### Bundle Size
+
+**Objetivos:**
+- Ideal: < 100KB
+- Máximo: < 500KB
+
+**Prácticas:**
+- Tree-shake imports (importar solo lo necesario)
+- Lazy load componentes pesados
+- Minificar con Terser
+- Single-file bundles con `vite-plugin-singlefile`
+
+### Estados de UI
+
+#### Loading
+```tsx
+<div className="animate-pulse">
+  <div className="h-4 bg-secondary rounded w-3/4 mb-2" />
+</div>
+```
+
+#### Empty State
+```tsx
+<div className="text-center py-12">
+  <Icon className="size-12 text-secondary mx-auto mb-4" />
+  <h3 className="font-semibold">No hay datos</h3>
+  <p className="text-secondary">Descripción del estado vacío</p>
+</div>
+```
+
+#### Error State
+```tsx
+<div className="text-center py-8">
+  <AlertIcon className="size-12 text-danger mx-auto mb-4" />
+  <h3 className="font-semibold">Algo salió mal</h3>
+  <Button onClick={retry}>Reintentar</Button>
+</div>
+```
+
+### Accesibilidad
+
+1. **Focus Management** - Manejar foco en modales y listas
+2. **Keyboard Navigation** - Soportar Arrow keys, Enter, Escape
+3. **Screen Readers** - Usar `role`, `aria-*`, `sr-only` para contexto
+4. **Color Contrast** - Mantener ratio 4.5:1 mínimo
+
+```tsx
+<span role="status" aria-live="polite">
+  <span className="sr-only">Estado: </span>
+  Completado
+</span>
+```
+
+### Interacciones con ChatGPT
+
+```tsx
+// Llamar otro tool
+await window.openai.callTool("tool_name", { arg: "value" })
+
+// Enviar mensaje de follow-up
+await window.openai.sendFollowUpMessage({ message: "Show more" })
+
+// Persistir estado del widget
+window.openai.setWidgetState({ selectedId: "123" })
+
+// Cambiar modo de display
+await window.openai.requestDisplayMode({ mode: "fullscreen" })
+```
+
+### Referencias
+
+- [OpenAI Apps SDK Docs](https://developers.openai.com/apps-sdk/)
+- [Apps SDK UI Kit](https://github.com/openai/apps-sdk-ui)
+- [App Developer Guidelines](https://developers.openai.com/apps-sdk/app-developer-guidelines)
