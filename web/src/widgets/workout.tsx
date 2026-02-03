@@ -257,6 +257,40 @@ function groupIntoSections(exerciseGroups: ExerciseGroup[]): Array<{ type: "sect
   return result;
 }
 
+// ── Skeleton ──
+
+function SkeletonWorkout() {
+  return (
+    <div className="profile-card" role="status" aria-label="Loading workout">
+      {/* Header skeleton */}
+      <div style={{ marginBottom: sp[8] }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: sp[2] }}>
+          <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
+            <div className="skeleton" style={{ width: 140, height: font["2xl"] }} />
+            <div className="skeleton" style={{ width: 70, height: 20, borderRadius: radius.lg }} />
+          </div>
+          <div className="skeleton" style={{ width: 80, height: font.md }} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: sp[2] }}>
+            {[1, 2].map(i => (
+              <div key={i} className="skeleton" style={{ width: 50, height: 20, borderRadius: radius.lg }} />
+            ))}
+          </div>
+          <div className="skeleton" style={{ width: 100, height: font.sm }} />
+        </div>
+      </div>
+      {/* Exercises skeleton */}
+      {[1, 2, 3, 4].map(i => (
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", marginBottom: sp[4], paddingBottom: sp[3], borderBottom: "1px solid color-mix(in srgb, var(--border) 20%, transparent)" }}>
+          <div className="skeleton" style={{ width: `${30 + i * 12}%`, height: font.base }} />
+          <div className="skeleton" style={{ width: 80, height: font.sm }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Components ──
 
 function ExerciseRow({ exercise, exNum, isLast }: {
@@ -287,6 +321,10 @@ function ExerciseRow({ exercise, exNum, isLast }: {
           position: "relative",
         }}
         onClick={hasPerSet ? () => setExpanded(!expanded) : undefined}
+        onKeyDown={hasPerSet ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded(!expanded); } } : undefined}
+        role={hasPerSet ? "button" : undefined}
+        aria-expanded={hasPerSet ? expanded : undefined}
+        tabIndex={hasPerSet ? 0 : undefined}
       >
         {/* Number - positioned to the left, within profile-card padding (16px) */}
         <span style={{
@@ -429,6 +467,10 @@ function ExerciseGroupBlock({ group, startIndex, collapsible = true }: {
       <div
         className={canCollapse ? "tappable section-header" : undefined}
         onClick={canCollapse ? () => setExpanded(!expanded) : undefined}
+        onKeyDown={canCollapse ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded(!expanded); } } : undefined}
+        role={canCollapse ? "button" : undefined}
+        aria-expanded={canCollapse ? expanded : undefined}
+        tabIndex={canCollapse ? 0 : undefined}
         style={{
           cursor: canCollapse ? "pointer" : "default",
           display: "flex",
@@ -440,14 +482,14 @@ function ExerciseGroupBlock({ group, startIndex, collapsible = true }: {
       >
         <div style={{ display: "flex", alignItems: "center", gap: sp[2] }}>
           {canCollapse && (
-            <span style={{ fontSize: font.sm, color: "var(--text-secondary)", transition: "transform 0.15s", transform: expanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
+            <span aria-hidden="true" style={{ fontSize: font.sm, color: "var(--text-secondary)", transition: "transform 0.15s", transform: expanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
               ▼
             </span>
           )}
           <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
             {headerLabel}
           </span>
-          <span style={{ color: "var(--text-secondary)", opacity: opacity.subtle, display: "inline-flex" }}>
+          <span aria-hidden="true" style={{ color: "var(--text-secondary)", opacity: opacity.subtle, display: "inline-flex" }}>
             <GroupIcon type={type} size={font.md} />
           </span>
         </div>
@@ -492,10 +534,14 @@ function SectionCard({ section, startNumber }: {
   let currentIdx = startNumber;
 
   return (
-    <div style={{ marginBottom: sp[5] }}>
+    <section style={{ marginBottom: sp[5] }} aria-label={section.label}>
       <div
         className="tappable section-header"
         onClick={() => setExpanded(!expanded)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded(!expanded); } }}
+        role="button"
+        aria-expanded={expanded}
+        tabIndex={0}
         style={{
           marginBottom: expanded ? sp[3] : 0,
           userSelect: "none",
@@ -503,7 +549,7 @@ function SectionCard({ section, startNumber }: {
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
-            <span style={{ fontSize: font.sm, color: "var(--text-secondary)", transition: "transform 0.15s", transform: expanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
+            <span aria-hidden="true" style={{ fontSize: font.sm, color: "var(--text-secondary)", transition: "transform 0.15s", transform: expanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
               ▼
             </span>
             <span style={{ fontWeight: weight.semibold, fontSize: font.md }}>
@@ -547,7 +593,7 @@ function SectionCard({ section, startNumber }: {
           })}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -556,11 +602,11 @@ function SectionCard({ section, startNumber }: {
 function WorkoutWidget() {
   const data = useToolOutput<ToolData>();
 
-  if (!data) return <div className="loading">Loading...</div>;
+  if (!data) return <SkeletonWorkout />;
 
   if (!data.session) {
     return (
-      <div className="empty" style={{ padding: `${sp[16]}px ${sp[8]}px` }}>
+      <div className="empty" style={{ padding: `${sp[16]}px ${sp[8]}px` }} role="status">
         <div style={{ fontSize: font["2xl"], fontWeight: weight.medium, marginBottom: sp[4] }}>No workouts yet</div>
         <div style={{ fontSize: font.md, color: "var(--text-secondary)" }}>
           Start your first session to begin tracking your exercises here.
@@ -586,46 +632,46 @@ function SessionDisplay({ session, readonly }: { session: SessionData; readonly?
   }, [session.exercises]);
 
   return (
-    <div className="profile-card">
+    <article className="profile-card" aria-label="Workout session">
       {/* Header */}
-      <div style={{ marginBottom: sp[8] }}>
+      <header style={{ marginBottom: sp[8] }}>
         {/* Title row: title + badge (left), date (right) */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: sp[2] }}>
           <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
-            <span className="title" style={{ marginBottom: 0 }}>
+            <h1 className="title" style={{ marginBottom: 0 }}>
               {isActive ? "Active Workout" : "Workout"}
-            </span>
+            </h1>
             {isActive && <span className="badge badge-success">Active</span>}
             {!isActive && session.ended_at && <span className="badge badge-success">Completed</span>}
           </div>
           {!isActive && session.ended_at && (
-            <span style={{ fontSize: font.md, color: "var(--text-secondary)" }}>
+            <time dateTime={session.started_at} style={{ fontSize: font.md, color: "var(--text-secondary)" }}>
               {new Date(session.started_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-            </span>
+            </time>
           )}
         </div>
         {/* Chips (left) + stats (right) */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: sp[2] }}>
-          <div style={{ display: "flex", alignItems: "center", gap: sp[2] }}>
+          <div style={{ display: "flex", alignItems: "center", gap: sp[2] }} role="list" aria-label="Muscle groups">
             {muscleGroups.map(g => (
-              <span key={g} className="badge badge-muted" style={{ textTransform: "capitalize" }}>{g}</span>
+              <span key={g} role="listitem" className="badge badge-muted" style={{ textTransform: "capitalize" }}>{g}</span>
             ))}
           </div>
           <span style={{ fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.medium }}>
-            {session.exercises.length} ej · {isActive ? (
-              <span style={{ color: "var(--primary)", fontWeight: weight.semibold }}>{formatDuration(minutes)}</span>
+            {session.exercises.length} ej <span aria-hidden="true">·</span> {isActive ? (
+              <span style={{ color: "var(--primary)", fontWeight: weight.semibold }} aria-live="polite">{formatDuration(minutes)}</span>
             ) : formatDuration(minutes)}
           </span>
         </div>
-      </div>
+      </header>
 
       {/* Exercise list - flat, no grouping */}
-      <div>
+      <div role="list" aria-label="Exercises">
         {session.exercises.map((exercise, i) => (
           <ExerciseRow key={exercise.name + i} exercise={exercise} exNum={i + 1} isLast={i === session.exercises.length - 1} />
         ))}
       </div>
-    </div>
+    </article>
   );
 }
 
