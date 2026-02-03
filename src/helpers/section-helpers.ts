@@ -10,8 +10,8 @@ export interface SectionInput {
  * Returns the new section id.
  */
 export async function insertSection(
-  table: "program_sections" | "session_sections" | "template_sections",
-  parentColumn: "day_id" | "session_id" | "template_id",
+  table: "program_sections" | "session_sections",
+  parentColumn: "day_id" | "session_id",
   parentId: number,
   section: SectionInput,
   sortOrder: number,
@@ -30,10 +30,10 @@ export async function insertSection(
  * Returns a map of oldSectionId → newSectionId for remapping exercises.
  */
 export async function cloneSections(
-  sourceTable: "program_sections" | "session_sections" | "template_sections",
-  targetTable: "program_sections" | "session_sections" | "template_sections",
-  sourceParentColumn: "day_id" | "session_id" | "template_id",
-  targetParentColumn: "day_id" | "session_id" | "template_id",
+  sourceTable: "program_sections" | "session_sections",
+  targetTable: "program_sections" | "session_sections",
+  sourceParentColumn: "day_id" | "session_id",
+  targetParentColumn: "day_id" | "session_id",
   sourceParentId: number,
   targetParentId: number,
   client: PoolClient

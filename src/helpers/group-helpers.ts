@@ -12,8 +12,8 @@ export interface GroupInput {
  * Returns the new group id.
  */
 export async function insertGroup(
-  table: "program_exercise_groups" | "session_exercise_groups" | "template_exercise_groups",
-  parentColumn: "day_id" | "session_id" | "template_id",
+  table: "program_exercise_groups" | "session_exercise_groups",
+  parentColumn: "day_id" | "session_id",
   parentId: number,
   group: GroupInput,
   sortOrder: number,
@@ -32,10 +32,10 @@ export async function insertGroup(
  * Returns a map of oldGroupId → newGroupId for remapping exercises.
  */
 export async function cloneGroups(
-  sourceTable: "program_exercise_groups" | "session_exercise_groups" | "template_exercise_groups",
-  targetTable: "program_exercise_groups" | "session_exercise_groups" | "template_exercise_groups",
-  sourceParentColumn: "day_id" | "session_id" | "template_id",
-  targetParentColumn: "day_id" | "session_id" | "template_id",
+  sourceTable: "program_exercise_groups" | "session_exercise_groups",
+  targetTable: "program_exercise_groups" | "session_exercise_groups",
+  sourceParentColumn: "day_id" | "session_id",
+  targetParentColumn: "day_id" | "session_id",
   sourceParentId: number,
   targetParentId: number,
   client: PoolClient

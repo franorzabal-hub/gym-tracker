@@ -15,7 +15,6 @@ import { registerLogWorkoutTool } from "./src/tools/log-workout.js";
 import { registerHistoryTool } from "./src/tools/history.js";
 import { registerStatsTool } from "./src/tools/stats.js";
 import { registerEditLogTool } from "./src/tools/edit-log.js";
-import { registerTemplatesTool } from "./src/tools/templates.js";
 import { registerTodayPlanTool } from "./src/tools/today-plan.js";
 import { registerBodyMeasurementsTool } from "./src/tools/body-measurements.js";
 import { registerExportTool } from "./src/tools/export.js";
@@ -93,7 +92,6 @@ When the user asks to SEE their profile, call show_profile (NOT manage_profile).
   registerHistoryTool(server);
   registerStatsTool(server);
   registerEditLogTool(server);
-  registerTemplatesTool(server);
   registerTodayPlanTool(server);
   registerBodyMeasurementsTool(server);
   registerExportTool(server);

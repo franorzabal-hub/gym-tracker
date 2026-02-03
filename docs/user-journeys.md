@@ -154,22 +154,7 @@
 
 ---
 
-## 9. Templates de sesión
-
-**Trigger:** Quiere guardar una sesión como plantilla reutilizable (fuera de un programa formal).
-**Frecuencia:** Ocasional.
-
-1. Guardar sesión actual como template
-2. Ver templates guardados
-3. Iniciar sesión desde template
-4. Eliminar templates que ya no usa
-
-**Tools:** `manage_templates` (save, list, start, delete)
-**Widget:** Templates
-
----
-
-## 10. Exportar datos
+## 9. Exportar datos
 
 **Trigger:** Quiere backup, migrar a otra app, analizar en Excel.
 **Frecuencia:** Muy rara.
@@ -196,5 +181,4 @@
 | **P2** | Tracking corporal (7) | Complemento útil |
 | **P3** | Gestión ejercicios (5) | Mayormente automático |
 | **P3** | Perfil (8) | Se usa muy poco |
-| **P3** | Templates (9) | Power users |
-| **P3** | Export (10) | Muy raro |
+| **P3** | Export (9) | Muy raro |

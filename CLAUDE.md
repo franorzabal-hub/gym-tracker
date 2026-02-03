@@ -104,8 +104,8 @@ Node.js + TypeScript, Express, CORS, `@modelcontextprotocol/sdk` (StreamableHTTP
 server.ts                    # Express + MCP server + auth middleware
 src/auth/                    # middleware.ts, oauth-routes.ts, workos.ts
 src/context/user-context.ts  # AsyncLocalStorage: getUserId() / runWithUser()
-src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-018
-src/tools/                   # 16 files → 21 MCP tools (14 data + 7 display)
+src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-020
+src/tools/                   # 15 files → 20 MCP tools (13 data + 7 display)
 src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts, log-exercise-helper.ts, group-helpers.ts, section-helpers.ts, date-helpers.ts, parse-helpers.ts, tool-response.ts
 src/helpers/__tests__/       # Vitest tests for helpers (exercise-resolver, program-helpers, stats-calculator, group-helpers, section-helpers)
 src/resources/               # register-widgets.ts — registers all widget resources
@@ -144,20 +144,17 @@ session_exercise_groups (session_id FK, group_type, label, notes, rest_seconds, 
 session_sections (session_id FK CASCADE, label, notes, sort_order)
 personal_records (user_id FK, exercise_id FK, record_type) UNIQUE per user+exercise+type
 pr_history (user_id FK, exercise_id FK, record_type, value, achieved_at)
-session_templates (user_id FK, name UNIQUE per user) → session_template_exercises (group_id FK, section_id FK, target_reps_per_set INTEGER[], target_weight_per_set REAL[])
-template_exercise_groups (template_id FK, group_type, label, notes, rest_seconds, sort_order)
-template_sections (template_id FK CASCADE, label, notes, sort_order)
 body_measurements (user_id FK, measurement_type, value NUMERIC, measured_at, notes)
 auth_tokens (token PK, workos_user_id, email, expires_at)
 auth_codes (code PK, workos_user_id, email, expires_at, code_challenge, code_challenge_method)
 dynamic_clients (client_id PK, redirect_uris TEXT[])
 ```
 
-Key: per-set rows, program versioning, soft delete on sessions, GIN index on tags, `rep_type` (reps/seconds/meters/calories), `exercise_type` (strength/mobility/cardio/warmup — PRs only for strength). Exercise groups (superset/paired/circuit) are first-class entities with label, notes, rest_seconds — 3 tables (program/session/template) for referential integrity. Sections are optional containers between day and exercises (e.g. "Warm-up", "Main work") — 3 tables (program_sections/session_sections/template_sections) with section_id FK on exercise tables (ON DELETE SET NULL). Auth tokens/codes persisted in Postgres with TTL cleanup every 15 min.
+Key: per-set rows, program versioning, soft delete on sessions, GIN index on tags, `rep_type` (reps/seconds/meters/calories), `exercise_type` (strength/mobility/cardio/warmup — PRs only for strength). Exercise groups (superset/paired/circuit) are first-class entities with label, notes, rest_seconds — 2 tables (program/session) for referential integrity. Sections are optional containers between day and exercises (e.g. "Warm-up", "Main work") — 2 tables (program_sections/session_sections) with section_id FK on exercise tables (ON DELETE SET NULL). Auth tokens/codes persisted in Postgres with TTL cleanup every 15 min.
 
-## MCP Tools (21)
+## MCP Tools (20)
 
-### Data Tools (14) — return JSON, no UI
+### Data Tools (13) — return JSON, no UI
 
 | Tool | Actions / Params |
 |---|---|
@@ -172,7 +169,6 @@ Key: per-set rows, program versioning, soft delete on sessions, GIN index on tag
 | `get_history` | period, exercise?, program_day?, tags? filter |
 | `get_stats` | single (`exercise`) or multi (`exercises[]`), period — PRs, progression, volume, frequency |
 | `edit_log` | update/delete sets, bulk[], delete_session, restore_session, delete_sessions[] |
-| `manage_templates` | save, list, start, delete, delete_bulk |
 | `manage_body_measurements` | log, history, latest — temporal tracking (weight_kg, body_fat_pct, chest_cm, etc.) |
 | `export_data` | json or csv — scopes: all, sessions, exercises, programs, measurements, prs; period filter |
 
@@ -216,14 +212,14 @@ All tools return `{ content: [{ type: "text", text: JSON.stringify({...}) }] }`.
 `checkPRs()` in stats-calculator.ts. Only for `exercise_type = 'strength'`. Accepts optional `PoolClient` for transaction support. Upserts `personal_records` + appends to `pr_history`. Checks: max_weight, max_reps_at_{weight}, estimated_1rm (Epley: `weight × (1 + reps/30)`).
 
 ### Transactions
-`log_exercise` (single and bulk) and `manage_templates` "start" action wrap their operations in `BEGIN`/`COMMIT` using `pool.connect()`. The `PoolClient` is passed through to `resolveExercise()` and `checkPRs()` for atomicity.
+`log_exercise` (single and bulk) wraps operations in `BEGIN`/`COMMIT` using `pool.connect()`. The `PoolClient` is passed through to `resolveExercise()` and `checkPRs()` for atomicity.
 
 ### Testing Pattern
 Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture `toolHandler` from `server.tool()` mock, call handler directly with params. Pool queries mocked via `mockQuery` / `mockClientQuery` (for transactions).
 
 ## Migrations
 
-19 migrations in `src/db/migrations/` (001–019). Each file is self-describing — read the SQL for details. Auto-applied on server startup via `runMigrations()`.
+20 migrations in `src/db/migrations/` (001–020). Each file is self-describing — read the SQL for details. Auto-applied on server startup via `runMigrations()`.
 
 ## Pending (Phase 3)
 
