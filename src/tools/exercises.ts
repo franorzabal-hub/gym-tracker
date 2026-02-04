@@ -539,7 +539,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
 
           return toolResponse({ merged: { source: sourceEx.name, target: targetEx.name, session_exercises_moved: sessionExercisesMoved, personal_records_moved: prMoved, pr_history_moved: prHistoryMoved } });
         } catch (err) {
-          await client.query("ROLLBACK");
+          await client.query("ROLLBACK").catch((rbErr) => console.error("[merge] ROLLBACK failed:", rbErr));
           throw err;
         } finally {
           client.release();

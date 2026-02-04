@@ -37,6 +37,7 @@ function verifyState(state: string): Record<string, any> | null {
 
 // --- Rate limiting (in-memory) ---
 const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+const RATE_LIMIT_MAP_MAX = 10_000; // Hard cap to prevent unbounded memory growth
 
 function checkRateLimit(ip: string, limit: number): boolean {
   const now = Date.now();
@@ -44,6 +45,16 @@ function checkRateLimit(ip: string, limit: number): boolean {
   const entry = rateLimitMap.get(ip);
 
   if (!entry || now - entry.windowStart > windowMs) {
+    // Before adding a new entry, check if we're at the hard cap
+    if (!entry && rateLimitMap.size >= RATE_LIMIT_MAP_MAX) {
+      // Evict oldest 25% of entries by windowStart
+      const toDelete = Math.floor(RATE_LIMIT_MAP_MAX * 0.25);
+      const entries = Array.from(rateLimitMap.entries())
+        .sort((a, b) => a[1].windowStart - b[1].windowStart);
+      for (let i = 0; i < toDelete && i < entries.length; i++) {
+        rateLimitMap.delete(entries[i][0]);
+      }
+    }
     rateLimitMap.set(ip, { count: 1, windowStart: now });
     return true;
   }

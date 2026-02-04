@@ -26,6 +26,7 @@ import { registerWidgetResources } from "./src/resources/register-widgets.js";
 import oauthRoutes from "./src/auth/oauth-routes.js";
 import { authenticateToken, AuthError } from "./src/auth/middleware.js";
 import { runWithUser } from "./src/context/user-context.js";
+import pool from "./src/db/connection.js";
 
 function getAllowedOrigins(): string[] {
   if (process.env.ALLOWED_ORIGINS) {
@@ -154,9 +155,34 @@ const PORT = Number(process.env.PORT) || 3001;
 async function start() {
   try {
     await runMigrations();
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`Gym Tracker MCP server running on port ${PORT}`);
     });
+
+    // Graceful shutdown handling
+    const shutdown = async (signal: string) => {
+      console.log(`\n${signal} received. Shutting down gracefully...`);
+      server.close(async () => {
+        console.log("HTTP server closed.");
+        try {
+          await pool.end();
+          console.log("Database pool closed.");
+          process.exit(0);
+        } catch (err) {
+          console.error("Error closing database pool:", err);
+          process.exit(1);
+        }
+      });
+
+      // Force close after 10 seconds
+      setTimeout(() => {
+        console.error("Forced shutdown after timeout.");
+        process.exit(1);
+      }, 10_000).unref();
+    };
+
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGINT", () => shutdown("SIGINT"));
   } catch (err) {
     console.error("Failed to start:", err);
     process.exit(1);

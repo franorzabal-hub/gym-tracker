@@ -12,6 +12,7 @@ export class AuthError extends Error {
 interface CachedToken {
   userId: number;
   expiresAt: number;
+  lastAccess: number;
 }
 
 const tokenCache = new Map<string, CachedToken>();
@@ -46,6 +47,8 @@ export async function authenticateToken(req: Request): Promise<number> {
   // Check cache
   const cached = tokenCache.get(cacheKey(token));
   if (cached && cached.expiresAt > Date.now()) {
+    // Update last access time for LRU
+    cached.lastAccess = Date.now();
     return cached.userId;
   }
 
@@ -82,20 +85,22 @@ export async function authenticateToken(req: Request): Promise<number> {
 
   const userId = userRows[0].id;
 
-  // Evict oldest 25% if cache is full (avoid thundering herd from clearing all)
+  // Evict least recently used 25% if cache is full (LRU eviction)
   if (tokenCache.size >= TOKEN_CACHE_MAX) {
     const toDelete = Math.floor(TOKEN_CACHE_MAX * 0.25);
-    const keys = tokenCache.keys();
-    for (let i = 0; i < toDelete; i++) {
-      const next = keys.next();
-      if (next.done) break;
-      tokenCache.delete(next.value);
+    // Sort entries by lastAccess ascending (oldest first)
+    const entries = Array.from(tokenCache.entries())
+      .sort((a, b) => a[1].lastAccess - b[1].lastAccess);
+    for (let i = 0; i < toDelete && i < entries.length; i++) {
+      tokenCache.delete(entries[i][0]);
     }
   }
 
+  const now = Date.now();
   tokenCache.set(cacheKey(token), {
     userId,
-    expiresAt: Date.now() + TOKEN_CACHE_TTL,
+    expiresAt: now + TOKEN_CACHE_TTL,
+    lastAccess: now,
   });
 
   return userId;

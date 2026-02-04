@@ -445,7 +445,7 @@ Pyramid: reps: [12, 10, 8] → per-set (length must equal sets)`,
       const userId = getUserId();
 
       // Some MCP clients serialize nested arrays as JSON strings
-      const days = parseJsonParam<any[]>(rawDays);
+      const days = parseJsonParam<z.infer<typeof daySchema>[]>(rawDays);
       const reps = parseJsonParam<number | number[]>(rawReps) ?? rawReps;
       const weight = parseJsonParam<number | number[] | null>(rawWeight) ?? rawWeight;
       const weekdays = parseJsonParam<number[]>(rawWeekdays) ?? rawWeekdays;
@@ -742,7 +742,7 @@ Pyramid: reps: [12, 10, 8] → per-set (length must equal sets)`,
         // Metadata-only update (no days = no new version)
         if (!days || days.length === 0) {
           const updates: string[] = [];
-          const params: any[] = [];
+          const params: (string | number | null)[] = [];
           if (new_name) {
             params.push(new_name);
             updates.push(`name = $${params.length}`);
@@ -826,7 +826,7 @@ Pyramid: reps: [12, 10, 8] → per-set (length must equal sets)`,
         }
 
         // Find program by program_id, name, or active
-        let program: any;
+        let program: { id: number; name: string } | undefined;
         if (program_id) {
           program = await pool
             .query("SELECT id, name FROM programs WHERE id = $1 AND user_id = $2", [program_id, userId])
@@ -1045,7 +1045,7 @@ Pyramid: reps: [12, 10, 8] → per-set (length must equal sets)`,
 
       if (action === "validate") {
         // Find program by program_id, name, or active
-        let program: any;
+        let program: { id: number; name: string; is_validated: boolean } | undefined;
         if (program_id) {
           program = await pool
             .query("SELECT id, name, is_validated FROM programs WHERE id = $1 AND user_id = $2", [program_id, userId])
@@ -1112,7 +1112,7 @@ Pyramid: reps: [12, 10, 8] → per-set (length must equal sets)`,
 
         // Build dynamic UPDATE
         const updates: string[] = [];
-        const params: any[] = [];
+        const params: (string | number | number[] | null)[] = [];
 
         if (sets !== undefined) {
           params.push(sets);
@@ -1197,7 +1197,7 @@ Pyramid: reps: [12, 10, 8] → per-set (length must equal sets)`,
 
         // Build dynamic UPDATE
         const updates: string[] = [];
-        const params: any[] = [];
+        const params: (string | number | number[] | null)[] = [];
 
         if (new_label) {
           params.push(new_label);
@@ -1390,7 +1390,7 @@ Pyramid: reps: [12, 10, 8] → per-set (length must equal sets)`,
 
         // Determine what to update
         const updates: string[] = [];
-        const params: any[] = [];
+        const params: (number | null)[] = [];
 
         // Cross-day move
         if (target_day_id !== undefined && target_day_id !== target.day_id) {
