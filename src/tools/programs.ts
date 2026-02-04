@@ -62,6 +62,78 @@ function isSectionItem(item: DayItem): item is z.infer<typeof sectionSchema> {
 }
 
 /**
+ * Row structure for batch inserting exercises.
+ */
+interface ExerciseRow {
+  day_id: number;
+  exercise_id: number;
+  target_sets: number;
+  target_reps: number;
+  target_weight: number | null;
+  target_rpe: number | null;
+  sort_order: number;
+  group_id: number | null;
+  rest_seconds: number | null;
+  notes: string | null;
+  section_id: number | null;
+  target_reps_per_set: number[] | null;
+  target_weight_per_set: number[] | null;
+}
+
+/**
+ * Batch insert exercises using unnest for efficiency.
+ * Reduces N queries to 1 query per day.
+ */
+async function batchInsertExercises(
+  rows: ExerciseRow[],
+  client: import("pg").PoolClient
+): Promise<void> {
+  if (rows.length === 0) return;
+
+  // Build arrays for unnest
+  const dayIds: number[] = [];
+  const exerciseIds: number[] = [];
+  const targetSets: number[] = [];
+  const targetReps: number[] = [];
+  const targetWeights: (number | null)[] = [];
+  const targetRpes: (number | null)[] = [];
+  const sortOrders: number[] = [];
+  const groupIds: (number | null)[] = [];
+  const restSeconds: (number | null)[] = [];
+  const notes: (string | null)[] = [];
+  const sectionIds: (number | null)[] = [];
+  const repsPerSet: (number[] | null)[] = [];
+  const weightPerSet: (number[] | null)[] = [];
+
+  for (const row of rows) {
+    dayIds.push(row.day_id);
+    exerciseIds.push(row.exercise_id);
+    targetSets.push(row.target_sets);
+    targetReps.push(row.target_reps);
+    targetWeights.push(row.target_weight);
+    targetRpes.push(row.target_rpe);
+    sortOrders.push(row.sort_order);
+    groupIds.push(row.group_id);
+    restSeconds.push(row.rest_seconds);
+    notes.push(row.notes);
+    sectionIds.push(row.section_id);
+    repsPerSet.push(row.target_reps_per_set);
+    weightPerSet.push(row.target_weight_per_set);
+  }
+
+  await client.query(
+    `INSERT INTO program_day_exercises
+       (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id, target_reps_per_set, target_weight_per_set)
+     SELECT * FROM unnest(
+       $1::int[], $2::int[], $3::int[], $4::int[], $5::real[], $6::real[],
+       $7::int[], $8::int[], $9::int[], $10::text[], $11::int[], $12::int[][], $13::real[][]
+     )`,
+    [dayIds, exerciseIds, targetSets, targetReps, targetWeights, targetRpes,
+     sortOrders, groupIds, restSeconds, notes, sectionIds, repsPerSet, weightPerSet]
+  );
+}
+
+/**
  * Collect all exercise names from a flat list of items (solo or group).
  */
 function collectExerciseNamesFromItems(items: Array<z.infer<typeof soloExerciseSchema> | z.infer<typeof groupSchema>>): string[] {
@@ -100,19 +172,19 @@ function collectExerciseNames(items: DayItem[]): string[] {
 }
 
 /**
- * Insert a single exercise row into program_day_exercises using a pre-resolved exercise map.
+ * Build an ExerciseRow (without inserting) from a solo exercise schema using a pre-resolved exercise map.
+ * Updates createdExercises/existingExercises sets as side effects.
  */
-async function insertExerciseRow(
+function buildExerciseRow(
   dayId: number,
   ex: z.infer<typeof soloExerciseSchema>,
   sortOrder: number,
   groupId: number | null,
   sectionId: number | null,
-  client: import("pg").PoolClient,
   exerciseMap: Map<string, ResolvedExercise>,
   createdExercises: Set<string>,
   existingExercises: Set<string>
-): Promise<void> {
+): ExerciseRow {
   const resolved = exerciseMap.get(ex.exercise.trim().toLowerCase());
   if (!resolved) {
     throw new Error(`Exercise "${ex.exercise}" not found in batch resolution map`);
@@ -127,24 +199,31 @@ async function insertExerciseRow(
   const targetRepsPerSet = repsIsArray ? (ex.reps as number[]) : null;
 
   const weightIsArray = Array.isArray(ex.weight);
-  const targetWeight = weightIsArray ? (ex.weight as number[])[0] : (ex.weight || null);
+  const targetWeight: number | null = weightIsArray ? (ex.weight as number[])[0] : ((ex.weight as number | null | undefined) || null);
   const targetWeightPerSet = weightIsArray ? (ex.weight as number[]) : null;
 
-  await client.query(
-    `INSERT INTO program_day_exercises
-       (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id, target_reps_per_set, target_weight_per_set)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-    [dayId, resolved.id, ex.sets, targetReps, targetWeight, ex.rpe || null,
-     sortOrder, groupId, groupId ? null : (ex.rest_seconds || null), ex.notes || null, sectionId,
-     targetRepsPerSet, targetWeightPerSet]
-  );
+  return {
+    day_id: dayId,
+    exercise_id: resolved.id,
+    target_sets: ex.sets,
+    target_reps: targetReps,
+    target_weight: targetWeight,
+    target_rpe: ex.rpe || null,
+    sort_order: sortOrder,
+    group_id: groupId,
+    rest_seconds: groupId ? null : (ex.rest_seconds || null),
+    notes: ex.notes || null,
+    section_id: sectionId,
+    target_reps_per_set: targetRepsPerSet,
+    target_weight_per_set: targetWeightPerSet,
+  };
 }
 
 /**
- * Insert items (solo exercises, groups) with pre-resolved exercise map.
- * Returns next sortOrder.
+ * Collect exercise rows from items (solo exercises, groups) with pre-resolved exercise map.
+ * Returns { rows, nextSortOrder }. Groups are inserted inline to get IDs.
  */
-async function insertItemsWithMap(
+async function collectItemRows(
   dayId: number,
   items: Array<z.infer<typeof soloExerciseSchema> | z.infer<typeof groupSchema>>,
   startSortOrder: number,
@@ -153,12 +232,14 @@ async function insertItemsWithMap(
   exerciseMap: Map<string, ResolvedExercise>,
   createdExercises: Set<string>,
   existingExercises: Set<string>
-): Promise<number> {
+): Promise<{ rows: ExerciseRow[]; nextSortOrder: number }> {
+  const rows: ExerciseRow[] = [];
   let sortOrder = startSortOrder;
 
   for (const item of items) {
     if (isGroupItem(item as DayItem)) {
       const group = item as z.infer<typeof groupSchema>;
+      // Groups need to be inserted to get their ID (1 query per group)
       const groupId = await insertGroup(
         "program_exercise_groups", "day_id", dayId,
         { group_type: group.group_type, label: group.label, notes: group.notes, rest_seconds: group.rest_seconds },
@@ -166,22 +247,22 @@ async function insertItemsWithMap(
       );
 
       for (const ex of group.exercises) {
-        await insertExerciseRow(dayId, ex, sortOrder, groupId, sectionId, client, exerciseMap, createdExercises, existingExercises);
+        rows.push(buildExerciseRow(dayId, ex, sortOrder, groupId, sectionId, exerciseMap, createdExercises, existingExercises));
         sortOrder++;
       }
     } else {
       const solo = item as z.infer<typeof soloExerciseSchema>;
-      await insertExerciseRow(dayId, solo, sortOrder, null, sectionId, client, exerciseMap, createdExercises, existingExercises);
+      rows.push(buildExerciseRow(dayId, solo, sortOrder, null, sectionId, exerciseMap, createdExercises, existingExercises));
       sortOrder++;
     }
   }
 
-  return sortOrder;
+  return { rows, nextSortOrder: sortOrder };
 }
 
 /**
  * Insert a day's exercises (mix of solo, groups, and sections) into program_day_exercises.
- * Uses batch exercise resolution: 1-2 queries for all exercises instead of 3N.
+ * Uses batch exercise resolution (1-2 queries) and batch INSERT (1 query for all exercises).
  * Returns { created, existing } exercise name sets.
  */
 async function insertDayItems(
@@ -199,25 +280,29 @@ async function insertDayItems(
   // Step 2: Batch resolve (1-2 queries instead of 3N)
   const exerciseMap = await resolveExercisesBatch(exerciseNames, userId, client);
 
-  // Step 3: Insert with map lookups
+  // Step 3: Collect all exercise rows (groups/sections inserted to get IDs)
+  const allRows: ExerciseRow[] = [];
   let sortOrder = 0;
   let sectionSortOrder = 0;
 
   for (const item of items) {
     if (isSectionItem(item)) {
-      // Insert section row
+      // Insert section row (1 query per section)
       const sectionId = await insertSection(
         "program_sections", "day_id", dayId,
         { label: item.section, notes: item.notes },
         sectionSortOrder++, client
       );
 
-      // Insert the section's inner items (solo + groups) with this sectionId
-      sortOrder = await insertItemsWithMap(
+      // Collect rows from the section's inner items
+      const { rows, nextSortOrder } = await collectItemRows(
         dayId, item.exercises, sortOrder, sectionId,
         client, exerciseMap, createdExercises, existingExercises
       );
+      allRows.push(...rows);
+      sortOrder = nextSortOrder;
     } else if (isGroupItem(item)) {
+      // Insert group row (1 query per group)
       const groupId = await insertGroup(
         "program_exercise_groups", "day_id", dayId,
         { group_type: item.group_type, label: item.label, notes: item.notes, rest_seconds: item.rest_seconds },
@@ -225,14 +310,17 @@ async function insertDayItems(
       );
 
       for (const ex of item.exercises) {
-        await insertExerciseRow(dayId, ex, sortOrder, groupId, null, client, exerciseMap, createdExercises, existingExercises);
+        allRows.push(buildExerciseRow(dayId, ex, sortOrder, groupId, null, exerciseMap, createdExercises, existingExercises));
         sortOrder++;
       }
     } else {
-      await insertExerciseRow(dayId, item, sortOrder, null, null, client, exerciseMap, createdExercises, existingExercises);
+      allRows.push(buildExerciseRow(dayId, item, sortOrder, null, null, exerciseMap, createdExercises, existingExercises));
       sortOrder++;
     }
   }
+
+  // Step 4: Batch INSERT all exercises (1 query instead of N)
+  await batchInsertExercises(allRows, client);
 
   return { created: createdExercises, existing: existingExercises };
 }
@@ -623,29 +711,23 @@ If multiple exercises match (e.g., same exercise twice in a day), returns ambigu
               client
             );
 
-            for (let j = 0; j < day.exercises.length; j++) {
-              const ex = day.exercises[j];
-              await client.query(
-                `INSERT INTO program_day_exercises
-                   (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id, target_reps_per_set, target_weight_per_set)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-                [
-                  newDay.id,
-                  ex.exercise_id,
-                  ex.target_sets,
-                  ex.target_reps,
-                  ex.target_weight || null,
-                  ex.target_rpe || null,
-                  j,
-                  ex.group_id ? (groupMap.get(ex.group_id) ?? null) : null,
-                  ex.rest_seconds || null,
-                  ex.notes || null,
-                  ex.section_id ? (sectionMap.get(ex.section_id) ?? null) : null,
-                  ex.target_reps_per_set || null,
-                  ex.target_weight_per_set || null,
-                ]
-              );
-            }
+            // Batch insert all exercises for this day (1 query instead of N)
+            const exerciseRows: ExerciseRow[] = day.exercises.map((ex: any, j: number) => ({
+              day_id: newDay.id,
+              exercise_id: ex.exercise_id,
+              target_sets: ex.target_sets,
+              target_reps: ex.target_reps,
+              target_weight: ex.target_weight || null,
+              target_rpe: ex.target_rpe || null,
+              sort_order: j,
+              group_id: ex.group_id ? (groupMap.get(ex.group_id) ?? null) : null,
+              rest_seconds: ex.rest_seconds || null,
+              notes: ex.notes || null,
+              section_id: ex.section_id ? (sectionMap.get(ex.section_id) ?? null) : null,
+              target_reps_per_set: ex.target_reps_per_set || null,
+              target_weight_per_set: ex.target_weight_per_set || null,
+            }));
+            await batchInsertExercises(exerciseRows, client);
           }
 
           await client.query("COMMIT");

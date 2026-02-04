@@ -423,10 +423,9 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // INSERT program
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 1
-        .mockResolvedValueOnce({}) // ex 1
-        .mockResolvedValueOnce({}) // ex 2
+        .mockResolvedValueOnce({}) // Batch INSERT exercises for day 1
         .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 2
-        .mockResolvedValueOnce({}) // ex 1
+        .mockResolvedValueOnce({}) // Batch INSERT exercises for day 2
         .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({ action: "clone", source_id: 100 });
@@ -455,7 +454,7 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // INSERT program
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 1
-        .mockResolvedValueOnce({}) // ex 1
+        .mockResolvedValueOnce({}) // Batch INSERT exercises for day 1
         .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({ action: "clone", source_id: 100, name: "My Routine" });
@@ -566,7 +565,7 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
-        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}) // Batch INSERT exercise
         .mockResolvedValueOnce({}); // COMMIT
 
       await toolHandler({
@@ -580,13 +579,15 @@ describe("manage_program tool", () => {
         }],
       });
 
-      // INSERT exercise is the 4th call (index 3)
-      const insertArgs = mockClientQuery.mock.calls[3][1];
-      expect(insertArgs[4]).toBeNull(); // weight
-      expect(insertArgs[5]).toBeNull(); // rpe
-      expect(insertArgs[7]).toBeNull(); // group_id (solo exercise)
-      expect(insertArgs[8]).toBeNull(); // rest_seconds
-      expect(insertArgs[9]).toBeNull(); // notes
+      // Find the batch INSERT call (uses unnest)
+      const batchCall = mockClientQuery.mock.calls.find((call: any[]) => call[0]?.includes?.("unnest"));
+      expect(batchCall).toBeDefined();
+      const args = batchCall![1];
+      expect(args[4]).toEqual([null]); // weight array
+      expect(args[5]).toEqual([null]); // rpe array
+      expect(args[7]).toEqual([null]); // group_id array (solo exercise)
+      expect(args[8]).toEqual([null]); // rest_seconds array
+      expect(args[9]).toEqual([null]); // notes array
     });
 
     it("stores null for weekdays: null on days", async () => {
@@ -596,7 +597,7 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
-        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}) // Batch INSERT exercise
         .mockResolvedValueOnce({}); // COMMIT
 
       await toolHandler({
@@ -613,9 +614,16 @@ describe("manage_program tool", () => {
     });
 
     it("handles mixed null and non-null values across exercises", async () => {
-      mockResolveExercise
-        .mockResolvedValueOnce({ id: 1, name: "Bench Press", isNew: false })
-        .mockResolvedValueOnce({ id: 2, name: "Lateral Raise", isNew: false });
+      // mockResolveExercisesBatch is used (not individual resolves)
+      mockResolveExercisesBatch.mockImplementation((names: string[]) => {
+        const map = new Map();
+        const ids: Record<string, number> = { "bench press": 1, "lateral raise": 2 };
+        for (const name of names) {
+          const key = name.trim().toLowerCase();
+          map.set(key, { id: ids[key] || 1, name, isNew: false });
+        }
+        return Promise.resolve(map);
+      });
 
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
@@ -623,8 +631,7 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
-        .mockResolvedValueOnce({}) // INSERT exercise 1
-        .mockResolvedValueOnce({}) // INSERT exercise 2
+        .mockResolvedValueOnce({}) // Batch INSERT exercises
         .mockResolvedValueOnce({}); // COMMIT
 
       await toolHandler({
@@ -638,19 +645,15 @@ describe("manage_program tool", () => {
         }],
       });
 
-      // Exercise 1 (index 3)
-      const ex1Args = mockClientQuery.mock.calls[3][1];
-      expect(ex1Args[4]).toBe(80);   // weight
-      expect(ex1Args[5]).toBeNull();  // rpe (null)
-      expect(ex1Args[8]).toBe(120);   // rest_seconds
-      expect(ex1Args[9]).toBeNull(); // notes (null)
-
-      // Exercise 2 (index 4)
-      const ex2Args = mockClientQuery.mock.calls[4][1];
-      expect(ex2Args[4]).toBeNull();            // weight (null)
-      expect(ex2Args[5]).toBe(8);               // rpe
-      expect(ex2Args[8]).toBeNull();            // rest_seconds (null)
-      expect(ex2Args[9]).toBe("slow eccentric"); // notes
+      // Find the batch INSERT call
+      const batchCall = mockClientQuery.mock.calls.find((call: any[]) => call[0]?.includes?.("unnest"));
+      expect(batchCall).toBeDefined();
+      const args = batchCall![1];
+      // Arrays contain values for both exercises in order
+      expect(args[4]).toEqual([80, null]);   // weights: [ex1=80, ex2=null]
+      expect(args[5]).toEqual([null, 8]);    // rpes: [ex1=null, ex2=8]
+      expect(args[8]).toEqual([120, null]);  // rest_seconds: [ex1=120, ex2=null]
+      expect(args[9]).toEqual([null, "slow eccentric"]); // notes
     });
 
     // --- Metadata updates ---
@@ -798,11 +801,16 @@ describe("manage_program tool", () => {
     });
 
     it("patches with multiple days each having multiple exercises", async () => {
-      mockResolveExercise
-        .mockResolvedValueOnce({ id: 1, name: "Bench Press", isNew: false })
-        .mockResolvedValueOnce({ id: 2, name: "Incline DB", isNew: false })
-        .mockResolvedValueOnce({ id: 3, name: "Squat", isNew: false })
-        .mockResolvedValueOnce({ id: 4, name: "Leg Press", isNew: false });
+      // mockResolveExercisesBatch is used (not individual resolves)
+      mockResolveExercisesBatch.mockImplementation((names: string[]) => {
+        const map = new Map();
+        const ids: Record<string, number> = { "bench press": 1, "incline db": 2, "squat": 3, "leg press": 4 };
+        for (const name of names) {
+          const key = name.trim().toLowerCase();
+          map.set(key, { id: ids[key] || 1, name, isNew: false });
+        }
+        return Promise.resolve(map);
+      });
 
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
@@ -810,11 +818,9 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 1
-        .mockResolvedValueOnce({}) // INSERT ex 1
-        .mockResolvedValueOnce({}) // INSERT ex 2
+        .mockResolvedValueOnce({}) // Batch INSERT exercises for day 1
         .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 2
-        .mockResolvedValueOnce({}) // INSERT ex 3
-        .mockResolvedValueOnce({}) // INSERT ex 4
+        .mockResolvedValueOnce({}) // Batch INSERT exercises for day 2
         .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({
@@ -836,22 +842,18 @@ describe("manage_program tool", () => {
     });
 
     it("preserves day ordering via sort_order", async () => {
-      mockResolveExercise
-        .mockResolvedValueOnce({ id: 1, name: "A", isNew: false })
-        .mockResolvedValueOnce({ id: 2, name: "B", isNew: false })
-        .mockResolvedValueOnce({ id: 3, name: "C", isNew: false });
-
+      // mockResolveExercisesBatch is used
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 0
-        .mockResolvedValueOnce({}) // INSERT ex
+        .mockResolvedValueOnce({}) // Batch INSERT ex
         .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 1
-        .mockResolvedValueOnce({}) // INSERT ex
+        .mockResolvedValueOnce({}) // Batch INSERT ex
         .mockResolvedValueOnce({ rows: [{ id: 22 }] }) // INSERT day 2
-        .mockResolvedValueOnce({}) // INSERT ex
+        .mockResolvedValueOnce({}) // Batch INSERT ex
         .mockResolvedValueOnce({}); // COMMIT
 
       await toolHandler({
@@ -863,26 +865,23 @@ describe("manage_program tool", () => {
         ],
       });
 
-      // Day inserts at indices 2, 4, 6 (after BEGIN, DELETE)
+      // Day inserts at indices 2, 4, 6 (after BEGIN, version, then alternating day/batch)
       expect(mockClientQuery.mock.calls[2][1][3]).toBe(0); // sort_order for day 0
       expect(mockClientQuery.mock.calls[4][1][3]).toBe(1); // sort_order for day 1
       expect(mockClientQuery.mock.calls[6][1][3]).toBe(2); // sort_order for day 2
     });
 
     it("handles weekdays: null vs weekdays: [1,3,5]", async () => {
-      mockResolveExercise
-        .mockResolvedValueOnce({ id: 1, name: "A", isNew: false })
-        .mockResolvedValueOnce({ id: 2, name: "B", isNew: false });
-
+      // mockResolveExercisesBatch is used
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day 1 (weekdays null)
-        .mockResolvedValueOnce({}) // INSERT ex
+        .mockResolvedValueOnce({}) // Batch INSERT ex
         .mockResolvedValueOnce({ rows: [{ id: 21 }] }) // INSERT day 2 (weekdays [1,3,5])
-        .mockResolvedValueOnce({}) // INSERT ex
+        .mockResolvedValueOnce({}) // Batch INSERT ex
         .mockResolvedValueOnce({}); // COMMIT
 
       await toolHandler({
@@ -908,7 +907,7 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
-        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}) // Batch INSERT exercise
         .mockResolvedValueOnce({}); // COMMIT
 
       await toolHandler({
@@ -922,12 +921,15 @@ describe("manage_program tool", () => {
         }],
       });
 
-      const insertArgs = mockClientQuery.mock.calls[3][1];
-      expect(insertArgs[4]).toBe(100);          // weight
-      expect(insertArgs[5]).toBe(8);            // rpe
-      expect(insertArgs[7]).toBeNull();         // group_id (solo)
-      expect(insertArgs[8]).toBe(90);           // rest_seconds
-      expect(insertArgs[9]).toBe("slow tempo"); // notes
+      // Find the batch INSERT call
+      const batchCall = mockClientQuery.mock.calls.find((call: any[]) => call[0]?.includes?.("unnest"));
+      expect(batchCall).toBeDefined();
+      const args = batchCall![1];
+      expect(args[4]).toEqual([100]);          // weight array
+      expect(args[5]).toEqual([8]);            // rpe array
+      expect(args[7]).toEqual([null]);         // group_id array (solo)
+      expect(args[8]).toEqual([90]);           // rest_seconds array
+      expect(args[9]).toEqual(["slow tempo"]); // notes array
     });
 
     it("passes transaction client to resolveExercisesBatch", async () => {
@@ -957,9 +959,16 @@ describe("manage_program tool", () => {
     // --- Group scenarios (nested format) ---
 
     it("creates a group with multiple exercises using nested format", async () => {
-      mockResolveExercise
-        .mockResolvedValueOnce({ id: 1, name: "Cable Fly", isNew: false })
-        .mockResolvedValueOnce({ id: 2, name: "Lateral Raise", isNew: false });
+      // mockResolveExercisesBatch is used
+      mockResolveExercisesBatch.mockImplementation((names: string[]) => {
+        const map = new Map();
+        const ids: Record<string, number> = { "cable fly": 1, "lateral raise": 2 };
+        for (const name of names) {
+          const key = name.trim().toLowerCase();
+          map.set(key, { id: ids[key] || 1, name, isNew: false });
+        }
+        return Promise.resolve(map);
+      });
 
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
@@ -967,9 +976,8 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
-        // insertGroup is mocked (returns 100), then 2 INSERT exercises
-        .mockResolvedValueOnce({}) // INSERT ex 1
-        .mockResolvedValueOnce({}) // INSERT ex 2
+        // insertGroup is mocked (returns 100)
+        .mockResolvedValueOnce({}) // Batch INSERT exercises
         .mockResolvedValueOnce({}); // COMMIT
 
       await toolHandler({
@@ -993,22 +1001,27 @@ describe("manage_program tool", () => {
       expect(mockInsertGroup.mock.calls[0][3].group_type).toBe("superset");
       expect(mockInsertGroup.mock.calls[0][3].label).toBe("Chest + Shoulders");
 
+      // Find the batch INSERT call
+      const batchCall = mockClientQuery.mock.calls.find((call: any[]) => call[0]?.includes?.("unnest"));
+      expect(batchCall).toBeDefined();
+      const args = batchCall![1];
       // Both exercises should have the same group_id (100 from mock)
-      const ex1Args = mockClientQuery.mock.calls[3][1];
-      const ex2Args = mockClientQuery.mock.calls[4][1];
-      expect(ex1Args[7]).toBe(100); // group_id
-      expect(ex2Args[7]).toBe(100); // same group_id
+      expect(args[7]).toEqual([100, 100]); // group_ids for both exercises
       // Grouped exercises have null rest_seconds
-      expect(ex1Args[8]).toBeNull();
-      expect(ex2Args[8]).toBeNull();
+      expect(args[8]).toEqual([null, null]); // rest_seconds for both
     });
 
     it("handles mixed solo exercises and groups in same day", async () => {
-      mockResolveExercise
-        .mockResolvedValueOnce({ id: 1, name: "Bench Press", isNew: false })
-        .mockResolvedValueOnce({ id: 2, name: "A", isNew: false })
-        .mockResolvedValueOnce({ id: 3, name: "B", isNew: false })
-        .mockResolvedValueOnce({ id: 4, name: "Tricep Pushdown", isNew: false });
+      // mockResolveExercisesBatch is used (not individual resolves)
+      mockResolveExercisesBatch.mockImplementation((names: string[]) => {
+        const map = new Map();
+        const ids: Record<string, number> = { "bench press": 1, "a": 2, "b": 3, "tricep pushdown": 4 };
+        for (const name of names) {
+          const key = name.trim().toLowerCase();
+          map.set(key, { id: ids[key] || 1, name, isNew: false });
+        }
+        return Promise.resolve(map);
+      });
 
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 1, name: "PPL" }] });
       mockGetLatestVersion.mockResolvedValueOnce({ id: 5, version_number: 2 });
@@ -1016,11 +1029,8 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
-        .mockResolvedValueOnce({}) // INSERT solo ex (Bench)
         // insertGroup mocked (returns 100)
-        .mockResolvedValueOnce({}) // INSERT grouped ex A
-        .mockResolvedValueOnce({}) // INSERT grouped ex B
-        .mockResolvedValueOnce({}) // INSERT solo ex (Tricep)
+        .mockResolvedValueOnce({}) // Batch INSERT all exercises
         .mockResolvedValueOnce({}); // COMMIT
 
       await toolHandler({
@@ -1042,22 +1052,17 @@ describe("manage_program tool", () => {
         }],
       });
 
-      // Solo Bench: group_id null, rest_seconds 180
-      const benchArgs = mockClientQuery.mock.calls[3][1];
-      expect(benchArgs[7]).toBeNull();
-      expect(benchArgs[8]).toBe(180);
+      // Find the batch INSERT call (contains unnest)
+      const batchInsertCall = mockClientQuery.mock.calls.find((call: any[]) =>
+        call[0]?.includes?.("unnest")
+      );
+      expect(batchInsertCall).toBeDefined();
+      const args = batchInsertCall![1];
 
-      // Grouped exercises: group_id 100, rest_seconds null
-      const exAArgs = mockClientQuery.mock.calls[4][1];
-      const exBArgs = mockClientQuery.mock.calls[5][1];
-      expect(exAArgs[7]).toBe(100);
-      expect(exAArgs[8]).toBeNull();
-      expect(exBArgs[7]).toBe(100);
-
-      // Solo Tricep: group_id null, rest_seconds 60
-      const tricepArgs = mockClientQuery.mock.calls[6][1];
-      expect(tricepArgs[7]).toBeNull();
-      expect(tricepArgs[8]).toBe(60);
+      // args[7] = group_ids array: [null, 100, 100, null] (Bench=solo, A=grouped, B=grouped, Tricep=solo)
+      expect(args[7]).toEqual([null, 100, 100, null]);
+      // args[8] = rest_seconds array: [180, null, null, 60] (solo exercises have rest, grouped have null)
+      expect(args[8]).toEqual([180, null, null, 60]);
     });
 
     // --- Combined operations (widget auto-save pattern) ---
@@ -1193,7 +1198,7 @@ describe("manage_program tool", () => {
         .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // INSERT program
         .mockResolvedValueOnce({ rows: [{ id: 10 }] }) // INSERT version
         .mockResolvedValueOnce({ rows: [{ id: 20 }] }) // INSERT day
-        .mockResolvedValueOnce({}) // INSERT exercise
+        .mockResolvedValueOnce({}) // Batch INSERT exercise
         .mockResolvedValueOnce({}); // COMMIT
 
       const result = await toolHandler({
@@ -1203,11 +1208,14 @@ describe("manage_program tool", () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.program.name).toBe("Pyramid");
 
-      // INSERT exercise is the 7th call (index 6) after profile query was added
-      const insertArgs = mockClientQuery.mock.calls[6][1];
-      expect(insertArgs[3]).toBe(12); // target_reps = first element
-      expect(insertArgs[11]).toEqual([12, 10, 8]); // target_reps_per_set
-      expect(insertArgs[12]).toBeNull(); // target_weight_per_set (not provided)
+      // Find the batch INSERT call (contains unnest)
+      const batchCall = mockClientQuery.mock.calls.find((call: any[]) => call[0]?.includes?.("unnest"));
+      expect(batchCall).toBeDefined();
+      const args = batchCall![1];
+      // With batch INSERT, values are arrays (even for single exercise)
+      expect(args[3]).toEqual([12]); // target_reps array = [first element]
+      expect(args[11]).toEqual([[12, 10, 8]]); // target_reps_per_set = [[array]]
+      expect(args[12]).toEqual([null]); // target_weight_per_set = [null]
     });
 
     it("stores per-set weight array on create", async () => {
@@ -1227,11 +1235,12 @@ describe("manage_program tool", () => {
         days: [{ day_label: "Push", exercises: [{ exercise: "Bench Press", sets: 3, reps: [12, 10, 8], weight: [80, 85, 90] }] }],
       });
 
-      const insertArgs = mockClientQuery.mock.calls[6][1];
-      expect(insertArgs[3]).toBe(12); // target_reps = first
-      expect(insertArgs[4]).toBe(80); // target_weight = first
-      expect(insertArgs[11]).toEqual([12, 10, 8]); // target_reps_per_set
-      expect(insertArgs[12]).toEqual([80, 85, 90]); // target_weight_per_set
+      const batchCall = mockClientQuery.mock.calls.find((call: any[]) => call[0]?.includes?.("unnest"));
+      const args = batchCall![1];
+      expect(args[3]).toEqual([12]); // target_reps = [first]
+      expect(args[4]).toEqual([80]); // target_weight = [first]
+      expect(args[11]).toEqual([[12, 10, 8]]); // target_reps_per_set
+      expect(args[12]).toEqual([[80, 85, 90]]); // target_weight_per_set
     });
 
     it("stores null per-set arrays for uniform reps/weight", async () => {
@@ -1251,11 +1260,12 @@ describe("manage_program tool", () => {
         days: [{ day_label: "Push", exercises: [{ exercise: "Bench Press", sets: 3, reps: 10, weight: 80 }] }],
       });
 
-      const insertArgs = mockClientQuery.mock.calls[6][1];
-      expect(insertArgs[3]).toBe(10); // target_reps
-      expect(insertArgs[4]).toBe(80); // target_weight
-      expect(insertArgs[11]).toBeNull(); // target_reps_per_set
-      expect(insertArgs[12]).toBeNull(); // target_weight_per_set
+      const batchCall = mockClientQuery.mock.calls.find((call: any[]) => call[0]?.includes?.("unnest"));
+      const args = batchCall![1];
+      expect(args[3]).toEqual([10]); // target_reps
+      expect(args[4]).toEqual([80]); // target_weight
+      expect(args[11]).toEqual([null]); // target_reps_per_set
+      expect(args[12]).toEqual([null]); // target_weight_per_set
     });
 
     it("stores only weight array when reps is uniform", async () => {
@@ -1275,11 +1285,12 @@ describe("manage_program tool", () => {
         days: [{ day_label: "Push", exercises: [{ exercise: "Bench Press", sets: 3, reps: 10, weight: [80, 85, 90] }] }],
       });
 
-      const insertArgs = mockClientQuery.mock.calls[6][1];
-      expect(insertArgs[3]).toBe(10); // target_reps (scalar)
-      expect(insertArgs[4]).toBe(80); // target_weight = first of array
-      expect(insertArgs[11]).toBeNull(); // target_reps_per_set (null, uniform)
-      expect(insertArgs[12]).toEqual([80, 85, 90]); // target_weight_per_set
+      const batchCall = mockClientQuery.mock.calls.find((call: any[]) => call[0]?.includes?.("unnest"));
+      const args = batchCall![1];
+      expect(args[3]).toEqual([10]); // target_reps (scalar wrapped in array)
+      expect(args[4]).toEqual([80]); // target_weight = first of array, wrapped
+      expect(args[11]).toEqual([null]); // target_reps_per_set (null, uniform)
+      expect(args[12]).toEqual([[80, 85, 90]]); // target_weight_per_set
     });
   });
 
