@@ -10,7 +10,7 @@ HTML widgets rendered by MCP hosts (Claude Desktop, claude.ai, VS Code, ChatGPT)
 
 **Pending changes flow:**
 1. `show_profile()` with no params → read-only card
-2. `show_profile({ pending_changes: { weight_kg: 85, gym: "Iron Paradise" } })` → card with diff highlights + "Confirm" button
+2. `show_profile({ preview: { weight_kg: 85, gym: "Iron Paradise" } })` → card with diff highlights + "Confirm" button
 3. User clicks "Confirm" → widget calls `manage_profile({ action: "update", data: pendingChanges })` via `useCallTool()` → merges into local state, shows "Updated" flash
 4. User says "no" in chat → nothing happens, changes never applied
 
@@ -89,7 +89,7 @@ web/
     app-context.tsx           # AppProvider: useApp + useHostStyles + toolOutput context
     hooks.ts                 # React hooks: useToolOutput(), useCallTool(), useTheme()
     styles.css               # Shared styles with host CSS variable aliases
-    test-host.ts             # Widget test host: AppBridge + MCP client, HMR, device presets, all 21 tools
+    test-host.ts             # Widget test host: AppBridge + MCP client, HMR, device presets, all 19 tools
     widgets/                 # One React component per widget (profile.tsx, etc.)
       shared/              # Shared components: charts.tsx, exercise-icons.tsx, program-view.tsx, diff-components.tsx
 ```
@@ -204,7 +204,7 @@ Features:
 - **HMR**: Edit any `.tsx` widget file → change appears instantly (no rebuild, no restart)
 - **Live mode**: When the MCP server is running (`DEV_USER_ID=1 npm run dev`), widgets load real data from the dev database via Vite proxy (`/mcp` → `localhost:3001`)
 - **Sample mode**: Works without the MCP server using hardcoded sample data (fallback)
-- **All 21 tools**: Sidebar lists every MCP tool in 3 groups — Display (UI), Data (Widget), Data Only (JSON). Data-only tools render raw JSON response in the iframe.
+- **All 19 tools**: Sidebar lists every MCP tool in 3 groups — Display (UI), Data (Widget), Data Only (JSON). Data-only tools render raw JSON response in the iframe.
 - **Device presets**: Responsive, iPhone SE, iPhone Pro, iPad, Desktop — test layout at different sizes
 - **Theme toggle**: Switch light/dark to test widget theming
 - **Connection status**: Green/red dot shows if MCP server is reachable
