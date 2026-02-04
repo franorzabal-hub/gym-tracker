@@ -621,6 +621,8 @@ interface DayExerciseRow {
   target_reps: number;
   target_weight: number | null;
   target_rpe: number | null;
+  target_reps_per_set: number[] | null;
+  target_weight_per_set: number[] | null;
   rest_seconds: number | null;
   sort_order: number;
   group_id: number | null;
@@ -773,7 +775,7 @@ export async function logWorkout(params: {
     }
 
     // Log program day exercises
-    const routineResults: Array<{ exercise: string; sets: number; reps: number; weight?: number; rpe?: number }> = [];
+    const routineResults: Array<{ exercise: string; sets: number; reps: number | number[]; weight?: number | number[]; rpe?: number }> = [];
     let totalRoutineSets = 0;
     let totalRoutineVolume = 0;
     const allPRs: Array<{ exercise: string; prs: PRCheck[] }> = [];
@@ -808,9 +810,13 @@ export async function logWorkout(params: {
 
         const override = overrideMap.get(dex.exercise_name.toLowerCase());
         const sets = override?.sets || dex.target_sets;
-        const reps = override?.reps || dex.target_reps;
-        const weight = override?.weight ?? dex.target_weight;
+        const baseReps = override?.reps || dex.target_reps;
+        const baseWeight = override?.weight ?? dex.target_weight;
         const rpe = override?.rpe ?? dex.target_rpe;
+
+        // Use per-set arrays if available (for progressions like 12/10/8)
+        const hasRepsProgression = !override?.reps && dex.target_reps_per_set && dex.target_reps_per_set.length === sets;
+        const hasWeightProgression = override?.weight === undefined && dex.target_weight_per_set && dex.target_weight_per_set.length === sets;
 
         const sessionGroupId = dex.group_id ? (groupMap.get(dex.group_id) ?? null) : null;
         const sessionSectionId = dex.section_id ? (sectionMap.get(dex.section_id) ?? null) : null;
@@ -822,8 +828,8 @@ export async function logWorkout(params: {
         );
 
         const setNumbers = Array.from({ length: sets }, (_, i) => i + 1);
-        const setReps = Array(sets).fill(reps);
-        const setWeights = Array(sets).fill(weight || null);
+        const setReps = hasRepsProgression ? dex.target_reps_per_set! : Array(sets).fill(baseReps);
+        const setWeights = hasWeightProgression ? dex.target_weight_per_set! : Array(sets).fill(baseWeight || null);
         const setRPEs = Array(sets).fill(rpe || null);
 
         const { rows: insertedSets } = await client.query(
@@ -835,12 +841,23 @@ export async function logWorkout(params: {
         const setIds = insertedSets.map((row: { id: number }) => row.id);
 
         totalRoutineSets += sets;
-        if (weight) totalRoutineVolume += weight * reps * sets;
+        // Calculate volume with per-set values
+        for (let i = 0; i < sets; i++) {
+          const setWeight = setWeights[i];
+          const setRep = setReps[i];
+          if (setWeight) totalRoutineVolume += setWeight * setRep;
+        }
 
         if (sessionValidated) {
+          // Build per-set data for PR checking
+          const setsForPR = setIds.map((id: number, i: number) => ({
+            reps: setReps[i],
+            weight: setWeights[i] ?? null,
+            set_id: id,
+          }));
           const prs = await checkPRs(
             dex.exercise_id,
-            setIds.map((id: number) => ({ reps, weight: weight ?? null, set_id: id })),
+            setsForPR,
             dex.exercise_type,
             client,
             sessionStartedAt
@@ -848,11 +865,13 @@ export async function logWorkout(params: {
           if (prs.length > 0) allPRs.push({ exercise: dex.exercise_name, prs });
         }
 
+        // Return progression info if different per set
+        const hasProgression = hasRepsProgression || hasWeightProgression;
         routineResults.push({
           exercise: dex.exercise_name,
           sets,
-          reps,
-          weight: weight || undefined,
+          reps: hasRepsProgression ? setReps : baseReps,
+          weight: hasWeightProgression ? setWeights : (baseWeight || undefined),
           rpe: rpe || undefined,
         });
       }
