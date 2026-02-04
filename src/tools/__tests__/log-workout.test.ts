@@ -39,6 +39,10 @@ vi.mock("../../helpers/section-helpers.js", () => ({
   cloneSectionsBatch: vi.fn().mockResolvedValue(new Map()),
 }));
 
+vi.mock("../../helpers/profile-helpers.js", () => ({
+  getUserLocale: vi.fn().mockResolvedValue("en"),
+}));
+
 vi.mock("../../context/user-context.js", () => ({
   getUserId: vi.fn().mockReturnValue(1),
 }));
@@ -131,7 +135,7 @@ describe("log_workout tool", () => {
   describe("single exercise mode", () => {
     it("logs sets to existing session", async () => {
       mockGetActiveProgram.mockResolvedValueOnce(null);
-      mockResolve.mockResolvedValueOnce({ id: 1, name: "Bench Press", isNew: false, exerciseType: "strength" });
+      mockResolve.mockResolvedValueOnce({ id: 1, name: "Bench Press", displayName: "Bench Press", isNew: false, exerciseType: "strength" });
 
       // Transaction: BEGIN, active session, logSingleExercise queries, COMMIT
       mockClientQuery
@@ -159,7 +163,7 @@ describe("log_workout tool", () => {
 
     it("auto-creates session when none active", async () => {
       mockGetActiveProgram.mockResolvedValueOnce(null);
-      mockResolve.mockResolvedValueOnce({ id: 1, name: "Squat", isNew: false, exerciseType: "strength" });
+      mockResolve.mockResolvedValueOnce({ id: 1, name: "Squat", displayName: "Squat", isNew: false, exerciseType: "strength" });
 
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
@@ -196,7 +200,7 @@ describe("log_workout tool", () => {
 
     it("reports new PRs", async () => {
       mockGetActiveProgram.mockResolvedValueOnce(null);
-      mockResolve.mockResolvedValueOnce({ id: 1, name: "Deadlift", isNew: false });
+      mockResolve.mockResolvedValueOnce({ id: 1, name: "Deadlift", displayName: "Deadlift", isNew: false });
       mockCheckPRs.mockResolvedValueOnce([
         { record_type: "max_weight", value: 140, previous: 130 },
       ]);
@@ -368,7 +372,7 @@ describe("log_workout tool", () => {
         ],
       });
 
-      mockResolve.mockResolvedValueOnce({ id: 1, name: "Bench Press", isNew: false });
+      mockResolve.mockResolvedValueOnce({ id: 1, name: "Bench Press", displayName: "Bench Press", isNew: false });
 
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN
@@ -419,7 +423,7 @@ describe("log_workout tool", () => {
   describe("minimal_response", () => {
     it("returns condensed output when minimal_response is true", async () => {
       mockGetActiveProgram.mockResolvedValueOnce(null);
-      mockResolve.mockResolvedValueOnce({ id: 1, name: "Bench Press", isNew: false });
+      mockResolve.mockResolvedValueOnce({ id: 1, name: "Bench Press", displayName: "Bench Press", isNew: false });
 
       mockClientQuery
         .mockResolvedValueOnce({}) // BEGIN

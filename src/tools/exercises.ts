@@ -5,6 +5,7 @@ import { resolveExercise, searchExercises } from "../helpers/exercise-resolver.j
 import { getUserId } from "../context/user-context.js";
 import { parseJsonParam, parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
+import { getUserLocale, getLocalizedName } from "../helpers/profile-helpers.js";
 import type { RepType, ExerciseType } from "../db/types.js";
 
 interface BulkExerciseEntry {
@@ -66,9 +67,10 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
     },
     async ({ action, name, muscle_group, equipment, aliases, rep_type, exercise_type, names: rawNames, exercises, limit, offset, alias, source, target }) => {
       const userId = getUserId();
+      const locale = await getUserLocale();
 
       if (action === "search") {
-        const results = await searchExercises(name, muscle_group);
+        const results = await searchExercises(name, muscle_group, locale);
         return toolResponse({ exercises: results });
       }
 
@@ -101,7 +103,7 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
         const offsetIdx = params.length;
 
         const { rows: results } = await pool.query(
-          `SELECT e.id, e.name, e.muscle_group, e.equipment, e.rep_type, e.exercise_type,
+          `SELECT e.id, e.name, e.names, e.muscle_group, e.equipment, e.rep_type, e.exercise_type,
             COALESCE(array_agg(a.alias) FILTER (WHERE a.alias IS NOT NULL), '{}') as aliases
           FROM exercises e
           LEFT JOIN exercise_aliases a ON a.exercise_id = e.id
@@ -111,7 +113,12 @@ exercise_type: "strength" (default), "mobility", "cardio", "warmup" - category o
           params
         );
 
-        return toolResponse({ exercises: results, total });
+        const exercisesWithDisplayName = results.map(row => ({
+          ...row,
+          displayName: getLocalizedName(row.names, locale, row.name),
+        }));
+
+        return toolResponse({ exercises: exercisesWithDisplayName, total });
       }
 
       if (action === "update") {

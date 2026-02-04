@@ -4,6 +4,7 @@ import pool from "../db/connection.js";
 import { resolveExercise } from "./exercise-resolver.js";
 import { checkPRs } from "./stats-calculator.js";
 import { getUserId } from "../context/user-context.js";
+import { type Locale, DEFAULT_LOCALE } from "./profile-helpers.js";
 
 export const exerciseEntrySchema = z.object({
   exercise: z.string(),
@@ -27,12 +28,12 @@ export const exerciseEntrySchema = z.object({
 
 export type ExerciseEntry = z.infer<typeof exerciseEntrySchema>;
 
-export async function logSingleExercise(sessionId: number, entry: ExerciseEntry, client?: PoolClient, sessionValidated: boolean = true) {
+export async function logSingleExercise(sessionId: number, entry: ExerciseEntry, client?: PoolClient, sessionValidated: boolean = true, locale: Locale = DEFAULT_LOCALE) {
   const { exercise, sets, reps, weight, rpe, set_type, notes, rest_seconds, group_id, muscle_group, equipment, set_notes, drop_percent, rep_type, exercise_type } = entry;
   const q = client || pool;
 
   // Resolve exercise (pass metadata for auto-create or fill)
-  const resolved = await resolveExercise(exercise, muscle_group, equipment, rep_type, exercise_type, client);
+  const resolved = await resolveExercise(exercise, muscle_group, equipment, rep_type, exercise_type, client, locale);
 
   // Check if session_exercise already exists for this exercise in this session
   const userId = getUserId();
@@ -161,7 +162,7 @@ export async function logSingleExercise(sessionId: number, entry: ExerciseEntry,
     : [];
 
   return {
-    exercise_name: resolved.name,
+    exercise_name: resolved.displayName,
     is_new_exercise: resolved.isNew,
     logged_sets: loggedSets,
     new_prs: newPRs.length > 0 ? newPRs : undefined,

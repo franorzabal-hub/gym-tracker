@@ -2,6 +2,7 @@ import { PoolClient } from "pg";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { escapeIlike } from "./parse-helpers.js";
+import { getLocalizedName, type Locale, DEFAULT_LOCALE } from "./profile-helpers.js";
 import type { ExerciseType } from "../db/types.js";
 
 const q = (client?: PoolClient) => client || pool;
@@ -9,6 +10,7 @@ const q = (client?: PoolClient) => client || pool;
 export interface ResolvedExercise {
   id: number;
   name: string;
+  displayName: string;
   isNew: boolean;
   exerciseType?: ExerciseType;
 }
@@ -19,41 +21,59 @@ export interface ResolvedExercise {
  *   2. Alias match (via exercise_aliases table)
  *   3. Partial match (ILIKE on both names and aliases)
  * Returns null if no match is found — never auto-creates.
+ *
+ * @param input - Exercise name or alias to search
+ * @param client - Optional PoolClient for transactions
+ * @param locale - User's locale for displayName (defaults to 'en')
  */
-export async function findExercise(input: string, client?: PoolClient): Promise<ResolvedExercise | null> {
+export async function findExercise(input: string, client?: PoolClient, locale: Locale = DEFAULT_LOCALE): Promise<ResolvedExercise | null> {
   const normalized = input.trim().toLowerCase();
   const userId = getUserId();
 
   // 1. Exact name match (user-owned first, then global)
   const exact = await q(client).query(
-    `SELECT id, name, exercise_type FROM exercises
+    `SELECT id, name, names, exercise_type FROM exercises
      WHERE LOWER(name) = $1 AND (user_id IS NULL OR user_id = $2)
      ORDER BY user_id NULLS LAST LIMIT 1`,
     [normalized, userId]
   );
   if (exact.rows.length > 0) {
-    return { id: exact.rows[0].id, name: exact.rows[0].name, isNew: false, exerciseType: exact.rows[0].exercise_type };
+    const row = exact.rows[0];
+    return {
+      id: row.id,
+      name: row.name,
+      displayName: getLocalizedName(row.names, locale, row.name),
+      isNew: false,
+      exerciseType: row.exercise_type,
+    };
   }
 
   // 2. Alias match
   const alias = await q(client).query(
-    `SELECT e.id, e.name, e.exercise_type FROM exercise_aliases a
+    `SELECT e.id, e.name, e.names, e.exercise_type FROM exercise_aliases a
      JOIN exercises e ON e.id = a.exercise_id
      WHERE LOWER(a.alias) = $1 AND (e.user_id IS NULL OR e.user_id = $2)
      ORDER BY e.user_id NULLS LAST LIMIT 1`,
     [normalized, userId]
   );
   if (alias.rows.length > 0) {
-    return { id: alias.rows[0].id, name: alias.rows[0].name, isNew: false, exerciseType: alias.rows[0].exercise_type };
+    const row = alias.rows[0];
+    return {
+      id: row.id,
+      name: row.name,
+      displayName: getLocalizedName(row.names, locale, row.name),
+      isNew: false,
+      exerciseType: row.exercise_type,
+    };
   }
 
   // 3. Partial match (ILIKE)
   const partial = await q(client).query(
-    `SELECT id, name, exercise_type FROM (
-       SELECT e.id, e.name, e.exercise_type, e.user_id FROM exercises e
+    `SELECT id, name, names, exercise_type FROM (
+       SELECT e.id, e.name, e.names, e.exercise_type, e.user_id FROM exercises e
        WHERE e.name ILIKE $1 AND (e.user_id IS NULL OR e.user_id = $2)
        UNION
-       SELECT e.id, e.name, e.exercise_type, e.user_id FROM exercise_aliases a
+       SELECT e.id, e.name, e.names, e.exercise_type, e.user_id FROM exercise_aliases a
        JOIN exercises e ON e.id = a.exercise_id
        WHERE a.alias ILIKE $1 AND (e.user_id IS NULL OR e.user_id = $2)
      ) sub
@@ -61,7 +81,14 @@ export async function findExercise(input: string, client?: PoolClient): Promise<
     [`%${escapeIlike(normalized)}%`, userId]
   );
   if (partial.rows.length > 0) {
-    return { id: partial.rows[0].id, name: partial.rows[0].name, isNew: false, exerciseType: partial.rows[0].exercise_type };
+    const row = partial.rows[0];
+    return {
+      id: row.id,
+      name: row.name,
+      displayName: getLocalizedName(row.names, locale, row.name),
+      isNew: false,
+      exerciseType: row.exercise_type,
+    };
   }
 
   return null;
@@ -78,6 +105,8 @@ export async function findExercise(input: string, client?: PoolClient): Promise<
  * on user-owned exercises when the caller provides it.
  * On unique-constraint conflict during auto-create (concurrent request race),
  * falls back to a re-lookup instead of throwing.
+ *
+ * @param locale - User's locale for displayName (defaults to 'en')
  */
 export async function resolveExercise(
   input: string,
@@ -85,7 +114,8 @@ export async function resolveExercise(
   equipment?: string,
   repType?: string,
   exerciseType?: string,
-  client?: PoolClient
+  client?: PoolClient,
+  locale: Locale = DEFAULT_LOCALE
 ): Promise<ResolvedExercise> {
   const normalized = input.trim().toLowerCase();
   const userId = getUserId();
@@ -93,36 +123,50 @@ export async function resolveExercise(
   // 1. Exact name match (user-owned first, then global)
   // user_id NULLS LAST: prefer user's custom exercise over the global catalog entry
   const exact = await q(client).query(
-    `SELECT id, name, muscle_group, equipment, rep_type, exercise_type, user_id FROM exercises
+    `SELECT id, name, names, muscle_group, equipment, rep_type, exercise_type, user_id FROM exercises
      WHERE LOWER(name) = $1 AND (user_id IS NULL OR user_id = $2)
      ORDER BY user_id NULLS LAST LIMIT 1`,
     [normalized, userId]
   );
   if (exact.rows.length > 0) {
-    await fillMetadataIfMissing(exact.rows[0], muscleGroup, equipment, repType, exerciseType, client);
-    return { id: exact.rows[0].id, name: exact.rows[0].name, isNew: false, exerciseType: exact.rows[0].exercise_type };
+    const row = exact.rows[0];
+    await fillMetadataIfMissing(row, muscleGroup, equipment, repType, exerciseType, client);
+    return {
+      id: row.id,
+      name: row.name,
+      displayName: getLocalizedName(row.names, locale, row.name),
+      isNew: false,
+      exerciseType: row.exercise_type,
+    };
   }
 
   // 2. Alias match
   const alias = await q(client).query(
-    `SELECT e.id, e.name, e.muscle_group, e.equipment, e.rep_type, e.exercise_type, e.user_id FROM exercise_aliases a
+    `SELECT e.id, e.name, e.names, e.muscle_group, e.equipment, e.rep_type, e.exercise_type, e.user_id FROM exercise_aliases a
      JOIN exercises e ON e.id = a.exercise_id
      WHERE LOWER(a.alias) = $1 AND (e.user_id IS NULL OR e.user_id = $2)
      ORDER BY e.user_id NULLS LAST LIMIT 1`,
     [normalized, userId]
   );
   if (alias.rows.length > 0) {
-    await fillMetadataIfMissing(alias.rows[0], muscleGroup, equipment, repType, exerciseType, client);
-    return { id: alias.rows[0].id, name: alias.rows[0].name, isNew: false, exerciseType: alias.rows[0].exercise_type };
+    const row = alias.rows[0];
+    await fillMetadataIfMissing(row, muscleGroup, equipment, repType, exerciseType, client);
+    return {
+      id: row.id,
+      name: row.name,
+      displayName: getLocalizedName(row.names, locale, row.name),
+      isNew: false,
+      exerciseType: row.exercise_type,
+    };
   }
 
   // 3. Partial match (ILIKE)
   const partial = await q(client).query(
-    `SELECT id, name, muscle_group, equipment, rep_type, exercise_type, user_id FROM (
-       SELECT e.id, e.name, e.muscle_group, e.equipment, e.rep_type, e.exercise_type, e.user_id FROM exercises e
+    `SELECT id, name, names, muscle_group, equipment, rep_type, exercise_type, user_id FROM (
+       SELECT e.id, e.name, e.names, e.muscle_group, e.equipment, e.rep_type, e.exercise_type, e.user_id FROM exercises e
        WHERE e.name ILIKE $1 AND (e.user_id IS NULL OR e.user_id = $2)
        UNION
-       SELECT e.id, e.name, e.muscle_group, e.equipment, e.rep_type, e.exercise_type, e.user_id FROM exercise_aliases a
+       SELECT e.id, e.name, e.names, e.muscle_group, e.equipment, e.rep_type, e.exercise_type, e.user_id FROM exercise_aliases a
        JOIN exercises e ON e.id = a.exercise_id
        WHERE a.alias ILIKE $1 AND (e.user_id IS NULL OR e.user_id = $2)
      ) sub
@@ -130,32 +174,48 @@ export async function resolveExercise(
     [`%${escapeIlike(normalized)}%`, userId]
   );
   if (partial.rows.length > 0) {
-    await fillMetadataIfMissing(partial.rows[0], muscleGroup, equipment, repType, exerciseType, client);
+    const row = partial.rows[0];
+    await fillMetadataIfMissing(row, muscleGroup, equipment, repType, exerciseType, client);
     return {
-      id: partial.rows[0].id,
-      name: partial.rows[0].name,
+      id: row.id,
+      name: row.name,
+      displayName: getLocalizedName(row.names, locale, row.name),
       isNew: false,
-      exerciseType: partial.rows[0].exercise_type,
+      exerciseType: row.exercise_type,
     };
   }
 
-  // 4. Auto-create (user-owned)
+  // 4. Auto-create (user-owned) - new exercises use user's input as name (no localization needed)
   try {
     const created = await q(client).query(
       `INSERT INTO exercises (name, muscle_group, equipment, rep_type, exercise_type, user_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, exercise_type`,
       [input.trim(), muscleGroup || null, equipment || null, repType || 'reps', exerciseType || 'strength', userId]
     );
-    return { id: created.rows[0].id, name: created.rows[0].name, isNew: true, exerciseType: created.rows[0].exercise_type };
+    const createdName = created.rows[0].name;
+    return {
+      id: created.rows[0].id,
+      name: createdName,
+      displayName: createdName,
+      isNew: true,
+      exerciseType: created.rows[0].exercise_type,
+    };
   } catch (err: any) {
     if (err.code === '23505') {
       // Concurrent create — look it up again
       const existing = await q(client).query(
-        `SELECT id, name, exercise_type FROM exercises WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2)
+        `SELECT id, name, names, exercise_type FROM exercises WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2)
          ORDER BY user_id NULLS LAST LIMIT 1`,
         [input.trim(), userId]
       );
       if (existing.rows.length > 0) {
-        return { id: existing.rows[0].id, name: existing.rows[0].name, isNew: false, exerciseType: existing.rows[0].exercise_type };
+        const row = existing.rows[0];
+        return {
+          id: row.id,
+          name: row.name,
+          displayName: getLocalizedName(row.names, locale, row.name),
+          isNew: false,
+          exerciseType: row.exercise_type,
+        };
       }
     }
     throw err;
@@ -208,11 +268,14 @@ async function fillMetadataIfMissing(
  * Batch resolve multiple exercise names in 1-2 queries instead of 3N.
  * Returns a Map of lowercase exercise name → resolved exercise.
  * Auto-creates missing exercises as user-owned (defaults: rep_type='reps', exercise_type='strength').
+ *
+ * @param locale - User's locale for displayName (defaults to 'en')
  */
 export async function resolveExercisesBatch(
   names: string[],
   userId: number,
-  client?: PoolClient
+  client?: PoolClient,
+  locale: Locale = DEFAULT_LOCALE
 ): Promise<Map<string, ResolvedExercise>> {
   if (names.length === 0) {
     return new Map();
@@ -224,13 +287,13 @@ export async function resolveExercisesBatch(
   // Single query: exact matches + alias matches (prefer user-owned over global)
   const { rows } = await conn.query(`
     SELECT DISTINCT ON (lookup_name)
-      e.id, e.name, e.exercise_type, lookup_name
+      e.id, e.name, e.names, e.exercise_type, lookup_name
     FROM (
-      SELECT e.id, e.name, e.exercise_type, e.user_id, LOWER(e.name) as lookup_name
+      SELECT e.id, e.name, e.names, e.exercise_type, e.user_id, LOWER(e.name) as lookup_name
       FROM exercises e
       WHERE LOWER(e.name) = ANY($1) AND (e.user_id IS NULL OR e.user_id = $2)
       UNION ALL
-      SELECT e.id, e.name, e.exercise_type, e.user_id, LOWER(a.alias) as lookup_name
+      SELECT e.id, e.name, e.names, e.exercise_type, e.user_id, LOWER(a.alias) as lookup_name
       FROM exercise_aliases a
       JOIN exercises e ON e.id = a.exercise_id
       WHERE LOWER(a.alias) = ANY($1) AND (e.user_id IS NULL OR e.user_id = $2)
@@ -243,6 +306,7 @@ export async function resolveExercisesBatch(
     resolved.set(row.lookup_name, {
       id: row.id,
       name: row.name,
+      displayName: getLocalizedName(row.names, locale, row.name),
       isNew: false,
       exerciseType: row.exercise_type,
     });
@@ -273,6 +337,7 @@ export async function resolveExercisesBatch(
       resolved.set(row.name.toLowerCase(), {
         id: row.id,
         name: row.name,
+        displayName: row.name,
         isNew: true,
         exerciseType: row.exercise_type,
       });
@@ -282,7 +347,7 @@ export async function resolveExercisesBatch(
     const stillMissing = missing.filter(n => !resolved.has(n));
     if (stillMissing.length > 0) {
       const { rows: existing } = await conn.query(`
-        SELECT id, name, exercise_type FROM exercises
+        SELECT id, name, names, exercise_type FROM exercises
         WHERE LOWER(name) = ANY($1) AND (user_id IS NULL OR user_id = $2)
       `, [stillMissing, userId]);
 
@@ -290,6 +355,7 @@ export async function resolveExercisesBatch(
         resolved.set(row.name.toLowerCase(), {
           id: row.id,
           name: row.name,
+          displayName: getLocalizedName(row.names, locale, row.name),
           isNew: false,
           exerciseType: row.exercise_type,
         });
@@ -302,11 +368,12 @@ export async function resolveExercisesBatch(
 
 export async function searchExercises(
   query?: string,
-  muscleGroup?: string
-): Promise<Array<{ id: number; name: string; muscle_group: string; equipment: string; rep_type: string; exercise_type: string; aliases: string[] }>> {
+  muscleGroup?: string,
+  locale: Locale = DEFAULT_LOCALE
+): Promise<Array<{ id: number; name: string; displayName: string; muscle_group: string; equipment: string; rep_type: string; exercise_type: string; aliases: string[] }>> {
   const userId = getUserId();
   let sql = `
-    SELECT e.id, e.name, e.muscle_group, e.equipment, e.rep_type, e.exercise_type,
+    SELECT e.id, e.name, e.names, e.muscle_group, e.equipment, e.rep_type, e.exercise_type,
       COALESCE(array_agg(a.alias) FILTER (WHERE a.alias IS NOT NULL), '{}') as aliases
     FROM exercises e
     LEFT JOIN exercise_aliases a ON a.exercise_id = e.id
@@ -329,5 +396,8 @@ export async function searchExercises(
   sql += " GROUP BY e.id ORDER BY e.user_id NULLS LAST, e.name";
 
   const { rows } = await pool.query(sql, params);
-  return rows;
+  return rows.map(row => ({
+    ...row,
+    displayName: getLocalizedName(row.names, locale, row.name),
+  }));
 }

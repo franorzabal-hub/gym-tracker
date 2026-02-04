@@ -26,6 +26,11 @@ vi.mock("../../context/user-context.js", () => ({
   getUserId: vi.fn().mockReturnValue(1),
 }));
 
+vi.mock("../../helpers/profile-helpers.js", () => ({
+  getUserLocale: vi.fn().mockResolvedValue("en"),
+  getLocalizedName: vi.fn((names, locale, fallback) => names?.[locale] ?? names?.["en"] ?? fallback),
+}));
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerExercisesTool } from "../exercises.js";
 import { resolveExercise, searchExercises } from "../../helpers/exercise-resolver.js";
@@ -89,7 +94,7 @@ describe("manage_exercises tool", () => {
       const result = await toolHandler({ action: "search", name: "bench" });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.exercises).toHaveLength(1);
-      expect(mockSearch).toHaveBeenCalledWith("bench", undefined);
+      expect(mockSearch).toHaveBeenCalledWith("bench", undefined, "en");
     });
   });
 

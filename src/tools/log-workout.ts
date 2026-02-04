@@ -13,6 +13,7 @@ import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response
 import { logSingleExercise, exerciseEntrySchema, type ExerciseEntry } from "../helpers/log-exercise-helper.js";
 import { cloneGroupsBatch } from "../helpers/group-helpers.js";
 import { cloneSectionsBatch } from "../helpers/section-helpers.js";
+import { getUserLocale } from "../helpers/profile-helpers.js";
 import type { ExerciseOverride, PRCheck, ExerciseType, ProgramDayRow } from "../db/types.js";
 
 /** Logged exercise result for routine exercises */
@@ -121,6 +122,7 @@ date (ISO string), tags, notes, minimal_response`,
     },
   }, safeHandler("log_workout", async (params) => {
     const userId = getUserId();
+    const locale = await getUserLocale();
     const tags = parseJsonArrayParam<string>(params.tags);
     const overrides = parseJsonParam<ExerciseOverride[]>(params.overrides);
     const skip = parseJsonArrayParam<string>(params.skip);
@@ -268,7 +270,7 @@ date (ISO string), tags, notes, minimal_response`,
         // Build override map
         const overrideMap = new Map<string, ExerciseOverride>();
         for (const o of overrides || []) {
-          const resolved = await resolveExercise(o.exercise, undefined, undefined, undefined, undefined, client);
+          const resolved = await resolveExercise(o.exercise, undefined, undefined, undefined, undefined, client, locale);
           overrideMap.set(resolved.name.toLowerCase(), o);
         }
 
@@ -355,7 +357,7 @@ date (ISO string), tags, notes, minimal_response`,
 
       if (hasBulkExercises) {
         for (const entry of exercisesList!) {
-          const result = await logSingleExercise(sessionId, entry, client, sessionValidated);
+          const result = await logSingleExercise(sessionId, entry, client, sessionValidated, locale);
           explicitResults.push(result);
           if (result.new_prs) {
             for (const pr of result.new_prs) {
@@ -384,7 +386,7 @@ date (ISO string), tags, notes, minimal_response`,
           drop_percent: params.drop_percent,
           rep_type: params.rep_type,
           exercise_type: params.exercise_type,
-        }, client, sessionValidated);
+        }, client, sessionValidated, locale);
         explicitResults.push(result);
         if (result.new_prs) {
           for (const pr of result.new_prs) {

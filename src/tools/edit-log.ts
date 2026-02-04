@@ -7,6 +7,7 @@ import { getUserId } from "../context/user-context.js";
 import { getUserCurrentDate } from "../helpers/date-helpers.js";
 import { parseJsonArrayParam } from "../helpers/parse-helpers.js";
 import { toolResponse, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
+import { getUserLocale, type Locale } from "../helpers/profile-helpers.js";
 import type { EditParams, PRCheck, ExerciseType } from "../db/types.js";
 
 // Workout selector type: ID, "today", "last", "yesterday", or YYYY-MM-DD date
@@ -187,6 +188,7 @@ export function registerEditLogTool(server: McpServer) {
     safeHandler("edit_workout", async ({ exercise, workout, action, updates, set_numbers, set_ids, set_type_filter, bulk, update_session, delete_workout, restore_workout, delete_workouts: rawDeleteWorkouts, validate_workout, reps, weight, rpe, set_type, sets_to_add, exercise_order }) => {
       const userId = getUserId();
       const userDate = await getUserCurrentDate();
+      const locale = await getUserLocale();
 
       // --- Update session metadata mode ---
       if (update_session) {
@@ -401,7 +403,7 @@ export function registerEditLogTool(server: McpServer) {
         }
 
         // Find the exercise in this workout
-        const exerciseInfo = await findExercise(exercise);
+        const exerciseInfo = await findExercise(exercise, undefined, locale);
         if (!exerciseInfo) {
           return toolResponse({ error: `Exercise "${exercise}" not found` }, true);
         }
@@ -417,7 +419,7 @@ export function registerEditLogTool(server: McpServer) {
 
         if (seRows.length === 0) {
           return toolResponse({
-            error: `Exercise "${exerciseInfo.name}" not found in this workout. Use log_workout to add it first.`,
+            error: `Exercise "${exerciseInfo.displayName}" not found in this workout. Use log_workout to add it first.`,
           }, true);
         }
 
@@ -453,7 +455,7 @@ export function registerEditLogTool(server: McpServer) {
           );
           if (prs.length > 0) {
             return toolResponse({
-              exercise: exerciseInfo.name,
+              exercise: exerciseInfo.displayName,
               session_id: resolved.session_id,
               workout_date: resolved.started_at.toISOString().split("T")[0],
               sets_added: addedSets,
@@ -463,7 +465,7 @@ export function registerEditLogTool(server: McpServer) {
         }
 
         return toolResponse({
-          exercise: exerciseInfo.name,
+          exercise: exerciseInfo.displayName,
           session_id: resolved.session_id,
           workout_date: resolved.started_at.toISOString().split("T")[0],
           sets_added: addedSets,
@@ -572,6 +574,7 @@ export function registerEditLogTool(server: McpServer) {
             set_ids: entry.set_ids,
             set_type_filter: entry.set_type_filter,
             userDate,
+            locale,
           });
           results.push(result);
         }
@@ -596,6 +599,7 @@ export function registerEditLogTool(server: McpServer) {
         set_ids,
         set_type_filter,
         userDate,
+        locale,
       });
 
       if (result.error) {
@@ -608,10 +612,10 @@ export function registerEditLogTool(server: McpServer) {
 }
 
 async function processSingleEdit(params: EditParams): Promise<Record<string, unknown>> {
-  const { userId, exercise, workout, action, updates, set_ids, set_type_filter, userDate } = params;
+  const { userId, exercise, workout, action, updates, set_ids, set_type_filter, userDate, locale } = params;
   let { set_numbers } = params;
 
-  const resolved = await findExercise(exercise);
+  const resolved = await findExercise(exercise, undefined, locale || "en");
   if (!resolved) {
     return { error: `Exercise "${exercise}" not found` };
   }
@@ -652,7 +656,7 @@ async function processSingleEdit(params: EditParams): Promise<Record<string, unk
   );
 
   if (workoutExercises.length === 0) {
-    return { error: `No sets found for ${resolved.name} in the specified workout` };
+    return { error: `No sets found for ${resolved.displayName} in the specified workout` };
   }
 
   // Collect all session_exercise IDs (for the most recent workout)
@@ -723,7 +727,7 @@ async function processSingleEdit(params: EditParams): Promise<Record<string, unk
 
     return {
       deleted: true,
-      exercise: resolved.name,
+      exercise: resolved.displayName,
       session_id: targetSessionId,
       workout_date: workoutDate,
       sets_deleted: deletedCount,
@@ -795,7 +799,7 @@ async function processSingleEdit(params: EditParams): Promise<Record<string, unk
   );
 
   return {
-    exercise: resolved.name,
+    exercise: resolved.displayName,
     session_id: targetSessionId,
     workout_date: workoutDate,
     sets_updated: totalUpdated,

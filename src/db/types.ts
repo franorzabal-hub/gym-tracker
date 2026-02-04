@@ -289,4 +289,5 @@ export interface EditParams {
   set_ids?: number[];
   set_type_filter?: string;
   userDate: string;
+  locale?: "en" | "es";
 }

@@ -9,7 +9,7 @@ vi.mock("../../db/connection.js", () => ({
 }));
 
 vi.mock("../../helpers/exercise-resolver.js", () => ({
-  findExercise: vi.fn().mockResolvedValue({ id: 1, name: "Bench Press", isNew: false, exerciseType: "strength" }),
+  findExercise: vi.fn().mockResolvedValue({ id: 1, name: "Bench Press", displayName: "Bench Press", isNew: false, exerciseType: "strength" }),
 }));
 
 vi.mock("../../helpers/stats-calculator.js", () => ({
@@ -22,6 +22,10 @@ vi.mock("../../context/user-context.js", () => ({
 
 vi.mock("../../helpers/date-helpers.js", () => ({
   getUserCurrentDate: vi.fn().mockResolvedValue("2024-01-15"),
+}));
+
+vi.mock("../../helpers/profile-helpers.js", () => ({
+  getUserLocale: vi.fn().mockResolvedValue("en"),
 }));
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

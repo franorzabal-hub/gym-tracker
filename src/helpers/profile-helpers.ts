@@ -109,3 +109,37 @@ export function normalizeProfileData(
 
   return normalized;
 }
+
+/** Supported locales */
+export type Locale = "en" | "es";
+
+/** Default locale when user hasn't set one */
+export const DEFAULT_LOCALE: Locale = "en";
+
+/**
+ * Gets the user's preferred locale from their profile.
+ * Falls back to DEFAULT_LOCALE if not set.
+ */
+export async function getUserLocale(userId?: number): Promise<Locale> {
+  const profile = await getProfile(userId);
+  const lang = profile.language as string | undefined;
+  if (lang === "en" || lang === "es") return lang;
+  return DEFAULT_LOCALE;
+}
+
+/**
+ * Extracts a localized string from a JSONB names object.
+ * Falls back: locale → 'en' → fallback
+ *
+ * @param names - JSONB object like {"en": "Squat", "es": "Sentadilla"}
+ * @param locale - User's preferred locale
+ * @param fallback - Fallback string if no translation found
+ */
+export function getLocalizedName(
+  names: Record<string, string> | null | undefined,
+  locale: Locale,
+  fallback: string
+): string {
+  if (!names) return fallback;
+  return names[locale] ?? names["en"] ?? fallback;
+}
