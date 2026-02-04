@@ -558,6 +558,8 @@ export async function getProgram(id: number) {
           'target_reps', pde.target_reps,
           'target_weight', pde.target_weight,
           'target_rpe', pde.target_rpe,
+          'target_reps_per_set', pde.target_reps_per_set,
+          'target_weight_per_set', pde.target_weight_per_set,
           'rest_seconds', pde.rest_seconds,
           'notes', pde.notes,
           'group_id', pde.group_id,
@@ -928,7 +930,8 @@ export async function logWorkout(params: {
 
       if (dayInfo) {
         const { rows: planExercises } = await pool.query(
-          `SELECT e.name, pde.target_sets, pde.target_reps, pde.target_weight, pde.target_rpe, pde.rest_seconds, pde.notes
+          `SELECT e.name, pde.target_sets, pde.target_reps, pde.target_weight, pde.target_rpe,
+                  pde.target_reps_per_set, pde.target_weight_per_set, pde.rest_seconds, pde.notes
            FROM program_day_exercises pde
            JOIN exercises e ON e.id = pde.exercise_id
            WHERE pde.day_id = $1 ORDER BY pde.sort_order`,
@@ -1378,7 +1381,8 @@ export async function getTodayPlan() {
   }
 
   const { rows: exercises } = await pool.query(
-    `SELECT e.name, pde.target_sets, pde.target_reps, pde.target_weight, pde.target_rpe, pde.rest_seconds, pde.notes
+    `SELECT e.name, pde.target_sets, pde.target_reps, pde.target_weight, pde.target_rpe,
+            pde.target_reps_per_set, pde.target_weight_per_set, pde.rest_seconds, pde.notes
      FROM program_day_exercises pde
      JOIN exercises e ON e.id = pde.exercise_id
      WHERE pde.day_id = $1 ORDER BY pde.sort_order`,
