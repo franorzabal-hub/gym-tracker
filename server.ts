@@ -6,18 +6,24 @@ import { z } from "zod";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { runMigrations } from "./src/db/run-migrations.js";
 
-import { registerContextTool } from "./src/tools/context.js";
-import { registerProfileTool } from "./src/tools/profile.js";
-import { registerExercisesTool } from "./src/tools/exercises.js";
-import { registerSessionTools } from "./src/tools/session.js";
-import { registerProgramTool } from "./src/tools/programs.js";
-import { registerLogWorkoutTool } from "./src/tools/log-workout.js";
-import { registerHistoryTool } from "./src/tools/history.js";
-import { registerStatsTool } from "./src/tools/stats.js";
-import { registerEditLogTool } from "./src/tools/edit-log.js";
-import { registerTodayPlanTool } from "./src/tools/today-plan.js";
-import { registerBodyMeasurementsTool } from "./src/tools/body-measurements.js";
-import { registerExportTool } from "./src/tools/export.js";
+// === UNIFIED API TOOL (replaces individual data tools) ===
+import { registerApiTool } from "./src/tools/api.js";
+
+// === DATA TOOLS (commented out — now handled by unified api tool) ===
+// import { registerContextTool } from "./src/tools/context.js";
+// import { registerProfileTool } from "./src/tools/profile.js";
+// import { registerExercisesTool } from "./src/tools/exercises.js";
+// import { registerSessionTools } from "./src/tools/session.js";
+// import { registerProgramTool } from "./src/tools/programs.js";
+// import { registerLogWorkoutTool } from "./src/tools/log-workout.js";
+// import { registerHistoryTool } from "./src/tools/history.js";
+// import { registerStatsTool } from "./src/tools/stats.js";
+// import { registerEditLogTool } from "./src/tools/edit-log.js";
+// import { registerTodayPlanTool } from "./src/tools/today-plan.js";
+// import { registerBodyMeasurementsTool } from "./src/tools/body-measurements.js";
+// import { registerExportTool } from "./src/tools/export.js";
+
+// === DISPLAY TOOLS (kept — these render UI widgets) ===
 import { registerDisplayTools } from "./src/tools/display.js";
 import { registerDashboardTool } from "./src/tools/dashboard.js";
 import { registerWorkoutTool } from "./src/tools/workout.js";
@@ -67,35 +73,75 @@ function createConfiguredServer(): McpServer {
     {
       instructions: `You are a gym training partner. The user talks naturally in Spanish or English, and you call tools to manage their training.
 
+## UNIFIED API APPROACH
+
+This server uses a single \`api\` tool for all data operations. Read the API spec resource (text://gym-tracker/api-spec) to see available endpoints.
+
 CRITICAL — First message of every conversation:
-1. Call get_context BEFORE responding to the user.
+1. Call \`api({ method: "GET", path: "/context" })\` BEFORE responding.
 2. Follow the required_action field in the response:
-   - If required_action is "setup_profile": new user — call show_profile IMMEDIATELY so they can set up their profile.
-   - If required_action is "choose_program": profile exists but no program — call show_programs IMMEDIATELY so they can pick a program.
-   - If required_action is null: respond normally (optionally follow the suggestion field).
+   - "setup_profile": new user — call show_profile IMMEDIATELY.
+   - "choose_program": profile exists but no program — call show_programs IMMEDIATELY.
+   - null: respond normally (optionally follow the suggestion field).
 
-Never skip step 1. Always get context first.
+## TOOL TYPES
 
-TOOL TYPES — There are two kinds of tools:
-- Data tools (manage_profile, manage_exercises, etc.): read/write data. Use these for onboarding, logging, updating, and any behind-the-scenes work. They return JSON data, no visual UI.
-- Display tools (show_profile): render a visual card/widget for the user. Use these ONLY when the user wants to SEE something visually (e.g. "mostrame mi perfil", "quiero ver mis stats").
+1. **api** — Single tool for ALL data operations. Use REST-like calls:
+   - GET /context — user context (MANDATORY first call)
+   - GET/PATCH /profile — profile data
+   - GET/POST /workouts — workout logging
+   - GET /stats — exercise statistics
+   - etc. (see api-spec resource for full list)
 
-When the user asks to SEE their profile, call show_profile (NOT manage_profile).`,
+2. **Display tools** (show_*) — Render visual widgets. Use when user wants to SEE something:
+   - show_profile — visual profile card
+   - show_programs — program list
+   - show_program — program details
+   - show_workout — workout viewer
+   - show_workouts — workout history
+   - show_dashboard — training dashboard
+
+## EXAMPLES
+
+\`\`\`json
+// Get context
+api({ "method": "GET", "path": "/context" })
+
+// Update profile
+api({ "method": "PATCH", "path": "/profile", "body": { "weight_kg": 82 } })
+
+// Log a workout day
+api({ "method": "POST", "path": "/workouts", "body": { "program_day": "Push" } })
+
+// Log single exercise
+api({ "method": "POST", "path": "/workouts", "body": { "exercise": "bench press", "reps": 10, "weight": 80 } })
+
+// End workout
+api({ "method": "POST", "path": "/workouts/end" })
+\`\`\`
+
+When the user asks to SEE their profile, call show_profile (NOT api).`,
     }
   );
 
-  registerContextTool(server);
-  registerProfileTool(server);
-  registerExercisesTool(server);
-  registerSessionTools(server);
-  registerProgramTool(server);
-  registerLogWorkoutTool(server);
-  registerHistoryTool(server);
-  registerStatsTool(server);
-  registerEditLogTool(server);
-  registerTodayPlanTool(server);
-  registerBodyMeasurementsTool(server);
-  registerExportTool(server);
+  // === UNIFIED API TOOL ===
+  registerApiTool(server);
+
+  // === DATA TOOLS (commented out — now handled by unified api tool) ===
+  // registerContextTool(server);
+  // registerProfileTool(server);
+  // registerExercisesTool(server);
+  // registerSessionTools(server);
+  // registerProgramTool(server);
+  // registerLogWorkoutTool(server);
+  // registerHistoryTool(server);
+  // registerStatsTool(server);
+  // registerEditLogTool(server);
+  // registerTodayPlanTool(server);
+  // registerBodyMeasurementsTool(server);
+  // registerExportTool(server);
+
+  // === DISPLAY TOOLS ===
   registerDisplayTools(server);
   registerDashboardTool(server);
   registerWorkoutTool(server);
