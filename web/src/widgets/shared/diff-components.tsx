@@ -3,6 +3,8 @@
  * Used by widgets that show LLM-proposed edits with visual diff + confirm button.
  */
 
+import { useI18n } from "../../i18n/index.js";
+
 /**
  * Displays a value change: old → new
  * Shows crossed-out old value followed by new value in green.
@@ -33,11 +35,12 @@ export function ConfirmBar({ onConfirm, confirming, confirmed, className }: {
   confirmed: boolean;
   className?: string;
 }) {
+  const { t } = useI18n();
   return (
     <div className={className || "confirm-bar-sticky"} role="status" aria-live="polite">
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         {confirmed ? (
-          <span className="profile-confirm-flash">Updated</span>
+          <span className="profile-confirm-flash">{t("diff.updated")}</span>
         ) : (
           <button
             className="btn btn-primary"
@@ -45,7 +48,7 @@ export function ConfirmBar({ onConfirm, confirming, confirmed, className }: {
             disabled={confirming}
             aria-busy={confirming}
           >
-            {confirming ? "Saving..." : "Confirm Changes"}
+            {confirming ? t("diff.saving") : t("diff.confirmChanges")}
           </button>
         )}
       </div>

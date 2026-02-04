@@ -3,6 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { widgetResponse, registerAppToolWithMeta, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
+import { getProfile } from "../helpers/profile-helpers.js";
 
 export function registerWorkoutTool(server: McpServer) {
   registerAppToolWithMeta(server, "show_workout", {
@@ -49,12 +50,16 @@ The widget already shows all information visually — do NOT repeat exercises or
       rows = result.rows;
     }
 
+    // Get user's locale
+    const userProfile = await getProfile();
+    const locale = (userProfile.language as string) || "en";
+
     if (rows.length === 0) {
       return widgetResponse(
         session_id != null
           ? "Session not found or not owned by user. The widget shows an empty state."
           : "No workout sessions found. The widget shows an empty state. Suggest starting a session.",
-        { session: null }
+        { session: null, _locale: locale }
       );
     }
 
@@ -189,6 +194,7 @@ The widget already shows all information visually — do NOT repeat exercises or
             pr_baseline: prBaselineMap.get(Number(e.exercise_id)) || null,
           })),
         },
+        _locale: locale,
         ...(isEnded ? { readonly: true } : {}),
       }
     );

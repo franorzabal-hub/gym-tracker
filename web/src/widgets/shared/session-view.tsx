@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { sp, radius, font, weight, opacity } from "../../tokens.js";
-import { REP_UNIT, GROUP_LABELS, GroupIcon, formatRestSeconds } from "./exercise-utils.js";
+import { useI18n } from "../../i18n/index.js";
+import { useFormatters } from "../../i18n/formatters.js";
+import { REP_UNIT, useGroupLabels, GroupIcon, formatRestSeconds } from "./exercise-utils.js";
 
 // ── Types ──
 
@@ -243,6 +245,7 @@ export function ExerciseRow({ exercise, exNum, isLast }: {
   exNum: number;
   isLast: boolean;
 }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const hasPR = exerciseHasPR(exercise);
   const hasPerSet = exercise.sets.length > 1;
@@ -330,21 +333,21 @@ export function ExerciseRow({ exercise, exNum, isLast }: {
                 borderBottom: si < exercise.sets.length - 1 ? "1px solid color-mix(in srgb, var(--border) 30%, transparent)" : "none",
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
-                  <span style={{ minWidth: "3em" }}>Set {set.set_number}</span>
+                  <span style={{ minWidth: "3em" }}>{t("session.set")} {set.set_number}</span>
                   {set.set_type !== "working" && (
                     <span style={{
                       fontSize: font["2xs"],
                       color: set.set_type === "warmup" ? "var(--warning)" : set.set_type === "drop" ? "var(--success)" : "var(--danger)",
                       textTransform: "uppercase",
                     }}>
-                      {set.set_type}
+                      {set.set_type === "warmup" ? t("session.warmup") : set.set_type === "drop" ? t("session.drop") : t("session.failure")}
                     </span>
                   )}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
                   {prevSet && prevSet.weight != null && (
                     <span style={{ fontSize: font.xs, opacity: opacity.medium }}>
-                      prev: {prevSet.reps}×{prevSet.weight}
+                      {t("session.prev")}: {prevSet.reps}×{prevSet.weight}
                     </span>
                   )}
                   <span>
@@ -370,7 +373,7 @@ export function ExerciseRow({ exercise, exNum, isLast }: {
                       background: "var(--pr-badge-bg)",
                       padding: `${sp[0.5]}px ${sp[2]}px`, borderRadius: radius.sm,
                     }}>
-                      PR
+                      {t("session.pr")}
                     </span>
                   )}
                 </div>
@@ -388,10 +391,12 @@ export function ExerciseGroupBlock({ group, startIndex, collapsible = true }: {
   startIndex: number;
   collapsible?: boolean;
 }) {
+  const { t } = useI18n();
+  const GROUP_LABELS = useGroupLabels();
   const isGrouped = group.exercises.length > 1 && group.groupId != null;
   const [expanded, setExpanded] = useState(true);
   const type = group.groupType || "superset";
-  const headerLabel = group.groupLabel || GROUP_LABELS[type] || "Superset";
+  const headerLabel = group.groupLabel || GROUP_LABELS[type] || GROUP_LABELS.superset;
 
   if (!isGrouped) {
     return (
@@ -440,7 +445,7 @@ export function ExerciseGroupBlock({ group, startIndex, collapsible = true }: {
         </div>
         {canCollapse && (
           <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
-            {group.exercises.length} ej.
+            {t("groups.exerciseCount", { count: group.exercises.length })}
           </span>
         )}
       </div>
@@ -473,6 +478,7 @@ export function SectionCard({ section, startNumber }: {
   section: WorkoutSection;
   startNumber: number;
 }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(true);
   const exerciseCount = section.groups.reduce((sum, g) => sum + g.exercises.length, 0);
 
@@ -502,7 +508,7 @@ export function SectionCard({ section, startNumber }: {
             </span>
           </div>
           <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
-            {exerciseCount} ej.
+            {t("groups.exerciseCount", { count: exerciseCount })}
           </span>
         </div>
         {section.notes && (
@@ -545,6 +551,8 @@ export function SectionCard({ section, startNumber }: {
 // ── Session Display ──
 
 export function SessionDisplay({ session, readonly, onValidate, validating }: { session: SessionData; readonly?: boolean; onValidate?: () => void; validating?: boolean }) {
+  const { t } = useI18n();
+  const { formatDate: formatDateLocale } = useFormatters();
   const liveMinutes = useLiveTimer(session.started_at);
   const isActive = !readonly && !session.ended_at;
   const minutes = isActive ? liveMinutes : session.duration_minutes;
@@ -558,18 +566,18 @@ export function SessionDisplay({ session, readonly, onValidate, validating }: { 
   }, [session.exercises]);
 
   return (
-    <article className="profile-card" aria-label="Workout session">
+    <article className="profile-card" aria-label={t("workouts.workout")}>
       {/* Header */}
       <header style={{ marginBottom: sp[8] }}>
         {/* Title row: title + badge (left), date (right) */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: sp[2] }}>
           <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
             <h1 className="title" style={{ marginBottom: 0 }}>
-              {isActive ? "Active Workout" : "Workout"}
+              {isActive ? t("workouts.activeWorkout") : t("workouts.workout")}
             </h1>
-            {isActive && <span className="badge badge-success">Active</span>}
-            {!isActive && session.ended_at && session.is_validated !== false && <span className="badge badge-success">Completed</span>}
-            {!isActive && session.is_validated === false && <span className="badge badge-warning">Pending validation</span>}
+            {isActive && <span className="badge badge-success">{t("common.active")}</span>}
+            {!isActive && session.ended_at && session.is_validated !== false && <span className="badge badge-success">{t("workouts.completed")}</span>}
+            {!isActive && session.is_validated === false && <span className="badge badge-warning">{t("programs.pendingValidation")}</span>}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
             {!isActive && session.is_validated === false && onValidate && (
@@ -579,25 +587,25 @@ export function SessionDisplay({ session, readonly, onValidate, validating }: { 
                 disabled={validating}
                 style={{ fontSize: font.sm, padding: `${sp[2]}px ${sp[4]}px` }}
               >
-                {validating ? "Validating..." : "Validate"}
+                {validating ? t("workouts.validating") : t("workouts.validate")}
               </button>
             )}
             {!isActive && session.ended_at && (
               <time dateTime={session.started_at} style={{ fontSize: font.md, color: "var(--text-secondary)" }}>
-                {formatDate(session.started_at)}
+                {formatDateLocale(session.started_at)}
               </time>
             )}
           </div>
         </div>
         {/* Chips (left) + stats (right) */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: sp[2] }}>
-          <div style={{ display: "flex", alignItems: "center", gap: sp[2] }} role="list" aria-label="Muscle groups">
+          <div style={{ display: "flex", alignItems: "center", gap: sp[2] }} role="list" aria-label={t("session.muscleGroups")}>
             {muscleGroups.map(g => (
               <span key={g} role="listitem" className="badge badge-muted" style={{ textTransform: "capitalize" }}>{g}</span>
             ))}
           </div>
           <span style={{ fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.medium }}>
-            {session.exercises.length} ej <span aria-hidden="true">·</span> {isActive ? (
+            {t("workouts.exerciseCount", { count: session.exercises.length })} <span aria-hidden="true">·</span> {isActive ? (
               <span style={{ color: "var(--primary)", fontWeight: weight.semibold }} aria-live="polite">{formatDuration(minutes)}</span>
             ) : formatDuration(minutes)}
           </span>
@@ -605,7 +613,7 @@ export function SessionDisplay({ session, readonly, onValidate, validating }: { 
       </header>
 
       {/* Exercise list - flat, no grouping */}
-      <div role="list" aria-label="Exercises">
+      <div role="list" aria-label={t("common.exercises")}>
         {session.exercises.map((exercise, i) => (
           <ExerciseRow key={exercise.name + i} exercise={exercise} exNum={i + 1} isLast={i === session.exercises.length - 1} />
         ))}
@@ -616,6 +624,8 @@ export function SessionDisplay({ session, readonly, onValidate, validating }: { 
 
 /** Compact session card for lists - shows header with exercises inline */
 export function SessionCard({ session }: { session: SessionData }) {
+  const { t } = useI18n();
+  const { formatDate: formatDateLocale } = useFormatters();
   const muscleGroups = useMemo(() => {
     const groups = new Set<string>();
     for (const ex of session.exercises) {
@@ -625,40 +635,40 @@ export function SessionCard({ session }: { session: SessionData }) {
   }, [session.exercises]);
 
   return (
-    <article aria-label="Workout session">
+    <article aria-label={t("workouts.workout")}>
       {/* Header */}
       <header style={{ marginBottom: sp[6] }}>
         {/* Title row: day name + date + validation badge */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: sp[2] }}>
           <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
             <h2 style={{ fontSize: font.xl, fontWeight: weight.semibold, margin: 0 }}>
-              {session.program_day || formatDate(session.started_at)}
+              {session.program_day || formatDateLocale(session.started_at)}
             </h2>
             {session.is_validated === false && (
-              <span className="badge badge-warning" style={{ fontSize: font.xs }}>Pending</span>
+              <span className="badge badge-warning" style={{ fontSize: font.xs }}>{t("common.pending")}</span>
             )}
           </div>
           {session.program_day && (
             <time dateTime={session.started_at} style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
-              {formatDate(session.started_at)}
+              {formatDateLocale(session.started_at)}
             </time>
           )}
         </div>
         {/* Chips + stats */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: sp[2] }}>
-          <div style={{ display: "flex", alignItems: "center", gap: sp[2] }} role="list" aria-label="Muscle groups">
+          <div style={{ display: "flex", alignItems: "center", gap: sp[2] }} role="list" aria-label={t("session.muscleGroups")}>
             {muscleGroups.map(g => (
               <span key={g} role="listitem" className="badge badge-muted" style={{ textTransform: "capitalize" }}>{g}</span>
             ))}
           </div>
           <span style={{ fontSize: font.sm, color: "var(--text-secondary)", opacity: opacity.medium }}>
-            {session.exercises.length} ej · {formatDuration(session.duration_minutes)}
+            {t("workouts.exerciseCount", { count: session.exercises.length })} · {formatDuration(session.duration_minutes)}
           </span>
         </div>
       </header>
 
       {/* Exercise list */}
-      <div role="list" aria-label="Exercises">
+      <div role="list" aria-label={t("common.exercises")}>
         {session.exercises.map((exercise, i) => (
           <ExerciseRow key={exercise.name + i} exercise={exercise} exNum={i + 1} isLast={i === session.exercises.length - 1} />
         ))}

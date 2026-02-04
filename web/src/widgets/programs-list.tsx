@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { useState, useCallback } from "react";
 import { useToolOutput, useCallTool } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
+import { useI18n } from "../i18n/index.js";
 import { sp, radius, font, maxWidth } from "../tokens.js";
 import "../styles.css";
 import { type Program, ProgramView, ProgramTabs } from "./shared/program-view.js";
@@ -61,8 +62,9 @@ function ProgramCard({ program, badge, actionLabel, actionVariant, loading, onAc
 // ── Skeleton loading state ──
 
 function SkeletonProgramsList() {
+  const { t } = useI18n();
   return (
-    <div className="profile-card" role="status" aria-label="Loading programs">
+    <div className="profile-card" role="status" aria-label={t("programs.loadingPrograms")}>
       {/* Tabs skeleton */}
       <div style={{ display: "flex", gap: sp[2], borderBottom: "1px solid var(--border)", paddingBottom: sp[3], marginBottom: sp[6] }}>
         {[1, 2, 3].map(i => (
@@ -87,7 +89,7 @@ function SkeletonProgramsList() {
           </div>
         ))}
       </div>
-      <span className="sr-only">Loading programs...</span>
+      <span className="sr-only">{t("programs.loadingPrograms")}...</span>
     </div>
   );
 }
@@ -97,6 +99,7 @@ function SkeletonProgramsList() {
 function ProgramsListWidget() {
   const data = useToolOutput<ProgramsListData>();
   const { callTool, loading, error } = useCallTool();
+  const { t } = useI18n();
   const [activeIdx, setActiveIdx] = useState(0);
   const [actionId, setActionId] = useState<string | null>(null);
   const [createdName, setCreatedName] = useState<string | null>(null);
@@ -135,9 +138,9 @@ function ProgramsListWidget() {
           display: "inline-flex", alignItems: "center", justifyContent: "center",
           fontSize: font["2xl"], fontWeight: 700, marginBottom: sp[6],
         }} aria-hidden="true">✔</div>
-        <div style={{ fontSize: font.lg, fontWeight: 600, marginBottom: sp[2] }}>Program created!</div>
+        <div style={{ fontSize: font.lg, fontWeight: 600, marginBottom: sp[2] }}>{t("programs.programCreated")}</div>
         <div style={{ fontSize: font.base, color: "var(--text-secondary)" }}>
-          "{createdName}" is ready. Start training by telling me what you want to do.
+          "{createdName}" {t("programs.readyToStart")}
         </div>
       </div>
     );
@@ -145,8 +148,8 @@ function ProgramsListWidget() {
 
   if (programs.length === 0) {
     const emptyMessage = mode === "available"
-      ? "No available programs found."
-      : "No programs yet — describe your ideal routine in the chat, or ask me to show available programs.";
+      ? t("programs.noAvailablePrograms")
+      : `${t("programs.noPrograms")} — ${t("programs.noProgramsHint")}`;
     return (
       <div className="profile-card" style={{ maxWidth: maxWidth.widget }}>
         <p style={{ fontSize: font.base, color: "var(--text-secondary)", padding: `${sp[8]}px 0` }}>
@@ -178,28 +181,28 @@ function ProgramsListWidget() {
     const isRecommended = activeProgram.id === recommendedId;
 
     badge = isCloned
-      ? <span className="badge badge-muted">Already added</span>
+      ? <span className="badge badge-muted">{t("programs.alreadyAdded")}</span>
       : isRecommended
-        ? <span className="badge badge-primary">Recommended</span>
+        ? <span className="badge badge-primary">{t("programs.recommended")}</span>
         : null;
 
     if (!isCloned) {
-      actionLabel = "Use this program";
+      actionLabel = t("programs.useThisProgram");
       actionVariant = "primary";
       onAction = () => handleClone(activeProgram.id, activeProgram.name);
     }
   } else {
     // user mode: show validation status with active/inactive
     if (activeProgram.is_validated === false) {
-      badge = <span className="badge badge-warning">Pending validation</span>;
+      badge = <span className="badge badge-warning">{t("programs.pendingValidation")}</span>;
     } else if (activeProgram.is_active) {
-      badge = <span className="badge badge-success">Active</span>;
+      badge = <span className="badge badge-success">{t("programs.active")}</span>;
     } else {
-      badge = <span className="badge badge-muted">Inactive</span>;
+      badge = <span className="badge badge-muted">{t("programs.inactive")}</span>;
     }
   }
 
-  const regionLabel = mode === "available" ? "Available programs" : "Your programs";
+  const regionLabel = mode === "available" ? t("programs.availablePrograms") : t("programs.myPrograms");
 
   return (
     <div
@@ -213,9 +216,9 @@ function ProgramsListWidget() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: sp[6] }}>
         <h1 style={{ fontSize: font["3xl"], fontWeight: 600, margin: 0 }}>
-          {mode === "available" ? "Available Programs" : "My Programs"}
+          {mode === "available" ? t("programs.availablePrograms") : t("programs.myPrograms")}
         </h1>
-        <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>{programs.length} programs</span>
+        <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>{programs.length} {t("programs.title").toLowerCase()}</span>
       </div>
 
       {/* Program tabs */}

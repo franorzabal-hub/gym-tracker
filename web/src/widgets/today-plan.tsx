@@ -1,6 +1,8 @@
 import { createRoot } from "react-dom/client";
 import { useToolOutput, useCallTool } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
+import { useI18n } from "../i18n/index.js";
+import { useFormatters } from "../i18n/formatters.js";
 import { ExerciseIcon, MUSCLE_COLOR } from "./shared/exercise-icons.js";
 import { sp, font, weight, radius, maxWidth, opacity } from "../tokens.js";
 import "../styles.css";
@@ -49,14 +51,16 @@ function formatTarget(ex: ExercisePlan): string {
 function TodayPlanWidget() {
   const data = useToolOutput<PlanData>();
   const { callTool, loading } = useCallTool();
+  const { t } = useI18n();
+  const { formatShortDate } = useFormatters();
 
-  if (!data) return <div className="loading">Loading...</div>;
+  if (!data) return <div className="loading">{t("common.loading")}</div>;
 
   if (data.rest_day) {
     return (
       <div style={{ maxWidth: maxWidth.widget }}>
-        <div className="title">Rest Day</div>
-        <div className="empty">{data.message || "No workout scheduled for today"}</div>
+        <div className="title">{t("todayPlan.restDay")}</div>
+        <div className="empty">{data.message || t("todayPlan.noWorkoutScheduled")}</div>
       </div>
     );
   }
@@ -99,7 +103,7 @@ function TodayPlanWidget() {
       {data.last_workout && (
         <div style={{ marginTop: sp[6], padding: `${sp[4]}px ${sp[6]}px`, borderRadius: radius.md, border: "1px solid var(--border)", background: "transparent" }}>
           <div style={{ fontSize: font.xs, fontWeight: weight.semibold, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: sp[2] }}>
-            Last session — {new Date(data.last_workout.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+            {t("todayPlan.lastSession")} — {formatShortDate(data.last_workout.date)}
           </div>
           <div style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
             {data.last_workout.exercises?.map((ex, i) => {
@@ -124,7 +128,7 @@ function TodayPlanWidget() {
         onClick={() => callTool("log_workout", {})}
         disabled={loading}
       >
-        {loading ? "Starting..." : "Start Session"}
+        {loading ? t("todayPlan.starting") : t("todayPlan.startSession")}
       </button>
     </div>
   );

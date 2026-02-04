@@ -27,13 +27,14 @@ Without preview: standard view. With preview: comparison view. Let the user inte
     },
   }, safeHandler("show_profile", async ({ preview }: { preview?: Record<string, any> }) => {
     const profile = await getProfile();
+    const locale = (profile.language as string) || "en";
     const hasPreview = preview && Object.keys(preview).length > 0;
     const llmNote = hasPreview
       ? `Profile widget displayed with preview. Let the user interact with the widget. Do NOT describe or list any data.`
       : `Profile widget displayed. The user can already see all their data visually. Do NOT describe, list, or summarize any profile information in text. Just acknowledge it's shown and offer to help.`;
     return widgetResponse(
       llmNote,
-      { profile, ...(hasPreview ? { pendingChanges: preview } : {}) }
+      { profile, _locale: locale, ...(hasPreview ? { pendingChanges: preview } : {}) }
     );
   }));
 
@@ -117,9 +118,10 @@ To edit programs, use manage_program. After a clone from available mode, follow 
         .filter((g) => userProgramNamesLower.includes(g.name.toLowerCase()))
         .map((g) => g.name);
 
+        const locale = (profile.language as string) || "en";
       return widgetResponse(
         `Available programs widget displayed. The user can browse templates visually. Do NOT describe, list, or summarize any program information. After a clone, follow up with show_program.`,
-        { mode: "available", programs, profile, clonedNames }
+        { mode: "available", programs, profile, clonedNames, _locale: locale }
       );
     }
 
@@ -156,9 +158,13 @@ To edit programs, use manage_program. After a clone from available mode, follow 
       }))
     );
 
+    // Get user's locale
+    const userProfile = await getProfile();
+    const locale = (userProfile.language as string) || "en";
+
     return widgetResponse(
       `Programs list widget displayed. The user can see all their programs visually. Do NOT describe, list, or summarize any program information in text.`,
-      { mode: "user", programs }
+      { mode: "user", programs, _locale: locale }
     );
   }));
 
@@ -224,9 +230,10 @@ DEPRECATED: Use show_programs({ mode: "available" }) instead. This tool is kept 
       .filter((g) => userProgramNamesLower.includes(g.name.toLowerCase()))
       .map((g) => g.name);
 
+    const locale = (profile.language as string) || "en";
     return widgetResponse(
       `Available programs widget displayed. The user can browse templates visually. Do NOT describe, list, or summarize any program information. After a clone, follow up with show_program.`,
-      { mode: "available", programs, profile, clonedNames }
+      { mode: "available", programs, profile, clonedNames, _locale: locale }
     );
   }));
 
@@ -292,10 +299,14 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday").`,
       program = await getActiveProgram();
     }
 
+    // Get user's locale for all responses
+    const userProfile = await getProfile();
+    const locale = (userProfile.language as string) || "en";
+
     if (!program) {
       return widgetResponse(
         "No program found. The user doesn't have an active program — suggest creating one.",
-        { program: null }
+        { program: null, _locale: locale }
       );
     }
 
@@ -334,6 +345,7 @@ Pass "day" to scroll to a specific day (e.g. "lunes", "Dia 2", "monday").`,
           days,
         },
         initialDayIdx,
+        _locale: locale,
         ...(hasPending ? { pendingChanges: pending_changes } : {}),
       }
     );
@@ -551,9 +563,13 @@ By default returns only the latest session. Pass ids to show specific sessions.`
       if (tags && tags.length > 0) filters.tags = tags;
     }
 
+    // Get user's locale
+    const userProfile = await getProfile();
+    const locale = (userProfile.language as string) || "en";
+
     return widgetResponse(
       `Workout history widget displayed. The user can see all sessions visually. Do NOT describe, list, or summarize any workout information in text.`,
-      { sessions, summary, filters }
+      { sessions, summary, filters, _locale: locale }
     );
   }));
 }

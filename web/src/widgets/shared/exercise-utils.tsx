@@ -4,6 +4,7 @@
  */
 
 import { font } from "../../tokens.js";
+import { useI18n } from "../../i18n/index.js";
 
 // ── Constants ──
 
@@ -14,11 +15,22 @@ export const REP_UNIT: Record<string, string> = {
   calories: "cal",
 };
 
+/** Static GROUP_LABELS for backwards compatibility (non-localized) */
 export const GROUP_LABELS: Record<string, string> = {
   superset: "Superset",
   paired: "Paired",
   circuit: "Circuit",
 };
+
+/** Hook to get localized group labels */
+export function useGroupLabels(): Record<string, string> {
+  const { t } = useI18n();
+  return {
+    superset: t("groups.superset"),
+    paired: t("groups.paired"),
+    circuit: t("groups.circuit"),
+  };
+}
 
 // ── Helpers ──
 

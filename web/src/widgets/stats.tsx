@@ -1,31 +1,38 @@
 import { createRoot } from "react-dom/client";
 import { useToolOutput } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
+import { useI18n } from "../i18n/index.js";
+import { useFormatters } from "../i18n/formatters.js";
 import { ExerciseIcon, MUSCLE_COLOR } from "./shared/exercise-icons.js";
 import { Sparkline } from "./shared/charts.js";
 import { sp, font, weight, maxWidth, opacity } from "../tokens.js";
 import "../styles.css";
 
-const PR_LABELS: Record<string, string> = {
-  max_weight: "Max Weight",
-  max_reps_at_weight: "Max Reps",
-  estimated_1rm: "Est. 1RM",
-};
-
-function formatPRLabel(type: string): string {
-  return PR_LABELS[type] || type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+function usePRLabel() {
+  const { t } = useI18n();
+  const PR_LABELS: Record<string, string> = {
+    max_weight: t("dashboard.prTypes.max_weight"),
+    max_reps_at_weight: t("dashboard.prTypes.max_reps_at_weight"),
+    estimated_1rm: t("dashboard.prTypes.estimated_1rm"),
+  };
+  return (type: string): string => {
+    return PR_LABELS[type] || type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  };
 }
 
 function StatsWidget() {
   const data = useToolOutput<any>();
+  const { t } = useI18n();
+  const { formatShortDate } = useFormatters();
+  const formatPRLabel = usePRLabel();
 
-  if (!data) return <div className="loading">Loading...</div>;
+  if (!data) return <div className="loading">{t("common.loading")}</div>;
 
   // Multi-exercise stats
   if (data.stats) {
     return (
       <div style={{ maxWidth: maxWidth.widget }}>
-        <div className="title">Exercise Stats</div>
+        <div className="title">{t("stats.exerciseStats")}</div>
         {data.stats.map((s: any, i: number) => {
           const muscleColor = s.muscle_group ? MUSCLE_COLOR[s.muscle_group.toLowerCase()] || "var(--text-secondary)" : "var(--text-secondary)";
           return (
@@ -63,16 +70,16 @@ function StatsWidget() {
   if (sessions) {
     return (
       <div style={{ maxWidth: maxWidth.widget }}>
-        <div className="title">Workout History</div>
+        <div className="title">{t("stats.workoutHistory")}</div>
         {data.summary && (
           <div className="grid grid-2" style={{ marginBottom: sp[4] }}>
             <div className="card" style={{ textAlign: "center" }}>
               <div className="stat-value">{data.summary.total_sessions}</div>
-              <div className="stat-label">Sessions</div>
+              <div className="stat-label">{t("common.sessions")}</div>
             </div>
             <div className="card" style={{ textAlign: "center" }}>
               <div className="stat-value">{data.summary.total_volume_kg}kg</div>
-              <div className="stat-label">Volume</div>
+              <div className="stat-label">{t("dashboard.volume")}</div>
             </div>
           </div>
         )}
@@ -80,13 +87,13 @@ function StatsWidget() {
           <div key={i} className="card" style={{ padding: `${sp[4]}px ${sp[6]}px` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: weight.semibold, fontSize: font.base }}>
-                {new Date(s.started_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                {formatShortDate(s.started_at)}
               </span>
               {s.program_day && <span className="badge badge-primary" style={{ fontSize: font["2xs"] }}>{s.program_day}</span>}
             </div>
             {s.exercises?.map((ex: any, j: number) => (
               <div key={j} style={{ fontSize: font.sm, color: "var(--text-secondary)", marginTop: sp[1] }}>
-                {ex.exercise} — {ex.sets?.length ?? ex.total_sets ?? 0} sets
+                {ex.exercise} — {ex.sets?.length ?? ex.total_sets ?? 0} {t("common.sets")}
               </div>
             ))}
           </div>
@@ -110,7 +117,7 @@ function StatsWidget() {
       {data.personal_records && (
         <div className="card" style={{ padding: `${sp[5]}px ${sp[6]}px` }}>
           <div style={{ fontSize: font.xs, fontWeight: weight.semibold, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: sp[4] }}>
-            Personal Records
+            {t("stats.personalRecords")}
           </div>
           <div style={{ display: "flex", gap: sp[8], flexWrap: "wrap" }}>
             {Object.entries(data.personal_records).map(([type, pr]: [string, any]) => (
@@ -130,7 +137,7 @@ function StatsWidget() {
         <div className="card" style={{ padding: `${sp[5]}px ${sp[6]}px` }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: sp[3] }}>
             <span className="stat-value">{data.frequency.sessions_per_week}×</span>
-            <span className="stat-label">per week ({data.frequency.total_sessions} total)</span>
+            <span className="stat-label">{t("stats.perWeek", { count: "" })} ({t("stats.total", { count: data.frequency.total_sessions })})</span>
           </div>
         </div>
       )}
@@ -139,7 +146,7 @@ function StatsWidget() {
       {data.progression?.length > 0 && (
         <div className="card" style={{ padding: `${sp[5]}px ${sp[6]}px` }}>
           <div style={{ fontSize: font.xs, fontWeight: weight.semibold, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: sp[4] }}>
-            Progression
+            {t("stats.progression")}
           </div>
 
           {/* Sparkline */}
@@ -163,7 +170,7 @@ function StatsWidget() {
               fontSize: font.sm,
             }}>
               <span style={{ color: "var(--text-secondary)" }}>
-                {new Date(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                {formatShortDate(p.date)}
               </span>
               <span style={{ fontWeight: weight.semibold }}>
                 {p.weight}kg × {p.reps}

@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { useState, useCallback, useRef } from "react";
 import { useToolOutput } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
+import { useI18n } from "../i18n/index.js";
 import { sp, radius, font, weight, maxWidth } from "../tokens.js";
 import { SessionCard, SessionData, formatShortDate, formatDate } from "./shared/session-view.js";
 import "../styles.css";
@@ -16,20 +17,24 @@ interface WorkoutsData {
 
 // ── Helpers ──
 
-function periodLabel(period: string): string {
-  if (period === "latest") return "Latest";
-  if (period === "today") return "Today";
-  if (period === "week") return "This week";
-  if (period === "month") return "This month";
-  if (period === "year") return "This year";
-  return `Last ${period} days`;
+function usePeriodLabel() {
+  const { t } = useI18n();
+  return (period: string): string => {
+    if (period === "latest") return t("periods.latest");
+    if (period === "today") return t("periods.today");
+    if (period === "week") return t("periods.thisWeek");
+    if (period === "month") return t("periods.thisMonth");
+    if (period === "year") return t("periods.thisYear");
+    return t("periods.lastNDays", { count: period });
+  };
 }
 
 // ── Skeleton ──
 
 function SkeletonWorkouts() {
+  const { t } = useI18n();
   return (
-    <div className="profile-card" role="status" aria-label="Loading workouts">
+    <div className="profile-card" role="status" aria-label={t("workouts.loadingWorkouts")}>
       {/* Tabs skeleton */}
       <div style={{ display: "flex", gap: sp[2], borderBottom: "1px solid var(--border)", paddingBottom: sp[3], marginBottom: sp[6] }}>
         {[1, 2, 3].map(i => (
@@ -51,7 +56,7 @@ function SkeletonWorkouts() {
           <div className="skeleton" style={{ width: 70, height: font.md }} />
         </div>
       ))}
-      <span className="sr-only">Loading workouts...</span>
+      <span className="sr-only">{t("workouts.loadingWorkouts")}...</span>
     </div>
   );
 }
@@ -145,6 +150,8 @@ function SessionTabs({ sessions, activeIdx, goTo }: { sessions: SessionData[]; a
 
 function WorkoutsWidget() {
   const data = useToolOutput<WorkoutsData>();
+  const { t } = useI18n();
+  const periodLabel = usePeriodLabel();
   const [activeIdx, setActiveIdx] = useState(0);
 
   const goTo = useCallback((idx: number) => {
@@ -161,7 +168,7 @@ function WorkoutsWidget() {
     return (
       <div className="profile-card" style={{ maxWidth: maxWidth.widget }}>
         <p style={{ fontSize: font.base, color: "var(--text-secondary)", padding: `${sp[8]}px 0` }}>
-          No workouts found for {periodLabel(filters.period ?? "latest").toLowerCase()}. Start a session to begin tracking!
+          {t("workouts.noWorkouts", { period: periodLabel(filters.period ?? "latest").toLowerCase() })}
         </p>
       </div>
     );
@@ -179,10 +186,10 @@ function WorkoutsWidget() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: sp[6] }}>
         <h1 style={{ fontSize: font["3xl"], fontWeight: 600, margin: 0 }}>
-          Workouts
+          {t("workouts.title")}
         </h1>
         <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
-          {summary.total_sessions} session{summary.total_sessions !== 1 ? "s" : ""}
+          {summary.total_sessions} {summary.total_sessions !== 1 ? t("common.sessions") : t("common.session")}
           {filters.period && ` · ${periodLabel(filters.period).toLowerCase()}`}
         </span>
       </div>

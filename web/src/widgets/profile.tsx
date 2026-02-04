@@ -6,6 +6,7 @@ import { WeekdayPills } from "./shared/weekday-pills.js";
 import { Toggle } from "./shared/toggle.js";
 import { sp, radius, font, weight } from "../tokens.js";
 import { DiffValue, ConfirmBar } from "./shared/diff-components.js";
+import { useI18n, type Locale } from "../i18n/index.js";
 import "../styles.css";
 
 const DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -71,8 +72,9 @@ function hasFieldChange(
 // ── Skeleton ──
 
 function SkeletonCard() {
+  const { t } = useI18n();
   return (
-    <div className="profile-card" role="status" aria-label="Loading profile">
+    <div className="profile-card" role="status" aria-label={t("profile.loadingProfile")}>
       <div className="profile-header">
         <div className="skeleton" style={{ width: 48, height: 48, borderRadius: radius.full }} />
         <div style={{ flex: 1 }}>
@@ -132,6 +134,7 @@ function DiffChips({ current, pending, variant = "primary" }: {
 // ── ProfileHeader ──
 
 function ProfileHeader({ profile, pending }: { profile: Record<string, any>; pending?: Record<string, any> }) {
+  const { t } = useI18n();
   const name = profile.name || "—";
   const exp = profile.experience_level;
   const days = profile.available_days?.length ?? profile.training_days_per_week ?? 0;
@@ -157,7 +160,7 @@ function ProfileHeader({ profile, pending }: { profile: Record<string, any>; pen
     }
   }
 
-  subtitleParts.push(<span key="days">{days}x/week</span>);
+  subtitleParts.push(<span key="days">{t("profile.perWeek", { count: days })}</span>);
 
   if (gymChanged) {
     subtitleParts.push(
@@ -193,11 +196,12 @@ function ProfileHeader({ profile, pending }: { profile: Record<string, any>; pen
 // ── MetricsRow ──
 
 function MetricsRow({ profile, pending }: { profile: Record<string, any>; pending?: Record<string, any> }) {
+  const { t } = useI18n();
   const metrics = [
-    { key: "age", label: "AGE", unit: "", format: (v: any) => String(v) },
-    { key: "weight_kg", label: "WEIGHT", unit: "kg", format: (v: any) => String(v) },
-    { key: "height_cm", label: "HEIGHT", unit: "cm", format: (v: any) => String(v) },
-    { key: "sex", label: "SEX", unit: "", format: (v: any) => v === "male" ? "Male" : v === "female" ? "Female" : String(v) },
+    { key: "age", label: t("profile.age"), unit: "", format: (v: any) => String(v) },
+    { key: "weight_kg", label: t("profile.weightLabel"), unit: "kg", format: (v: any) => String(v) },
+    { key: "height_cm", label: t("profile.heightLabel"), unit: "cm", format: (v: any) => String(v) },
+    { key: "sex", label: t("profile.sex"), unit: "", format: (v: any) => v === "male" ? t("profile.male") : v === "female" ? t("profile.female") : String(v) },
   ];
 
   return (
@@ -227,6 +231,7 @@ function MetricsRow({ profile, pending }: { profile: Record<string, any>; pendin
 // ── TrainingDays ──
 
 function TrainingDays({ profile, pending }: { profile: Record<string, any>; pending?: Record<string, any> }) {
+  const { t } = useI18n();
   const currentDays: string[] = profile.available_days || [];
   const changed = pending && hasFieldChange(profile, pending, "available_days");
   const pendingDays: string[] = changed ? (pending!.available_days || []) : currentDays;
@@ -250,7 +255,7 @@ function TrainingDays({ profile, pending }: { profile: Record<string, any>; pend
 
   return (
     <div className="profile-section">
-      <div className="profile-section-label">TRAINING DAYS</div>
+      <div className="profile-section-label">{t("profile.trainingDays")}</div>
       <WeekdayPills
         activeDays={activeDays}
         addedDays={addedDays}
@@ -306,11 +311,12 @@ function PreferencesSection({ profile, onValidationToggle, saving }: {
   onValidationToggle: (enabled: boolean) => void;
   saving: boolean;
 }) {
+  const { t } = useI18n();
   const requiresValidation = isValidationRequired(profile);
 
   return (
     <div className="profile-section">
-      <div className="profile-section-label">PREFERENCES</div>
+      <div className="profile-section-label">{t("profile.preferences")}</div>
       <div style={{
         display: "flex",
         alignItems: "center",
@@ -319,10 +325,10 @@ function PreferencesSection({ profile, onValidationToggle, saving }: {
       }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: font.base, fontWeight: weight.medium }}>
-            Require validation
+            {t("profile.requireValidation")}
           </div>
           <div style={{ fontSize: font.sm, color: "var(--text-secondary)", marginTop: sp[1] }}>
-            New workouts and programs need manual validation before affecting stats
+            {t("profile.requireValidationDesc")}
           </div>
         </div>
         <Toggle
@@ -335,15 +341,70 @@ function PreferencesSection({ profile, onValidationToggle, saving }: {
   );
 }
 
+// ── Language Section ──
+
+function LanguageSection({ profile, onLanguageChange, saving }: {
+  profile: Record<string, any>;
+  onLanguageChange: (language: Locale) => void;
+  saving: boolean;
+}) {
+  const { t, locale } = useI18n();
+  const currentLang = (profile.language as Locale) || locale;
+
+  return (
+    <div className="profile-section">
+      <div className="profile-section-label">{t("profile.language.title")}</div>
+      <div style={{ display: "flex", gap: sp[2] }}>
+        <button
+          className={`chip ${currentLang === "en" ? "chip-active" : ""}`}
+          onClick={() => onLanguageChange("en")}
+          disabled={saving}
+          style={{
+            padding: `${sp[2]}px ${sp[4]}px`,
+            borderRadius: radius.md,
+            border: "1px solid var(--border)",
+            background: currentLang === "en" ? "var(--primary)" : "transparent",
+            color: currentLang === "en" ? "white" : "var(--text)",
+            cursor: "pointer",
+            fontWeight: weight.medium,
+            fontSize: font.sm,
+          }}
+        >
+          {t("profile.language.en")}
+        </button>
+        <button
+          className={`chip ${currentLang === "es" ? "chip-active" : ""}`}
+          onClick={() => onLanguageChange("es")}
+          disabled={saving}
+          style={{
+            padding: `${sp[2]}px ${sp[4]}px`,
+            borderRadius: radius.md,
+            border: "1px solid var(--border)",
+            background: currentLang === "es" ? "var(--primary)" : "transparent",
+            color: currentLang === "es" ? "white" : "var(--text)",
+            cursor: "pointer",
+            fontWeight: weight.medium,
+            fontSize: font.sm,
+          }}
+        >
+          {t("profile.language.es")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main widget ──
 
 function ProfileWidget() {
+  const { t, setLocale } = useI18n();
   const data = useToolOutput<ProfileData>();
   const { callTool } = useCallTool();
   const [confirming, setConfirming] = useState(false);
   const [changesApplied, setChangesApplied] = useState(false);
   const [localProfile, setLocalProfile] = useState<Record<string, any> | null>(null);
   const [savingValidation, setSavingValidation] = useState(false);
+  const [savingLanguage, setSavingLanguage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const autoAppliedRef = useRef(false);
 
@@ -369,7 +430,7 @@ function ProfileWidget() {
           setError(null);
         } catch (err) {
           console.error("[profile] Auto-apply error:", err);
-          if (!cancelled) setError("Failed to save changes. Please try again.");
+          if (!cancelled) setError(t("profile.failedToSave"));
         } finally {
           if (!cancelled) setConfirming(false);
         }
@@ -393,7 +454,7 @@ function ProfileWidget() {
       setError(null);
     } catch (err) {
       console.error("[profile] callTool error:", err);
-      setError("Failed to save changes. Please try again.");
+      setError(t("profile.failedToSave"));
     } finally {
       setConfirming(false);
     }
@@ -407,6 +468,16 @@ function ProfileWidget() {
       setLocalProfile(prev => ({ ...(prev || data?.profile || {}), requires_validation: enabled }));
     }
   }, [data, callTool]);
+
+  const handleLanguageChange = useCallback(async (language: Locale) => {
+    setSavingLanguage(true);
+    const result = await callTool("manage_profile", { action: "update", data: { language } });
+    setSavingLanguage(false);
+    if (result) {
+      setLocalProfile(prev => ({ ...(prev || data?.profile || {}), language }));
+      setLocale(language);
+    }
+  }, [data, callTool, setLocale]);
 
   if (!data) return <SkeletonCard />;
 
@@ -432,27 +503,33 @@ function ProfileWidget() {
       <TrainingDays profile={profile} pending={hasPending ? pending : undefined} />
 
       {pendingGoals ? (
-        <ChipListWithDiff label="GOALS" current={goals} pending={pendingGoals} variant="primary" />
+        <ChipListWithDiff label={t("profile.goals")} current={goals} pending={pendingGoals} variant="primary" />
       ) : (
-        <ChipList label="GOALS" items={goals} variant="primary" />
+        <ChipList label={t("profile.goals")} items={goals} variant="primary" />
       )}
 
       {pendingSupplements ? (
-        <ChipListWithDiff label="SUPPLEMENTS" current={supplements} pending={pendingSupplements} variant="primary" />
+        <ChipListWithDiff label={t("profile.supplements")} current={supplements} pending={pendingSupplements} variant="primary" />
       ) : (
-        <ChipList label="SUPPLEMENTS" items={supplements} variant="primary" />
+        <ChipList label={t("profile.supplements")} items={supplements} variant="primary" />
       )}
 
       {pendingInjuries ? (
-        <ChipListWithDiff label="INJURIES" current={injuries} pending={pendingInjuries} variant="warning" />
+        <ChipListWithDiff label={t("profile.injuries")} current={injuries} pending={pendingInjuries} variant="warning" />
       ) : injuries.length > 0 ? (
-        <ChipList label="INJURIES" items={injuries} variant="warning" />
+        <ChipList label={t("profile.injuries")} items={injuries} variant="warning" />
       ) : null}
 
       <PreferencesSection
         profile={profile}
         onValidationToggle={handleValidationToggle}
         saving={savingValidation}
+      />
+
+      <LanguageSection
+        profile={profile}
+        onLanguageChange={handleLanguageChange}
+        saving={savingLanguage}
       />
 
       {hasPending && (

@@ -15,6 +15,7 @@ import {
   type App,
 } from "@modelcontextprotocol/ext-apps/react";
 import type {} from "./types/openai.js";
+import { I18nProvider, type Locale } from "./i18n/index.js";
 
 // ---------------------------------------------------------------------------
 // Shared context shape
@@ -99,11 +100,16 @@ function McpAppsProvider({ children }: { children: ReactNode }) {
     [app],
   );
 
+  // Extract locale from toolOutput
+  const locale: Locale = (toolOutput?._locale as Locale) || "en";
+
   return (
     <AppContext.Provider
       value={{ app, isConnected, error, toolOutput, hostType: "mcp-apps", callTool, theme }}
     >
-      {children}
+      <I18nProvider initialLocale={locale}>
+        {children}
+      </I18nProvider>
     </AppContext.Provider>
   );
 }
@@ -171,6 +177,9 @@ function OpenAiProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  // Extract locale from toolOutput
+  const locale: Locale = (toolOutput?._locale as Locale) || "en";
+
   return (
     <AppContext.Provider
       value={{
@@ -183,7 +192,9 @@ function OpenAiProvider({ children }: { children: ReactNode }) {
         theme,
       }}
     >
-      {children}
+      <I18nProvider initialLocale={locale}>
+        {children}
+      </I18nProvider>
     </AppContext.Provider>
   );
 }

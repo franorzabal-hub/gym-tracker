@@ -12,6 +12,10 @@ vi.mock("../../context/user-context.js", () => ({
   getUserId: vi.fn().mockReturnValue(1),
 }));
 
+vi.mock("../../helpers/profile-helpers.js", () => ({
+  getProfile: vi.fn().mockResolvedValue({ language: "en" }),
+}));
+
 const toolHandlers: Record<string, Function> = {};
 
 vi.mock("../../helpers/tool-response.js", async (importOriginal) => {

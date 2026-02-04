@@ -49,6 +49,7 @@ export const profileSchema = z
     supplements: z.string().max(500).optional(),
     requires_validation: z.boolean().optional(),
     timezone: z.string().optional(),
+    language: z.enum(["en", "es"]).optional(),
   })
   .passthrough();
 

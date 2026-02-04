@@ -1,8 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { sp, radius, font, weight, opacity } from "../../tokens.js";
+import { useI18n } from "../../i18n/index.js";
 import {
   REP_UNIT,
   GROUP_LABELS,
+  useGroupLabels,
   GroupIcon,
   formatRestSeconds,
   formatPerSetReps,
@@ -86,8 +88,18 @@ export interface Day {
   exercises: Exercise[];
 }
 
-export const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"]; // Mon-Sun
-export const WEEKDAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+/** Use useWeekdayLabels hook for localized labels */
+export const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"]; // Mon-Sun (deprecated, use hook)
+export const WEEKDAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]; // deprecated
+
+/** Hook to get localized weekday labels */
+export function useWeekdayLabels(): { short: string[]; long: string[] } {
+  const { t } = useI18n();
+  return {
+    short: t("weekdays.short") as unknown as string[],
+    long: t("weekdays.long") as unknown as string[],
+  };
+}
 
 // Superset color palette — distinct, works in both light/dark
 export const SS_COLORS = ["var(--primary)", "#10b981", "var(--warning)", "var(--danger)", "#8b5cf6", "#ec4899"];
@@ -420,6 +432,8 @@ function ExerciseRow({ ex, exNum, showExerciseRest, isSecondary, hasRpeLine, has
 }
 
 export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, collapsible = true }: { exercises: Exercise[]; ssColor: string | null; groupType: string | null; startIndex: number; collapsible?: boolean }) {
+  const { t } = useI18n();
+  const GROUP_LABELS_LOCALIZED = useGroupLabels();
   const isGrouped = exercises.length > 1;
   const [expanded, setExpanded] = useState(true);
   const type = groupType || "superset";
@@ -445,7 +459,7 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, colla
     );
   }
 
-  const headerLabel = groupLabel || GROUP_LABELS[type] || GROUP_LABELS.superset;
+  const headerLabel = groupLabel || GROUP_LABELS_LOCALIZED[type] || GROUP_LABELS_LOCALIZED.superset;
   const canCollapse = collapsible;
   const showExercises = canCollapse ? expanded : true;
 
@@ -483,7 +497,7 @@ export function ExerciseBlock({ exercises, ssColor, groupType, startIndex, colla
         </div>
         {canCollapse && (
           <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
-            {exercises.length} ej.
+            {t("groups.exerciseCount", { count: exercises.length })}
           </span>
         )}
       </div>
@@ -559,6 +573,7 @@ export function SectionCard({ section, ssGroupColors, startNumber }: {
   ssGroupColors: Map<number, string>;
   startNumber: number;
 }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(true);
   const blocks = groupIntoBlocks(section.exercises);
 
@@ -587,7 +602,7 @@ export function SectionCard({ section, ssGroupColors, startNumber }: {
             </span>
           </div>
           <span style={{ fontSize: font.xs, color: "var(--text-secondary)", opacity: opacity.medium }}>
-            {section.exercises.length} ej.
+            {t("groups.exerciseCount", { count: section.exercises.length })}
           </span>
         </div>
         {/* Line 2: notes (if any) */}
@@ -614,6 +629,8 @@ export function SectionCard({ section, ssGroupColors, startNumber }: {
 }
 
 export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: boolean }) {
+  const { t } = useI18n();
+  const { long: weekdayNamesLocalized } = useWeekdayLabels();
   const [expanded, setExpanded] = useState(true);
   const canCollapse = !alwaysExpanded;
 
@@ -628,7 +645,7 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
     }
   });
 
-  const weekdayNames = day.weekdays?.map(w => WEEKDAY_NAMES[w - 1]).filter(Boolean);
+  const weekdayNames = day.weekdays?.map(w => weekdayNamesLocalized[w - 1]).filter(Boolean);
   const titleLabel = weekdayNames?.length
     ? `${day.day_label} - ${weekdayNames.join(", ")}`
     : day.day_label;
@@ -664,9 +681,9 @@ export function DayCard({ day, alwaysExpanded }: { day: Day; alwaysExpanded?: bo
           )}
         </div>
         <div style={{ fontSize: font.base, color: "var(--text-secondary)", marginTop: sp[1], display: "flex", alignItems: "center", gap: 0 }}>
-          <span>{day.exercises.length} ejercicios</span>
+          <span>{t("programView.exercises", { count: day.exercises.length })}</span>
           {estimatedMinutes > 0 && (
-            <><span aria-hidden="true" style={{ margin: `0 ${sp[3]}px`, opacity: opacity.muted }}>·</span><span>~{estimatedMinutes} min</span></>
+            <><span aria-hidden="true" style={{ margin: `0 ${sp[3]}px`, opacity: opacity.muted }}>·</span><span>{t("programView.estimatedTime", { minutes: estimatedMinutes })}</span></>
           )}
         </div>
         {muscleGroups.length > 0 && (
@@ -1017,6 +1034,7 @@ export function ProgramView({
   hideBadge = false,
   badge,
 }: ProgramViewProps) {
+  const { t } = useI18n();
   const totalExercises = program.days.reduce((sum, d) => sum + d.exercises.length, 0);
   const active = program.is_active ?? false;
 
@@ -1025,12 +1043,12 @@ export function ProgramView({
   // Determine which badge to show
   const badgeElement = badge !== undefined ? badge : !hideBadge ? (
     active
-      ? <span className="badge badge-success">Active</span>
-      : <span className="badge badge-muted">Inactive</span>
+      ? <span className="badge badge-success">{t("programs.active")}</span>
+      : <span className="badge badge-muted">{t("programs.inactive")}</span>
   ) : null;
 
   return (
-    <article aria-label={`Program: ${program.name}`}>
+    <article aria-label={`${t("programs.title")}: ${program.name}`}>
       {/* Header */}
       <header style={{ marginBottom: sp[6] }}>
         <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginBottom: sp[1] }}>
@@ -1046,7 +1064,7 @@ export function ProgramView({
             <span style={{ fontSize: font.base, color: "var(--text-secondary)" }}>{program.description}</span>
           ) : null}
           <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
-            {program.days.length} days · {totalExercises} exercises
+            {t("programs.daysPerWeek", { count: program.days.length })} · {t("programs.exercisesCount", { count: totalExercises })}
           </span>
         </div>
         {/* Day navigation tabs (only if multiple days) */}

@@ -5,6 +5,8 @@ import { AppProvider } from "../app-context.js";
 import { sp, radius, font, weight, opacity, maxWidth } from "../tokens.js";
 import "../styles.css";
 import { Sparkline, BarChart, HorizontalBars } from "./shared/charts.js";
+import { useI18n } from "../i18n/index.js";
+import { useFormatters } from "../i18n/formatters.js";
 
 // ── Types ──
 
@@ -23,11 +25,14 @@ interface DashboardData {
 
 // ── Helpers ──
 
-function periodLabel(period: string): string {
-  if (period === "week") return "This week";
-  if (period === "month") return "This month";
-  if (period === "year") return "This year";
-  return `Last ${period} days`;
+function usePeriodLabel() {
+  const { t } = useI18n();
+  return (period: string): string => {
+    if (period === "week") return t("periods.thisWeek");
+    if (period === "month") return t("periods.thisMonth");
+    if (period === "year") return t("periods.thisYear");
+    return t("periods.lastNDays", { count: period });
+  };
 }
 
 // ── Validation Banner ──
@@ -61,8 +66,9 @@ function ValidationBanner({ data }: { data: DashboardData["pending_validation"] 
 // ── Skeleton ──
 
 function SkeletonDashboard() {
+  const { t } = useI18n();
   return (
-    <div className="profile-card" role="status" aria-label="Loading dashboard">
+    <div className="profile-card" role="status" aria-label={t("dashboard.loadingDashboard")}>
       {/* Card skeleton */}
       <div style={{
         background: "var(--bg-secondary)",
@@ -89,7 +95,7 @@ function SkeletonDashboard() {
           <div key={i} className="skeleton" style={{ width: 8, height: 8, borderRadius: radius.full }} />
         ))}
       </div>
-      <span className="sr-only">Loading dashboard...</span>
+      <span className="sr-only">{t("common.loading")}</span>
     </div>
   );
 }
@@ -124,22 +130,23 @@ function Card({ title, icon, children, fullWidth }: { title: string; icon: strin
 // ── Individual KPI Cards ──
 
 function StreakCard({ data, fullWidth }: { data: DashboardData["streak"]; fullWidth?: boolean }) {
+  const { t } = useI18n();
   if (!data) return null;
   const { current_weeks, longest_weeks, this_week } = data;
   return (
-    <Card title="Training Streak" icon="↗" fullWidth={fullWidth}>
+    <Card title={t("dashboard.streak")} icon="↗" fullWidth={fullWidth}>
       <div style={{ display: "flex", alignItems: "baseline", gap: sp[3] }}>
         <span className="stat-value">{current_weeks}</span>
-        <span className="stat-label">weeks</span>
+        <span className="stat-label">{t("common.weeks")}</span>
       </div>
       <div style={{ fontSize: font.sm, color: "var(--text-secondary)", marginTop: sp[3] }}>
         {this_week > 0
-          ? `${this_week} session${this_week > 1 ? "s" : ""} this week`
-          : "No sessions this week yet"}
+          ? t("dashboard.sessionsThisWeek", { count: this_week })
+          : t("dashboard.noSessionsYet")}
       </div>
       {longest_weeks > current_weeks && (
         <div style={{ fontSize: font.xs, color: "var(--text-secondary)", marginTop: sp[1], opacity: opacity.subtle }}>
-          Best: {longest_weeks} weeks
+          {t("dashboard.bestStreak", { count: longest_weeks })}
         </div>
       )}
     </Card>
@@ -147,11 +154,13 @@ function StreakCard({ data, fullWidth }: { data: DashboardData["streak"]; fullWi
 }
 
 function VolumeCard({ data, fullWidth }: { data: DashboardData["volume_weekly"]; fullWidth?: boolean }) {
+  const { t } = useI18n();
+  const { formatLargeNumber } = useFormatters();
   if (!data || data.length === 0) {
     return (
-      <Card title="Weekly Volume" icon="◆" fullWidth={fullWidth}>
+      <Card title={t("dashboard.weeklyVolume")} icon="◆" fullWidth={fullWidth}>
         <div style={{ fontSize: font.base, color: "var(--text-secondary)", padding: `${sp[6]}px 0`, textAlign: "center" }}>
-          No volume data yet
+          {t("dashboard.noVolumeData")}
         </div>
       </Card>
     );
@@ -165,10 +174,10 @@ function VolumeCard({ data, fullWidth }: { data: DashboardData["volume_weekly"];
   });
 
   return (
-    <Card title="Weekly Volume" icon="◆" fullWidth={fullWidth}>
+    <Card title={t("dashboard.weeklyVolume")} icon="◆" fullWidth={fullWidth}>
       <div style={{ display: "flex", alignItems: "baseline", gap: sp[3], marginBottom: sp[3] }}>
         <span className="stat-value">{formatLargeNumber(last.volume)}</span>
-        <span className="stat-label">kg</span>
+        <span className="stat-label">{t("common.kg")}</span>
         {prev && diff !== 0 && (
           <span className={`badge ${diff > 0 ? "badge-success" : "badge-danger"}`} style={{ marginLeft: sp[2] }}>
             {diff > 0 ? "+" : ""}{diff.toFixed(0)}%
@@ -185,20 +194,21 @@ function VolumeCard({ data, fullWidth }: { data: DashboardData["volume_weekly"];
 }
 
 function FrequencyCard({ data, fullWidth }: { data: DashboardData["frequency"]; fullWidth?: boolean }) {
+  const { t } = useI18n();
   if (!data || data.weekly.length === 0) {
     return (
-      <Card title="Frequency" icon="▦" fullWidth={fullWidth}>
+      <Card title={t("dashboard.frequency")} icon="▦" fullWidth={fullWidth}>
         <div style={{ fontSize: font.base, color: "var(--text-secondary)", padding: `${sp[6]}px 0`, textAlign: "center" }}>
-          No sessions yet
+          {t("dashboard.noSessionsData")}
         </div>
       </Card>
     );
   }
   return (
-    <Card title="Frequency" icon="▦" fullWidth={fullWidth}>
+    <Card title={t("dashboard.frequency")} icon="▦" fullWidth={fullWidth}>
       <div style={{ display: "flex", alignItems: "baseline", gap: sp[3], marginBottom: sp[3] }}>
         <span className="stat-value">{data.avg_per_week}</span>
-        <span className="stat-label">sessions / week</span>
+        <span className="stat-label">{t("dashboard.sessionsPerWeek")}</span>
       </div>
       <Sparkline
         data={data.weekly.map((w) => w.count)}
@@ -206,31 +216,32 @@ function FrequencyCard({ data, fullWidth }: { data: DashboardData["frequency"]; 
         height={45}
       />
       <div style={{ fontSize: font.xs, color: "var(--text-secondary)", marginTop: sp[2] }}>
-        {data.total} total sessions
+        {t("dashboard.totalSessions", { count: data.total })}
       </div>
     </Card>
   );
 }
 
 function PRsCard({ data, fullWidth }: { data: DashboardData["recent_prs"]; fullWidth?: boolean }) {
+  const { t } = useI18n();
   if (!data || data.length === 0) {
     return (
-      <Card title="Recent PRs" icon="★" fullWidth={fullWidth}>
+      <Card title={t("dashboard.recentPRs")} icon="★" fullWidth={fullWidth}>
         <div style={{ fontSize: font.base, color: "var(--text-secondary)", padding: `${sp[6]}px 0`, textAlign: "center" }}>
-          No PRs yet
+          {t("dashboard.noPRsYet")}
         </div>
       </Card>
     );
   }
 
   const typeLabel: Record<string, string> = {
-    max_weight: "Weight",
-    max_reps_at_weight: "Reps",
-    estimated_1rm: "e1RM",
+    max_weight: t("dashboard.prTypes.max_weight"),
+    max_reps_at_weight: t("dashboard.prTypes.max_reps_at_weight"),
+    estimated_1rm: t("dashboard.prTypes.estimated_1rm"),
   };
 
   return (
-    <Card title="Recent PRs" icon="★" fullWidth={fullWidth}>
+    <Card title={t("dashboard.recentPRs")} icon="★" fullWidth={fullWidth}>
       {data.map((pr, i) => (
         <div
           key={i}
@@ -259,17 +270,18 @@ function PRsCard({ data, fullWidth }: { data: DashboardData["recent_prs"]; fullW
 }
 
 function MuscleGroupCard({ data, fullWidth }: { data: DashboardData["muscle_groups"]; fullWidth?: boolean }) {
+  const { t } = useI18n();
   if (!data || data.length === 0) {
     return (
-      <Card title="Muscle Groups" icon="●" fullWidth={fullWidth}>
+      <Card title={t("dashboard.muscleGroups")} icon="●" fullWidth={fullWidth}>
         <div style={{ fontSize: font.base, color: "var(--text-secondary)", padding: `${sp[6]}px 0`, textAlign: "center" }}>
-          No data yet
+          {t("dashboard.noMuscleData")}
         </div>
       </Card>
     );
   }
   return (
-    <Card title="Muscle Groups" icon="●" fullWidth={fullWidth}>
+    <Card title={t("dashboard.muscleGroups")} icon="●" fullWidth={fullWidth}>
       <HorizontalBars
         data={data.slice(0, 6).map((d) => ({
           label: d.muscle_group,
@@ -283,6 +295,7 @@ function MuscleGroupCard({ data, fullWidth }: { data: DashboardData["muscle_grou
 }
 
 function BodyWeightCard({ data, fullWidth }: { data: DashboardData["body_weight"]; fullWidth?: boolean }) {
+  const { t } = useI18n();
   if (!data || data.length === 0) return null;
 
   const first = data[0].value;
@@ -290,7 +303,7 @@ function BodyWeightCard({ data, fullWidth }: { data: DashboardData["body_weight"
   const diff = last - first;
 
   return (
-    <Card title="Body Weight" icon="△" fullWidth={fullWidth}>
+    <Card title={t("dashboard.bodyWeight")} icon="△" fullWidth={fullWidth}>
       <div style={{ display: "flex", alignItems: "baseline", gap: sp[3], marginBottom: sp[3] }}>
         <span className="stat-value">{last.toFixed(1)}</span>
         <span className="stat-label">kg</span>
@@ -311,17 +324,18 @@ function BodyWeightCard({ data, fullWidth }: { data: DashboardData["body_weight"
 }
 
 function TopExercisesCard({ data, fullWidth }: { data: DashboardData["top_exercises"]; fullWidth?: boolean }) {
+  const { t } = useI18n();
   if (!data || data.length === 0) {
     return (
-      <Card title="Top Exercises" icon="▲" fullWidth={fullWidth}>
+      <Card title={t("dashboard.topExercises")} icon="▲" fullWidth={fullWidth}>
         <div style={{ fontSize: font.base, color: "var(--text-secondary)", padding: `${sp[6]}px 0`, textAlign: "center" }}>
-          No data yet
+          {t("dashboard.noTopExercises")}
         </div>
       </Card>
     );
   }
   return (
-    <Card title="Top Exercises" icon="▲" fullWidth={fullWidth}>
+    <Card title={t("dashboard.topExercises")} icon="▲" fullWidth={fullWidth}>
       <HorizontalBars
         data={data.map((d) => ({
           label: d.exercise,
@@ -427,6 +441,8 @@ function DashboardTabs({ cards, activeIdx, goTo }: { cards: DashboardCard[]; act
 // ── Main Widget ──
 
 function DashboardWidget() {
+  const { t } = useI18n();
+  const periodLabel = usePeriodLabel();
   const data = useToolOutput<DashboardData>();
   const [activeIdx, setActiveIdx] = useState(0);
 
@@ -439,22 +455,22 @@ function DashboardWidget() {
   // Build list of available cards with labels
   const cards: DashboardCard[] = [];
 
-  if (data.streak) cards.push({ key: "streak", label: "Streak", icon: "↗", render: () => <StreakCard data={data.streak} fullWidth /> });
-  if (data.volume_weekly) cards.push({ key: "volume", label: "Volume", icon: "◆", render: () => <VolumeCard data={data.volume_weekly} fullWidth /> });
-  if (data.frequency) cards.push({ key: "frequency", label: "Frequency", icon: "▦", render: () => <FrequencyCard data={data.frequency} fullWidth /> });
-  if (data.recent_prs) cards.push({ key: "prs", label: "PRs", icon: "★", render: () => <PRsCard data={data.recent_prs} fullWidth /> });
-  if (data.muscle_groups) cards.push({ key: "muscle_groups", label: "Muscles", icon: "●", render: () => <MuscleGroupCard data={data.muscle_groups} fullWidth /> });
-  if (data.body_weight) cards.push({ key: "body_weight", label: "Weight", icon: "△", render: () => <BodyWeightCard data={data.body_weight} fullWidth /> });
-  if (data.top_exercises) cards.push({ key: "top_exercises", label: "Top", icon: "▲", render: () => <TopExercisesCard data={data.top_exercises} fullWidth /> });
+  if (data.streak) cards.push({ key: "streak", label: t("dashboard.streak"), icon: "↗", render: () => <StreakCard data={data.streak} fullWidth /> });
+  if (data.volume_weekly) cards.push({ key: "volume", label: t("dashboard.volume"), icon: "◆", render: () => <VolumeCard data={data.volume_weekly} fullWidth /> });
+  if (data.frequency) cards.push({ key: "frequency", label: t("dashboard.frequency"), icon: "▦", render: () => <FrequencyCard data={data.frequency} fullWidth /> });
+  if (data.recent_prs) cards.push({ key: "prs", label: t("dashboard.prs"), icon: "★", render: () => <PRsCard data={data.recent_prs} fullWidth /> });
+  if (data.muscle_groups) cards.push({ key: "muscle_groups", label: t("dashboard.muscleGroups"), icon: "●", render: () => <MuscleGroupCard data={data.muscle_groups} fullWidth /> });
+  if (data.body_weight) cards.push({ key: "body_weight", label: t("dashboard.bodyWeight"), icon: "△", render: () => <BodyWeightCard data={data.body_weight} fullWidth /> });
+  if (data.top_exercises) cards.push({ key: "top_exercises", label: t("dashboard.topExercises"), icon: "▲", render: () => <TopExercisesCard data={data.top_exercises} fullWidth /> });
 
   if (cards.length === 0) {
     return (
       <div className="profile-card" style={{ maxWidth: maxWidth.widget }}>
         <div style={{ textAlign: "center", padding: `${sp[12]}px ${sp[8]}px` }}>
           <div style={{ fontSize: font["2xl"], marginBottom: sp[4] }}>📊</div>
-          <div style={{ fontSize: font.lg, fontWeight: weight.semibold, marginBottom: sp[2] }}>No training data yet</div>
+          <div style={{ fontSize: font.lg, fontWeight: weight.semibold, marginBottom: sp[2] }}>{t("dashboard.noTrainingData")}</div>
           <div style={{ fontSize: font.base, color: "var(--text-secondary)" }}>
-            Start logging workouts to see your dashboard!
+            {t("dashboard.startLogging")}
           </div>
         </div>
       </div>
@@ -471,12 +487,12 @@ function DashboardWidget() {
         className="profile-card"
         style={{ maxWidth: maxWidth.widget }}
         role="region"
-        aria-label="Training dashboard"
+        aria-label={t("dashboard.title")}
       >
         {/* Header */}
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: sp[6] }}>
           <h1 style={{ fontSize: font["3xl"], fontWeight: weight.semibold, margin: 0 }}>
-            Dashboard
+            {t("dashboard.title")}
           </h1>
           <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
             {periodLabel(data.period)}
@@ -494,12 +510,12 @@ function DashboardWidget() {
       className="profile-card"
       style={{ maxWidth: maxWidth.widget }}
       role="region"
-      aria-label="Training dashboard"
+      aria-label={t("dashboard.title")}
     >
       {/* Header */}
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: sp[6] }}>
         <h1 style={{ fontSize: font["3xl"], fontWeight: weight.semibold, margin: 0 }}>
-          Dashboard
+          {t("dashboard.title")}
         </h1>
         <span style={{ fontSize: font.sm, color: "var(--text-secondary)" }}>
           {periodLabel(data.period)}
@@ -518,14 +534,6 @@ function DashboardWidget() {
       </div>
     </div>
   );
-}
-
-// ── Helpers ──
-
-function formatLargeNumber(v: number): string {
-  if (v >= 10000) return `${(v / 1000).toFixed(0)}k`;
-  if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
-  return v % 1 === 0 ? v.toString() : v.toFixed(1);
 }
 
 createRoot(document.getElementById("root")!).render(

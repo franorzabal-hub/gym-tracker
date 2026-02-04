@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockQuery, mockGetActiveProgram, mockGetProgramDaysWithExercises } = vi.hoisted(() => ({
+const { mockQuery, mockGetActiveProgram, mockGetProgramDaysWithExercises, mockGetProfile } = vi.hoisted(() => ({
   mockQuery: vi.fn(),
   mockGetActiveProgram: vi.fn(),
   mockGetProgramDaysWithExercises: vi.fn(),
+  mockGetProfile: vi.fn(),
 }));
 
 vi.mock("../../db/connection.js", () => ({
@@ -17,6 +18,10 @@ vi.mock("../../context/user-context.js", () => ({
 vi.mock("../../helpers/program-helpers.js", () => ({
   getActiveProgram: mockGetActiveProgram,
   getProgramDaysWithExercises: mockGetProgramDaysWithExercises,
+}));
+
+vi.mock("../../helpers/profile-helpers.js", () => ({
+  getProfile: mockGetProfile,
 }));
 
 const toolHandlers: Record<string, Function> = {};
@@ -38,6 +43,8 @@ import { registerAppToolWithMeta } from "../../helpers/tool-response.js";
 describe("show_profile display tool", () => {
   beforeEach(() => {
     mockQuery.mockReset();
+    mockGetProfile.mockReset();
+    mockGetProfile.mockResolvedValue({ language: "en" }); // Default mock
     const server = {} as unknown as McpServer;
     registerDisplayTools(server);
   });
@@ -59,18 +66,16 @@ describe("show_profile display tool", () => {
   });
 
   it("returns profile data with widget response format", async () => {
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ data: { name: "Franco", weight_kg: 80 } }],
-    });
+    mockGetProfile.mockResolvedValueOnce({ name: "Franco", weight_kg: 80, language: "en" });
 
     const result = await toolHandlers["show_profile"]({});
-    expect(result.structuredContent.profile).toEqual({ name: "Franco", weight_kg: 80 });
+    expect(result.structuredContent.profile).toEqual({ name: "Franco", weight_kg: 80, language: "en" });
     expect(result.structuredContent.pendingChanges).toBeUndefined();
     expect(result.content[0].text).toContain("Do NOT describe");
   });
 
   it("returns empty profile when no data", async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] });
+    mockGetProfile.mockResolvedValueOnce({});
 
     const result = await toolHandlers["show_profile"]({});
     expect(result.structuredContent.profile).toEqual({});
@@ -78,20 +83,16 @@ describe("show_profile display tool", () => {
   });
 
   it("includes pendingChanges when preview provided", async () => {
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ data: { name: "Franco", weight_kg: 80, gym: "SmartFit" } }],
-    });
+    mockGetProfile.mockResolvedValueOnce({ name: "Franco", weight_kg: 80, gym: "SmartFit", language: "en" });
 
     const result = await toolHandlers["show_profile"]({ preview: { weight_kg: 85, gym: "Iron Paradise" } });
-    expect(result.structuredContent.profile).toEqual({ name: "Franco", weight_kg: 80, gym: "SmartFit" });
+    expect(result.structuredContent.profile).toEqual({ name: "Franco", weight_kg: 80, gym: "SmartFit", language: "en" });
     expect(result.structuredContent.pendingChanges).toEqual({ weight_kg: 85, gym: "Iron Paradise" });
     expect(result.content[0].text).toContain("preview");
   });
 
   it("omits pendingChanges when preview is empty object", async () => {
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ data: { name: "Franco" } }],
-    });
+    mockGetProfile.mockResolvedValueOnce({ name: "Franco", language: "en" });
 
     const result = await toolHandlers["show_profile"]({ preview: {} });
     expect(result.structuredContent.pendingChanges).toBeUndefined();
@@ -103,6 +104,8 @@ describe("show_programs display tool", () => {
   beforeEach(() => {
     mockQuery.mockReset();
     mockGetProgramDaysWithExercises.mockReset();
+    mockGetProfile.mockReset();
+    mockGetProfile.mockResolvedValue({ language: "en" });
     const server = {} as unknown as McpServer;
     registerDisplayTools(server);
   });
@@ -160,6 +163,8 @@ describe("show_available_programs display tool", () => {
   beforeEach(() => {
     mockQuery.mockReset();
     mockGetProgramDaysWithExercises.mockReset();
+    mockGetProfile.mockReset();
+    mockGetProfile.mockResolvedValue({ language: "en" });
     const server = {} as unknown as McpServer;
     registerDisplayTools(server);
   });
@@ -257,6 +262,8 @@ describe("show_program display tool", () => {
     mockQuery.mockReset();
     mockGetActiveProgram.mockReset();
     mockGetProgramDaysWithExercises.mockReset();
+    mockGetProfile.mockReset();
+    mockGetProfile.mockResolvedValue({ language: "en" });
     const server = {} as unknown as McpServer;
     registerDisplayTools(server);
   });

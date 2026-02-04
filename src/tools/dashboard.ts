@@ -3,6 +3,7 @@ import { z } from "zod";
 import pool from "../db/connection.js";
 import { getUserId } from "../context/user-context.js";
 import { widgetResponse, registerAppToolWithMeta, safeHandler, APP_CONTEXT } from "../helpers/tool-response.js";
+import { getProfile } from "../helpers/profile-helpers.js";
 
 const METRICS = ["streak", "volume", "frequency", "prs", "muscle_groups", "body_weight", "top_exercises"] as const;
 type Metric = (typeof METRICS)[number];
@@ -48,7 +49,11 @@ Use the "period" param to control the time range (default: 3months).`,
       fetchPendingValidation(userId),
     ]);
 
-    const data: Record<string, unknown> = { period: p };
+    // Get user's locale
+    const userProfile = await getProfile();
+    const locale = (userProfile.language as string) || "en";
+
+    const data: Record<string, unknown> = { period: p, _locale: locale };
     if (metric) data.metric = metric;
     if (streak) data.streak = streak;
     if (volume) data.volume_weekly = volume;

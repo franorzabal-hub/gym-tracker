@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { useState, useCallback } from "react";
 import { useToolOutput, useCallTool, useWidgetState } from "../hooks.js";
 import { AppProvider } from "../app-context.js";
+import { useI18n } from "../i18n/index.js";
 import { sp, radius, font } from "../tokens.js";
 import "../styles.css";
 import { type Program, ProgramView } from "./shared/program-view.js";
@@ -9,8 +10,9 @@ import { DiffValue, ConfirmBar } from "./shared/diff-components.js";
 
 /** Skeleton loading state */
 function SkeletonProgram() {
+  const { t } = useI18n();
   return (
-    <div className="profile-card" role="status" aria-label="Loading program">
+    <div className="profile-card" role="status" aria-label={t("programs.loadingPrograms")}>
       {/* Header skeleton */}
       <div style={{ marginBottom: sp[8] }}>
         <div style={{ display: "flex", alignItems: "center", gap: sp[4], marginBottom: sp[2] }}>
@@ -50,6 +52,7 @@ interface ToolData {
 function ProgramsWidget() {
   const data = useToolOutput<ToolData>();
   const { callTool } = useCallTool();
+  const { t } = useI18n();
 
   // Persist selected day across re-renders
   const [widgetState, setWidgetState] = useWidgetState(() => ({
@@ -98,7 +101,7 @@ function ProgramsWidget() {
   }, [daysLen, setWidgetState]);
 
   if (!data) return <SkeletonProgram />;
-  if (!data.program) return <div className="empty">No program found</div>;
+  if (!data.program) return <div className="empty">{t("programs.noProgramFound")}</div>;
 
   const program = localProgram || data.program;
   const hasPending = !!data.pendingChanges && Object.keys(data.pendingChanges).length > 0 && !confirmed;
@@ -108,20 +111,20 @@ function ProgramsWidget() {
   // Custom badge: show validation state or active/inactive
   const badgeElement = needsValidation ? (
     <div style={{ display: "flex", alignItems: "center", gap: sp[3] }}>
-      <span className="badge badge-warning">Pending validation</span>
+      <span className="badge badge-warning">{t("programs.pendingValidation")}</span>
       <button
         className="btn btn-sm btn-primary"
         onClick={handleValidate}
         disabled={validating}
         style={{ fontSize: font.sm, padding: `${sp[2]}px ${sp[4]}px` }}
       >
-        {validating ? "Validating..." : "Validate"}
+        {validating ? t("programs.validating") : t("programs.validate")}
       </button>
     </div>
   ) : program.is_active ? (
-    <span className="badge badge-success">Active</span>
+    <span className="badge badge-success">{t("programs.active")}</span>
   ) : (
-    <span className="badge badge-muted">Inactive</span>
+    <span className="badge badge-muted">{t("programs.inactive")}</span>
   );
 
   return (
