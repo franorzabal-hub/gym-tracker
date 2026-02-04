@@ -28,7 +28,7 @@ export const exerciseEntrySchema = z.object({
 
 export type ExerciseEntry = z.infer<typeof exerciseEntrySchema>;
 
-export async function logSingleExercise(sessionId: number, entry: ExerciseEntry, client?: PoolClient, sessionValidated: boolean = true, locale: Locale = DEFAULT_LOCALE) {
+export async function logSingleExercise(sessionId: number, entry: ExerciseEntry, client?: PoolClient, sessionValidated: boolean = true, locale: Locale = DEFAULT_LOCALE, achievedAt?: Date) {
   const { exercise, sets, reps, weight, rpe, set_type, notes, rest_seconds, group_id, muscle_group, equipment, set_notes, drop_percent, rep_type, exercise_type } = entry;
   const q = client || pool;
 
@@ -157,7 +157,8 @@ export async function logSingleExercise(sessionId: number, entry: ExerciseEntry,
           set_id: s.set_id,
         })),
         resolved.exerciseType,
-        client
+        client,
+        achievedAt
       )
     : [];
 

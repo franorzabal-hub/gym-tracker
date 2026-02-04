@@ -208,10 +208,12 @@ date (ISO string), tags, notes, minimal_response`,
       let sessionId: number;
       let sessionCreated = false;
       let sessionValidated = true;  // Track if session is validated for PR gating
+      let sessionStartedAt: Date;   // Track session start time for PR timestamps
 
       if (activeSession.rows.length > 0) {
         sessionId = activeSession.rows[0].id;
         sessionValidated = activeSession.rows[0].is_validated;
+        sessionStartedAt = new Date(activeSession.rows[0].started_at);
 
         // Link program_day_id if session doesn't have one and we resolved one
         if (!activeSession.rows[0].program_day_id && programDayId) {
@@ -244,11 +246,11 @@ date (ISO string), tags, notes, minimal_response`,
         );
         const requiresValidation = profileRows[0]?.req_val === 'true';
 
-        const startedAt = params.date ? new Date(params.date + 'T00:00:00') : new Date();
+        sessionStartedAt = params.date ? new Date(params.date + 'T00:00:00') : new Date();
         const { rows: [newSession] } = await client.query(
           `INSERT INTO sessions (user_id, program_version_id, program_day_id, notes, started_at, tags, is_validated)
            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, started_at, is_validated`,
-          [userId, programVersionId, programDayId, params.notes || null, startedAt, tags || [], !requiresValidation]
+          [userId, programVersionId, programDayId, params.notes || null, sessionStartedAt, tags || [], !requiresValidation]
         );
         sessionId = newSession.id;
         sessionCreated = true;
@@ -313,16 +315,19 @@ date (ISO string), tags, notes, minimal_response`,
             [sessionId, dex.exercise_id, dex.sort_order, sessionGroupId, dex.rest_seconds || null, sessionSectionId]
           );
 
-          // Insert sets
-          const setIds: number[] = [];
-          for (let i = 0; i < sets; i++) {
-            const { rows: [s] } = await client.query(
-              `INSERT INTO sets (session_exercise_id, set_number, reps, weight, rpe)
-               VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-              [se.id, i + 1, reps, weight || null, rpe || null]
-            );
-            setIds.push(s.id);
-          }
+          // Batch insert all sets at once
+          const setNumbers = Array.from({ length: sets }, (_, i) => i + 1);
+          const setReps = Array(sets).fill(reps);
+          const setWeights = Array(sets).fill(weight || null);
+          const setRPEs = Array(sets).fill(rpe || null);
+
+          const { rows: insertedSets } = await client.query(
+            `INSERT INTO sets (session_exercise_id, set_number, reps, weight, rpe)
+             SELECT $1, unnest($2::int[]), unnest($3::int[]), unnest($4::real[]), unnest($5::real[])
+             RETURNING id`,
+            [se.id, setNumbers, setReps, setWeights, setRPEs]
+          );
+          const setIds = insertedSets.map((row: { id: number }) => row.id);
 
           totalRoutineSets += sets;
           if (weight) totalRoutineVolume += weight * reps * sets;
@@ -331,13 +336,14 @@ date (ISO string), tags, notes, minimal_response`,
           if (sessionValidated) {
             const prs = await checkPRs(
               dex.exercise_id,
-              setIds.map((id) => ({
+              setIds.map((id: number) => ({
                 reps,
                 weight: weight ?? null,
                 set_id: id,
               })),
               dex.exercise_type,
-              client
+              client,
+              sessionStartedAt
             );
             if (prs.length > 0) allPRs.push({ exercise: dex.exercise_name, prs });
           }
@@ -357,7 +363,7 @@ date (ISO string), tags, notes, minimal_response`,
 
       if (hasBulkExercises) {
         for (const entry of exercisesList!) {
-          const result = await logSingleExercise(sessionId, entry, client, sessionValidated, locale);
+          const result = await logSingleExercise(sessionId, entry, client, sessionValidated, locale, sessionStartedAt);
           explicitResults.push(result);
           if (result.new_prs) {
             for (const pr of result.new_prs) {
@@ -386,7 +392,7 @@ date (ISO string), tags, notes, minimal_response`,
           drop_percent: params.drop_percent,
           rep_type: params.rep_type,
           exercise_type: params.exercise_type,
-        }, client, sessionValidated, locale);
+        }, client, sessionValidated, locale, sessionStartedAt);
         explicitResults.push(result);
         if (result.new_prs) {
           for (const pr of result.new_prs) {

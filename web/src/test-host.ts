@@ -21,21 +21,19 @@ const WIDGET_TOOLS: Record<string, { tool: string; args: Record<string, unknown>
   workout:             { tool: "show_workout", args: {}, type: "ui" },
   workouts:            { tool: "show_workouts", args: { period: "year" }, type: "ui" },
   // Data tools with widget HTML
-  session:       { tool: "get_active_session", args: {}, type: "data" },
   stats:         { tool: "get_stats", args: { exercise: "Bench Press", period: "3months" }, type: "data" },
   "today-plan":  { tool: "get_today_plan", args: {}, type: "data" },
   exercises:     { tool: "manage_exercises", args: { action: "list" }, type: "data" },
-  templates:     { tool: "manage_templates", args: { action: "list" }, type: "data" },
-  measurements:  { tool: "manage_body_measurements", args: { action: "latest" }, type: "data" },
-  export:        { tool: "export_data", args: { action: "json", scope: "all" }, type: "data" },
+  measurements:  { tool: "manage_measurements", args: { action: "latest" }, type: "data" },
+  export:        { tool: "export_data", args: { format: "json", scope: "all" }, type: "data" },
   // Data-only tools — no widget HTML, show raw JSON response
-  "init-session":   { tool: "initialize_gym_session", args: {}, type: "data-only" },
+  "get-context":    { tool: "get_context", args: {}, type: "data-only" },
   "manage-profile": { tool: "manage_profile", args: { action: "get" }, type: "data-only" },
   "manage-program": { tool: "manage_program", args: { action: "list" }, type: "data-only" },
-  "log-workout":    { tool: "log_workout", args: { exercises: [{ name: "Bench Press", sets: [{ reps: 10, weight: 80 }] }] }, type: "data-only" },
-  "end-session":    { tool: "end_session", args: {}, type: "data-only" },
-  "get-history":    { tool: "get_history", args: { period: "month" }, type: "data-only" },
-  "edit-log":       { tool: "edit_log", args: {}, type: "data-only" },
+  "log-workout":    { tool: "log_workout", args: { exercise: "Bench Press", reps: 10, weight: 80 }, type: "data-only" },
+  "end-workout":    { tool: "end_workout", args: {}, type: "data-only" },
+  "get-workouts":   { tool: "get_workouts", args: { period: "month" }, type: "data-only" },
+  "edit-workout":   { tool: "edit_workout", args: {}, type: "data-only" },
 };
 
 // Sample data fallback when server is not running
@@ -59,16 +57,6 @@ const sampleData: Record<string, { content?: Array<{ type: string; text: string 
         goals: ["hypertrophy", "endurance"],
       },
     },
-  },
-  session: {
-    content: [{ type: "text", text: JSON.stringify({
-      active: true, duration_minutes: 45,
-      exercises: [
-        { name: "Bench Press", sets: [{ reps: 10, weight: 80 }, { reps: 8, weight: 85 }] },
-        { name: "Incline DB Press", sets: [{ reps: 12, weight: 30 }] },
-        { name: "Cable Flyes", sets: [{ reps: 15, weight: 15 }] },
-      ],
-    })}],
   },
   stats: {
     content: [{ type: "text", text: JSON.stringify({
@@ -126,11 +114,6 @@ const sampleData: Record<string, { content?: Array<{ type: string; text: string 
         ],
       },
     },
-  },
-  templates: {
-    content: [{ type: "text", text: JSON.stringify({
-      templates: [{ name: "Quick Upper", exercises: 4 }],
-    })}],
   },
   measurements: {
     content: [{ type: "text", text: JSON.stringify({

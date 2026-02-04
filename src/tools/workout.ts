@@ -11,7 +11,7 @@ export function registerWorkoutTool(server: McpServer) {
     description: `${APP_CONTEXT}Display a read-only workout session widget. Shows a session with exercises, sets, previous workout comparison, and PRs.
 If session_id is provided, shows that specific session. Otherwise shows the most recent session (active or ended).
 If no sessions exist and no session_id given, shows a "no sessions" message.
-To edit sets, use edit_log. To log new exercises/sets, use log_workout.
+To edit sets, use edit_workout. To log new exercises/sets, use log_workout.
 The widget already shows all information visually — do NOT repeat exercises or set details in your response. Just confirm it's displayed or offer next steps.`,
     inputSchema: {
       session_id: z.number().optional().describe("Optional session ID to view a specific (possibly ended) session in read-only mode"),

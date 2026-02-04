@@ -34,7 +34,6 @@ const WIDGETS: Array<{ name: string; uri: string; file: string; description: str
   { name: "today-plan-widget", uri: "ui://gym-tracker/today-plan.html", file: "today-plan.html", description: "Today's planned workout with exercises" },
   { name: "exercises-widget", uri: "ui://gym-tracker/exercises.html", file: "exercises.html", description: "Exercise library management" },
   { name: "programs-widget", uri: "ui://gym-tracker/programs.html", file: "programs.html", description: "Workout program management" },
-  { name: "templates-widget", uri: "ui://gym-tracker/templates.html", file: "templates.html", description: "Session template management" },
   { name: "measurements-widget", uri: "ui://gym-tracker/measurements.html", file: "measurements.html", description: "Body measurement tracking" },
   { name: "profile-widget", uri: "ui://gym-tracker/profile.html", file: "profile.html", description: "User profile data" },
   { name: "export-widget", uri: "ui://gym-tracker/export.html", file: "export.html", description: "Data export viewer" },

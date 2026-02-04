@@ -36,12 +36,16 @@ export function calculateVolume(
  * duplicate PRs from concurrent requests logging the same exercise.
  * When called within an existing transaction (externalClient), piggybacks
  * on that transaction's lock scope; otherwise opens its own.
+ *
+ * @param achievedAt - Optional timestamp for when the PR was achieved.
+ *                     Used for backdated sessions. Defaults to NOW().
  */
 export async function checkPRs(
   exerciseId: number,
   newSets: Array<{ reps: number; weight?: number | null; set_id: number }>,
   exerciseType?: ExerciseType | string,
-  externalClient?: PoolClient
+  externalClient?: PoolClient,
+  achievedAt?: Date
 ): Promise<PRCheck[]> {
   if (exerciseType && exerciseType !== 'strength') {
     return [];
@@ -111,7 +115,7 @@ export async function checkPRs(
 
     // Batch upsert all new PRs
     for (const { type, value, setId } of upserts) {
-      await upsertPR(userId, exerciseId, type, value, setId, client);
+      await upsertPR(userId, exerciseId, type, value, setId, client, achievedAt);
     }
 
     // Deduplicate by record_type (keep only the best per type)
@@ -149,26 +153,28 @@ async function upsertPR(
   recordType: string,
   value: number,
   setId: number,
-  client: PoolClient
+  client: PoolClient,
+  achievedAt?: Date
 ) {
+  const timestamp = achievedAt ?? new Date();
   await client.query(
     `INSERT INTO personal_records (user_id, exercise_id, record_type, value, achieved_at, set_id)
-     VALUES ($1, $2, $3, $4, NOW(), $5)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (user_id, exercise_id, record_type) DO UPDATE
-     SET value = $4, achieved_at = NOW(), set_id = $5
+     SET value = $4, achieved_at = $5, set_id = $6
      WHERE personal_records.value < $4`,
-    [userId, exerciseId, recordType, value, setId]
+    [userId, exerciseId, recordType, value, timestamp, setId]
   );
 
   // Log to PR history for timeline tracking, prevent duplicates within same minute
   await client.query(
     `INSERT INTO pr_history (user_id, exercise_id, record_type, value, achieved_at, set_id)
-     SELECT $1, $2, $3, $4, NOW(), $5
+     SELECT $1, $2, $3, $4, $5, $6
      WHERE NOT EXISTS (
        SELECT 1 FROM pr_history
        WHERE user_id = $1 AND exercise_id = $2 AND record_type = $3 AND value = $4
-         AND achieved_at >= date_trunc('minute', NOW())
+         AND achieved_at >= date_trunc('minute', $5::timestamptz)
      )`,
-    [userId, exerciseId, recordType, value, setId]
+    [userId, exerciseId, recordType, value, timestamp, setId]
   );
 }
