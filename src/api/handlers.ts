@@ -503,8 +503,11 @@ export async function listPrograms(mode: "user" | "available" = "user") {
     const { rows } = await pool.query(
       `SELECT p.id, p.name, p.is_active,
         (SELECT COUNT(*) FROM program_days pd
-         JOIN program_versions pv ON pv.id = pd.version_id
-         WHERE pv.program_id = p.id) as days_count
+         WHERE pd.version_id = (
+           SELECT pv.id FROM program_versions pv
+           WHERE pv.program_id = p.id
+           ORDER BY pv.version_number DESC LIMIT 1
+         )) as days_count
        FROM programs p
        WHERE p.user_id IS NULL
        ORDER BY p.name`
@@ -515,9 +518,11 @@ export async function listPrograms(mode: "user" | "available" = "user") {
   const { rows } = await pool.query(
     `SELECT p.id, p.name, p.is_active,
       (SELECT COUNT(*) FROM program_days pd
-       JOIN program_versions pv ON pv.id = pd.version_id
-       WHERE pv.program_id = p.id
-       ORDER BY pv.version_number DESC LIMIT 1) as days_count
+       WHERE pd.version_id = (
+         SELECT pv.id FROM program_versions pv
+         WHERE pv.program_id = p.id
+         ORDER BY pv.version_number DESC LIMIT 1
+       )) as days_count
      FROM programs p
      WHERE p.user_id = $1
      ORDER BY p.is_active DESC, p.name`,
