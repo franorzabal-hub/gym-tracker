@@ -615,6 +615,199 @@ export async function deleteProgram(id: number) {
   return { deleted: rows[0] };
 }
 
+export async function createProgram(params: {
+  name: string;
+  description?: string;
+  days: Array<{
+    day_label: string;
+    weekdays?: number[];
+    exercises: Array<{
+      exercise: string;
+      sets?: number;
+      reps: number | number[];
+      weight?: number | number[] | null;
+      rpe?: number;
+      rest_seconds?: number;
+      notes?: string;
+    }>;
+  }>;
+}) {
+  const userId = getUserId();
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // Create program
+    const { rows: [prog] } = await client.query(
+      `INSERT INTO programs (user_id, name, description, is_active)
+       VALUES ($1, $2, $3, FALSE) RETURNING id`,
+      [userId, params.name, params.description || null]
+    );
+
+    // Create version
+    const { rows: [version] } = await client.query(
+      `INSERT INTO program_versions (program_id, version_number, change_description)
+       VALUES ($1, 1, 'Initial creation') RETURNING id`,
+      [prog.id]
+    );
+
+    // Create days and exercises
+    for (let dayIdx = 0; dayIdx < params.days.length; dayIdx++) {
+      const day = params.days[dayIdx];
+
+      const { rows: [newDay] } = await client.query(
+        `INSERT INTO program_days (version_id, day_label, weekdays, sort_order)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [version.id, day.day_label, day.weekdays || null, dayIdx]
+      );
+
+      // Create exercises
+      for (let exIdx = 0; exIdx < day.exercises.length; exIdx++) {
+        const ex = day.exercises[exIdx];
+
+        // Resolve exercise
+        const resolved = await resolveExercise(ex.exercise, undefined, undefined, undefined, undefined, client);
+
+        // Handle arrays for progressions
+        const repsIsArray = Array.isArray(ex.reps);
+        const weightIsArray = Array.isArray(ex.weight);
+
+        const targetReps = repsIsArray ? (ex.reps as number[])[0] : (ex.reps as number);
+        const targetRepsPerSet = repsIsArray ? ex.reps : null;
+        const targetWeight = ex.weight === null || ex.weight === undefined
+          ? null
+          : (weightIsArray ? (ex.weight as number[])[0] : ex.weight);
+        const targetWeightPerSet = ex.weight === null || ex.weight === undefined
+          ? null
+          : (weightIsArray ? ex.weight : null);
+
+        await client.query(
+          `INSERT INTO program_day_exercises
+             (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe,
+              target_reps_per_set, target_weight_per_set, rest_seconds, notes, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [
+            newDay.id,
+            resolved.id,
+            ex.sets || 3,
+            targetReps,
+            targetWeight,
+            ex.rpe || null,
+            targetRepsPerSet,
+            targetWeightPerSet,
+            ex.rest_seconds || null,
+            ex.notes || null,
+            exIdx,
+          ]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+
+    return {
+      program: {
+        id: prog.id,
+        name: params.name,
+        version: 1,
+        days_created: params.days.length,
+      },
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function patchProgramExercise(
+  programId: number,
+  exerciseId: number,
+  params: {
+    sets?: number;
+    reps?: number | number[];
+    weight?: number | number[] | null;
+    rpe?: number | null;
+    rest_seconds?: number | null;
+    notes?: string | null;
+  }
+) {
+  const userId = getUserId();
+
+  // Verify ownership and get the exercise
+  const { rows: [exercise] } = await pool.query(
+    `SELECT pde.id, pde.target_sets, pde.target_reps, pde.target_weight
+     FROM program_day_exercises pde
+     JOIN program_days pd ON pd.id = pde.day_id
+     JOIN program_versions pv ON pv.id = pd.version_id
+     JOIN programs p ON p.id = pv.program_id
+     WHERE p.id = $1 AND p.user_id = $2 AND pde.id = $3`,
+    [programId, userId, exerciseId]
+  );
+
+  if (!exercise) {
+    throw new Error("Exercise not found in program or not owned by user");
+  }
+
+  // Build dynamic UPDATE
+  const updates: string[] = [];
+  const queryParams: (string | number | number[] | null)[] = [];
+
+  if (params.sets !== undefined) {
+    queryParams.push(params.sets);
+    updates.push(`target_sets = $${queryParams.length}`);
+  }
+
+  if (params.reps !== undefined) {
+    const repsIsArray = Array.isArray(params.reps);
+    queryParams.push(repsIsArray ? (params.reps as number[])[0] : params.reps);
+    updates.push(`target_reps = $${queryParams.length}`);
+    queryParams.push(repsIsArray ? params.reps : null);
+    updates.push(`target_reps_per_set = $${queryParams.length}`);
+  }
+
+  if (params.weight !== undefined) {
+    const weightIsArray = Array.isArray(params.weight);
+    queryParams.push(params.weight === null ? null : (weightIsArray ? (params.weight as number[])[0] : params.weight));
+    updates.push(`target_weight = $${queryParams.length}`);
+    queryParams.push(params.weight === null ? null : (weightIsArray ? params.weight : null));
+    updates.push(`target_weight_per_set = $${queryParams.length}`);
+  }
+
+  if (params.rpe !== undefined) {
+    queryParams.push(params.rpe);
+    updates.push(`target_rpe = $${queryParams.length}`);
+  }
+
+  if (params.rest_seconds !== undefined) {
+    queryParams.push(params.rest_seconds);
+    updates.push(`rest_seconds = $${queryParams.length}`);
+  }
+
+  if (params.notes !== undefined) {
+    queryParams.push(params.notes);
+    updates.push(`notes = $${queryParams.length}`);
+  }
+
+  if (updates.length === 0) {
+    throw new Error("No fields to update");
+  }
+
+  queryParams.push(exerciseId);
+  await pool.query(
+    `UPDATE program_day_exercises SET ${updates.join(", ")} WHERE id = $${queryParams.length}`,
+    queryParams
+  );
+
+  return {
+    updated: true,
+    program_day_exercise_id: exerciseId,
+    fields_updated: updates.length,
+  };
+}
+
 // ============================================================================
 // WORKOUTS
 // ============================================================================

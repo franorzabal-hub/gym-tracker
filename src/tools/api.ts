@@ -83,6 +83,10 @@ async function routeRequest(method: string, path: string, body: Record<string, a
     return handlers.listPrograms("user");
   }
 
+  if (normalizedPath === "/programs" && normalizedMethod === "POST") {
+    return handlers.createProgram(body as any);
+  }
+
   if (normalizedPath === "/programs/available" && normalizedMethod === "GET") {
     return handlers.listPrograms("available");
   }
@@ -102,6 +106,13 @@ async function routeRequest(method: string, path: string, body: Record<string, a
   if (pathParts[0] === "programs" && pathParts[2] === "activate" && normalizedMethod === "POST") {
     const id = Number(pathParts[1]);
     return handlers.activateProgram(id);
+  }
+
+  // /programs/:id/exercises/:exerciseId
+  if (pathParts[0] === "programs" && pathParts[2] === "exercises" && pathParts.length === 4 && normalizedMethod === "PATCH") {
+    const programId = Number(pathParts[1]);
+    const exerciseId = Number(pathParts[3]);
+    return handlers.patchProgramExercise(programId, exerciseId, body);
   }
 
   // ============================================================================
@@ -288,7 +299,18 @@ PROGRAMS
 GET /programs → { programs }
 GET /programs/:id → { program }
 POST /programs → { program }
-  Body: { name, days: [{ day_label, exercises: [{ exercise, target_sets, target_reps, target_weight? }] }] }
+  Body: { name, description?, days: [{
+    day_label, weekdays?: [1-7],
+    exercises: [{ exercise, sets?, reps, weight?, rpe?, rest_seconds?, notes? }]
+  }]}
+  PROGRESSIONS: reps and weight can be arrays for per-set values:
+    reps: [12, 10, 8] → Set 1: 12 reps, Set 2: 10 reps, Set 3: 8 reps
+    weight: [60, 70, 80] → Set 1: 60kg, Set 2: 70kg, Set 3: 80kg
+
+PATCH /programs/:id/exercises/:exerciseId → { updated }
+  Body: { sets?, reps?, weight?, rpe?, rest_seconds?, notes? }
+  Same progression support: reps: [12,10,8], weight: [60,70,80]
+
 POST /programs/:id/activate → { activated }
 DELETE /programs/:id → { deleted }
 
@@ -305,18 +327,30 @@ GET /measurements/latest → { measurements }
 ══════════════════════════════════════════════════════════════
 EXAMPLES
 ══════════════════════════════════════════════════════════════
-// Pyramid (12/10/8 reps, increasing weight)
+// Create program with progressions
+{ "method": "POST", "path": "/programs", "body": {
+  "name": "Push Pull Legs",
+  "days": [{
+    "day_label": "Push", "weekdays": [1, 4],
+    "exercises": [
+      { "exercise": "bench press", "sets": 4, "reps": [12,10,8,6], "weight": [60,70,80,90] },
+      { "exercise": "shoulder press", "sets": 3, "reps": 10, "weight": 40 }
+    ]
+  }]
+}}
+
+// Update exercise progression
+{ "method": "PATCH", "path": "/programs/1/exercises/42", "body": {
+  "reps": [12,10,8], "weight": [100,110,120]
+}}
+
+// Log workout with pyramid
 { "method": "POST", "path": "/workouts", "body": {
   "exercise": "bench", "sets": 3, "reps": [12,10,8], "weight": [60,70,80]
 }}
 
-// Drop set (same reps, decreasing weight)
-{ "method": "POST", "path": "/workouts", "body": {
-  "exercise": "lateral raise", "sets": 3, "reps": 12, "weight": [15,12,10]
-}}
-
-// Delete all workouts
-{ "method": "DELETE", "path": "/workouts/bulk", "body": { "ids": [1,2,3,4,5] }}`,
+// Delete workouts bulk
+{ "method": "DELETE", "path": "/workouts/bulk", "body": { "ids": [1,2,3] }}`,
       inputSchema: {
         method: z.enum(["GET", "POST", "PATCH", "DELETE"]).describe("HTTP method"),
         path: z.string().describe("API endpoint path (e.g., '/context', '/workouts', '/exercises/bench press')"),
