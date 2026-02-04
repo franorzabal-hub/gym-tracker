@@ -53,6 +53,23 @@ export function registerLogWorkoutTool(server: McpServer) {
   server.registerTool("log_workout", {
     description: `${APP_CONTEXT}Log workouts: start sessions, log exercises, or log full program days.
 
+## TWO MAIN WORKFLOWS
+
+### 1. LOAD WORKOUT (batch mode)
+User says: "cargar", "load", "registrar el entrenamiento", "cargame el día X"
+This means the user wants to LOG A COMPLETE WORKOUT in one go.
+→ log_workout({ program_day }) — loads ALL exercises with their sets
+→ end_workout() — closes the session immediately
+→ show_workout() — displays the result for validation
+IMPORTANT: Complete all 3 steps automatically. Do NOT ask for confirmation between steps.
+
+### 2. START SESSION (interactive mode)
+User says: "empezar", "iniciar", "voy a entrenar", "arranco"
+This means the user is STARTING TO TRAIN NOW and will log incrementally.
+→ log_workout({}) or log_workout({ program_day }) — starts session
+→ User logs exercises/sets one by one as they train
+→ When user says "terminé", "listo", "done" → end_workout() → show_workout()
+
 ## DECISION GUIDE
 
 | I want to...                              | Call                                                    |
@@ -68,7 +85,6 @@ export function registerLogWorkoutTool(server: McpServer) {
 - Auto-creates session if none active
 - Adds to existing active session
 - Infers program day from weekday if not specified
-- Use end_workout to close session
 
 ## SINGLE EXERCISE PARAMS
 exercise, sets (default 1), reps (number or array), weight, rpe, set_type, exercise_notes, rest_seconds, muscle_group, equipment, set_notes, drop_percent, rep_type, exercise_type

@@ -1,0 +1,8 @@
+# Evaluation results (can be large, regenerated)
+results/
+
+# Promptfoo cache
+.promptfoo/
+
+# Local config overrides
+promptfooconfig.local.yaml

@@ -1,0 +1,193 @@
+# Gym Tracker MCP Tools Evaluation
+# Evalua el flujo completo de carga de entrenamiento usando Codex CLI
+# Run: cd evals && npx promptfoo eval
+#
+# Codex CLI se conecta al MCP de gym-tracker y ejecuta las tools reales.
+# El modelo NO sabe qué tools llamar - las descubre del MCP.
+
+description: "Gym Tracker - Flujo completo con Codex CLI + MCP real"
+
+prompts:
+  # Prompt simple, como lo diría un usuario real
+  - "{{prompt}}"
+
+providers:
+  # Codex CLI con GPT-5.2 conectado al MCP de gym-tracker
+  - id: file://codex-provider.js
+    label: codex-gpt5.2
+
+tests:
+  - description: "Flujo completo: cargar un workout en base al día del programa con todos los ejercicios y detalles, cerrar workout, mostrar workout cargado con el resultado"
+    vars:
+      prompt: "Podes cargarme un entrenamiento en base a mi programa, el dia 2"
+    assert:
+      # 1. Debe llamar a log_workout con program_day
+      - type: javascript
+        value: |
+          // output is an array of tool calls
+          const tc = Array.isArray(output) ? output : (output.tool_calls || []);
+          const logCall = tc.find(c => c.function?.name === 'log_workout' || c.name === 'log_workout');
+          if (!logCall) {
+            return { pass: false, score: 0, reason: 'log_workout no fue llamado' };
+          }
+          const argsStr = logCall.function?.arguments || logCall.arguments;
+          const args = typeof argsStr === 'string' ? JSON.parse(argsStr) : argsStr;
+          if (!args.program_day) {
+            return { pass: false, score: 0, reason: 'log_workout llamado pero sin program_day' };
+          }
+          return {
+            pass: true,
+            score: 1,
+            reason: `log_workout llamado con program_day="${args.program_day}"`
+          };
+
+      # 2. Debe llamar a end_workout para cerrar
+      - type: javascript
+        value: |
+          const tc = Array.isArray(output) ? output : (output.tool_calls || []);
+          const endCall = tc.find(c => c.function?.name === 'end_workout' || c.name === 'end_workout');
+          if (!endCall) {
+            return { pass: false, score: 0, reason: 'end_workout no fue llamado - el workout debe cerrarse' };
+          }
+          return { pass: true, score: 1, reason: 'end_workout llamado correctamente' };
+
+      # 3. Debe llamar a show_workout para mostrar el resultado
+      - type: javascript
+        value: |
+          const tc = Array.isArray(output) ? output : (output.tool_calls || []);
+          const showCall = tc.find(c => c.function?.name === 'show_workout' || c.name === 'show_workout');
+          if (!showCall) {
+            return { pass: false, score: 0, reason: 'show_workout no fue llamado - debe mostrar el resultado para validacion' };
+          }
+          return { pass: true, score: 1, reason: 'show_workout llamado correctamente' };
+
+      # 4. Verificar orden correcto: log -> end -> show
+      - type: javascript
+        value: |
+          const tc = Array.isArray(output) ? output : (output.tool_calls || []);
+          const names = tc.map(c => c.function?.name || c.name);
+          const logIdx = names.indexOf('log_workout');
+          const endIdx = names.indexOf('end_workout');
+          const showIdx = names.indexOf('show_workout');
+
+          if (logIdx === -1 || endIdx === -1) {
+            return { pass: false, score: 0, reason: `Faltan tools basicas. Encontradas: ${names.join(', ')}` };
+          }
+
+          if (logIdx > endIdx) {
+            return { pass: false, score: 0, reason: 'log_workout debe llamarse ANTES de end_workout' };
+          }
+
+          // show_workout is optional but preferred
+          if (showIdx === -1) {
+            return { pass: true, score: 0.5, reason: `Orden correcto pero falta show_workout: ${names.join(' -> ')}` };
+          }
+
+          if (endIdx > showIdx) {
+            return { pass: false, score: 0, reason: 'end_workout debe llamarse ANTES de show_workout' };
+          }
+
+          return {
+            pass: true,
+            score: 1,
+            reason: `Orden correcto: ${names.join(' -> ')}`
+          };
+
+      # 5. Verificar que se creó una sesión válida (busca el log_workout exitoso)
+      - type: javascript
+        value: |
+          const tc = Array.isArray(output) ? output : (output.tool_calls || []);
+          const logCalls = tc.filter(c => c.name === 'log_workout');
+          if (logCalls.length === 0) {
+            return { pass: false, score: 0, reason: 'log_workout no fue llamado' };
+          }
+          // Find the successful log_workout (the one with session_id)
+          let sessionId = null;
+          for (const logCall of logCalls) {
+            if (logCall?.result?.content?.[0]?.text) {
+              const result = JSON.parse(logCall.result.content[0].text);
+              if (result.session_id && result.session_id > 0) {
+                sessionId = result.session_id;
+                break;
+              }
+            }
+          }
+          if (!sessionId) {
+            return { pass: false, score: 0, reason: 'No se creó session_id válido en ningún log_workout' };
+          }
+          return {
+            pass: true,
+            score: 1,
+            reason: `Sesión creada con ID ${sessionId}`
+          };
+
+      # 6. Verificar cantidad de ejercicios cargados (Día 2 tiene 10 ejercicios)
+      - type: javascript
+        value: |
+          const tc = Array.isArray(output) ? output : (output.tool_calls || []);
+          const endCall = tc.find(c => c.name === 'end_workout');
+          if (!endCall?.result?.content?.[0]?.text) {
+            return { pass: false, score: 0, reason: 'end_workout no devolvió resultado' };
+          }
+          const result = JSON.parse(endCall.result.content[0].text);
+          const expected = 10;
+          if (result.exercises_count !== expected) {
+            return {
+              pass: false,
+              score: 0,
+              reason: `Ejercicios incorrectos: esperados ${expected}, obtenidos ${result.exercises_count}`
+            };
+          }
+          return {
+            pass: true,
+            score: 1,
+            reason: `${result.exercises_count} ejercicios cargados correctamente`
+          };
+
+      # 7. Verificar cantidad de sets (Día 2 tiene 28 sets totales)
+      - type: javascript
+        value: |
+          const tc = Array.isArray(output) ? output : (output.tool_calls || []);
+          const endCall = tc.find(c => c.name === 'end_workout');
+          if (!endCall?.result?.content?.[0]?.text) {
+            return { pass: false, score: 0, reason: 'end_workout no devolvió resultado' };
+          }
+          const result = JSON.parse(endCall.result.content[0].text);
+          const expected = 28;
+          if (result.total_sets !== expected) {
+            return {
+              pass: false,
+              score: 0,
+              reason: `Sets incorrectos: esperados ${expected}, obtenidos ${result.total_sets}`
+            };
+          }
+          return {
+            pass: true,
+            score: 1,
+            reason: `${result.total_sets} sets cargados correctamente`
+          };
+
+      # 8. Verificar volumen total (Día 2 = 8190 kg)
+      - type: javascript
+        value: |
+          const tc = Array.isArray(output) ? output : (output.tool_calls || []);
+          const endCall = tc.find(c => c.name === 'end_workout');
+          if (!endCall?.result?.content?.[0]?.text) {
+            return { pass: false, score: 0, reason: 'end_workout no devolvió resultado' };
+          }
+          const result = JSON.parse(endCall.result.content[0].text);
+          const expected = 8190;
+          if (result.total_volume_kg !== expected) {
+            return {
+              pass: false,
+              score: 0,
+              reason: `Volumen incorrecto: esperado ${expected}kg, obtenido ${result.total_volume_kg}kg`
+            };
+          }
+          return {
+            pass: true,
+            score: 1,
+            reason: `Volumen total ${result.total_volume_kg}kg correcto`
+          };
+
+outputPath: results/eval-{{timestamp}}.json

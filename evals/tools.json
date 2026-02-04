@@ -1,0 +1,66 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "log_workout",
+      "description": "Registra ejercicios en el entrenamiento actual. Auto-crea sesion si no hay una activa. Usa program_day para cargar un dia completo del programa.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "program_day": {
+            "type": "string",
+            "description": "Nombre del dia del programa (ej: 'Push', 'Dia 2', 'Piernas')"
+          },
+          "exercise": {
+            "type": "string",
+            "description": "Nombre del ejercicio"
+          },
+          "sets": {
+            "type": "integer",
+            "description": "Numero de series"
+          },
+          "reps": {
+            "type": "integer",
+            "description": "Repeticiones"
+          },
+          "weight": {
+            "type": "number",
+            "description": "Peso en kg"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "end_workout",
+      "description": "Finaliza la sesion activa de entrenamiento.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": "string",
+            "description": "Notas finales"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "show_workout",
+      "description": "Muestra el widget visual del entrenamiento actual o un entrenamiento especifico.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "integer",
+            "description": "ID de sesion especifica (opcional)"
+          }
+        }
+      }
+    }
+  }
+]
