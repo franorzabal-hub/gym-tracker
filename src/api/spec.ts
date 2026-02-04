@@ -148,9 +148,13 @@ Body: {
 }
 Response: varies by action
 
-### DELETE /workouts/:id
-Soft-delete a workout.
-Response: { deleted }
+### DELETE /workouts/:selector
+Soft-delete a workout. Selector can be: ID, "today", "last", "yesterday", or "YYYY-MM-DD".
+Response: { deleted_workout, workout_date, exercises_count }
+
+### POST /workouts/:selector/restore
+Restore a soft-deleted workout.
+Response: { restored_workout, workout_date }
 
 ## Stats
 

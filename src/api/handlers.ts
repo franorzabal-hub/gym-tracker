@@ -1185,6 +1185,122 @@ export async function getWorkouts(params: {
   };
 }
 
+export async function deleteWorkout(selector: string | number) {
+  const userId = getUserId();
+  const userDate = await getUserCurrentDate();
+
+  // Resolve selector (ID, "today", "last", "yesterday", or YYYY-MM-DD)
+  const resolved = await resolveWorkoutSelector(selector, userId, userDate);
+  if (!resolved) {
+    throw new Error(`Workout "${selector}" not found`);
+  }
+
+  // Get exercise count before deleting
+  const { rows: countRows } = await pool.query(
+    `SELECT COUNT(*)::int as count FROM session_exercises WHERE session_id = $1`,
+    [resolved.session_id]
+  );
+
+  // Soft delete
+  await pool.query(
+    "UPDATE sessions SET deleted_at = NOW() WHERE id = $1 AND user_id = $2",
+    [resolved.session_id, userId]
+  );
+
+  return {
+    deleted_workout: resolved.session_id,
+    workout_date: resolved.started_at.toISOString().split("T")[0],
+    exercises_count: countRows[0].count,
+  };
+}
+
+export async function restoreWorkout(selector: string | number) {
+  const userId = getUserId();
+  const userDate = await getUserCurrentDate();
+
+  // Resolve selector including deleted
+  const resolved = await resolveWorkoutSelector(selector, userId, userDate, { includeDeleted: true });
+  if (!resolved) {
+    throw new Error(`Workout "${selector}" not found`);
+  }
+  if (!resolved.deleted_at) {
+    throw new Error(`Workout is not deleted`);
+  }
+
+  await pool.query(
+    "UPDATE sessions SET deleted_at = NULL WHERE id = $1 AND user_id = $2",
+    [resolved.session_id, userId]
+  );
+
+  return {
+    restored_workout: resolved.session_id,
+    workout_date: resolved.started_at.toISOString().split("T")[0],
+  };
+}
+
+/**
+ * Resolves a workout selector to a session ID and metadata.
+ */
+async function resolveWorkoutSelector(
+  selector: string | number,
+  userId: number,
+  userDate: string,
+  options: { includeDeleted?: boolean } = {}
+): Promise<{ session_id: number; started_at: Date; is_validated: boolean; deleted_at: Date | null } | null> {
+  const { includeDeleted = false } = options;
+  const deletedFilter = includeDeleted ? "" : "AND deleted_at IS NULL";
+
+  // Numeric ID
+  const numericId = Number(selector);
+  if (!Number.isNaN(numericId) && String(selector).match(/^\d+$/)) {
+    const { rows } = await pool.query(
+      `SELECT id as session_id, started_at, is_validated, deleted_at
+       FROM sessions WHERE id = $1 AND user_id = $2 ${deletedFilter}`,
+      [numericId, userId]
+    );
+    return rows[0] || null;
+  }
+
+  // Semantic selectors
+  let dateFilter: string;
+  const params: (number | string)[] = [userId];
+
+  switch (selector) {
+    case "today":
+      params.push(userDate);
+      dateFilter = `AND started_at >= $2::date AND started_at < $2::date + INTERVAL '1 day'`;
+      break;
+    case "yesterday": {
+      const yesterday = new Date(userDate);
+      yesterday.setDate(yesterday.getDate() - 1);
+      params.push(yesterday.toISOString().split("T")[0]);
+      dateFilter = `AND started_at >= $2::date AND started_at < $2::date + INTERVAL '1 day'`;
+      break;
+    }
+    case "last":
+      dateFilter = "";
+      break;
+    default:
+      // YYYY-MM-DD date string
+      if (typeof selector !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(selector)) {
+        return null;
+      }
+      params.push(selector);
+      dateFilter = `AND started_at >= $2::date AND started_at < $2::date + INTERVAL '1 day'`;
+  }
+
+  const { rows } = await pool.query(
+    `SELECT id as session_id, started_at, is_validated, deleted_at
+     FROM sessions
+     WHERE user_id = $1 ${deletedFilter} ${dateFilter}
+     ORDER BY started_at DESC
+     LIMIT 1`,
+    params
+  );
+
+  return rows[0] || null;
+}
+
 export async function getTodayPlan() {
   const userId = getUserId();
   const activeProgram = await getActiveProgram();

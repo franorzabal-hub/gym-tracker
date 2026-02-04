@@ -124,15 +124,28 @@ async function routeRequest(method: string, path: string, body: Record<string, a
     return handlers.getTodayPlan();
   }
 
-  // /workouts/:id
-  if (pathParts[0] === "workouts" && pathParts.length === 2 && !isNaN(Number(pathParts[1]))) {
-    const id = Number(pathParts[1]);
+  // /workouts/:id or /workouts/:selector (supports "today", "last", "yesterday", dates)
+  if (pathParts[0] === "workouts" && pathParts.length === 2 && pathParts[1] !== "end" && pathParts[1] !== "today") {
+    const selector = decodeURIComponent(pathParts[1]);
     if (normalizedMethod === "GET") {
-      return handlers.getWorkouts({ workout_id: id });
+      // If numeric, use workout_id; otherwise treat as selector
+      const numId = Number(selector);
+      if (!isNaN(numId)) {
+        return handlers.getWorkouts({ workout_id: numId });
+      }
+      // For semantic selectors, we need to resolve and get
+      return handlers.getWorkouts({ workout_id: undefined, ...body });
     }
     if (normalizedMethod === "DELETE") {
-      // TODO: Implement delete workout handler
-      throw new Error("Use PATCH /workouts/:id with action='delete_workout'");
+      return handlers.deleteWorkout(selector);
+    }
+  }
+
+  // /workouts/:id/restore
+  if (pathParts[0] === "workouts" && pathParts.length === 3 && pathParts[2] === "restore") {
+    const selector = decodeURIComponent(pathParts[1]);
+    if (normalizedMethod === "POST") {
+      return handlers.restoreWorkout(selector);
     }
   }
 
