@@ -104,7 +104,7 @@ Node.js + TypeScript, Express, CORS, `@modelcontextprotocol/sdk` (StreamableHTTP
 server.ts                    # Express + MCP server + auth middleware
 src/auth/                    # middleware.ts, oauth-routes.ts, workos.ts
 src/context/user-context.ts  # AsyncLocalStorage: getUserId() / runWithUser()
-src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-023, 025
+src/db/                      # connection.ts, migrate.ts, run-migrations.ts, migrations/001-025
 src/tools/                   # 15 files → 19 MCP tools (12 data + 7 display)
 src/helpers/                 # exercise-resolver.ts, stats-calculator.ts, program-helpers.ts, log-exercise-helper.ts, group-helpers.ts, section-helpers.ts, date-helpers.ts, parse-helpers.ts, profile-helpers.ts, tool-response.ts
 src/helpers/__tests__/       # Vitest tests for helpers (exercise-resolver, program-helpers, stats-calculator, group-helpers, section-helpers, profile-helpers)
@@ -229,7 +229,7 @@ Each tool test: `vi.mock` dependencies at top level with `vi.hoisted()`, capture
 
 ## Migrations
 
-24 migrations in `src/db/migrations/` (001–023, 025 — note: 024 skipped). Each file is self-describing — read the SQL for details. Auto-applied on server startup via `runMigrations()`.
+25 migrations in `src/db/migrations/` (001–025). Each file is self-describing — read the SQL for details. Auto-applied on server startup via `runMigrations()`.
 
 ## Pending (Phase 3)
 
