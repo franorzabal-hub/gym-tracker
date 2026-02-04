@@ -211,10 +211,25 @@ GET /context → { profile, program, active_workout, required_action }
 Follow required_action: "setup_profile" | "choose_program" | null
 
 ══════════════════════════════════════════════════════════════
-WORKOUTS (most important)
+WORKOUTS — TWO WORKFLOWS
 ══════════════════════════════════════════════════════════════
 
+★ CARGAR/REGISTRAR (batch mode)
+User says: "cargar", "registrar", "cargame el día", "load workout"
+→ POST /workouts { program_day: "Push" } or { exercises: [...] }
+→ POST /workouts/end
+→ show_workout (display tool)
+IMPORTANT: Complete all 3 steps automatically without asking.
+
+★ INICIAR/EMPEZAR (interactive mode)
+User says: "empezar", "iniciar", "voy a entrenar", "arranco"
+→ POST /workouts { } (start empty session)
+→ User logs exercises one by one as they train
+→ When user says "terminé/listo/done" → POST /workouts/end → show_workout
+
+══════════════════════════════════════════════════════════════
 POST /workouts — Create workout and/or log exercises
+══════════════════════════════════════════════════════════════
 Body options:
 
 1. Start empty session:
