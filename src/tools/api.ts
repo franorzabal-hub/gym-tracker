@@ -202,56 +202,106 @@ export function registerApiTool(server: McpServer) {
   server.registerTool(
     "api",
     {
-      description: `${APP_CONTEXT}Unified API for all gym tracking data operations.
+      description: `${APP_CONTEXT}Unified API for gym tracking. Call with { method, path, body? }
 
-IMPORTANT: Read the API spec resource (text://gym-tracker/api-spec) to see all available endpoints.
+══════════════════════════════════════════════════════════════
+MANDATORY FIRST CALL
+══════════════════════════════════════════════════════════════
+GET /context → { profile, program, active_workout, required_action }
+Follow required_action: "setup_profile" | "choose_program" | null
 
-This tool lets you call REST-like endpoints programmatically:
-- method: HTTP method (GET, POST, PATCH, DELETE)
-- path: Endpoint path (e.g., "/context", "/workouts", "/exercises/bench press")
-- body: Request body (for POST/PATCH, or query params for GET)
+══════════════════════════════════════════════════════════════
+WORKOUTS (most important)
+══════════════════════════════════════════════════════════════
 
-## Quick Reference
+POST /workouts — Create workout and/or log exercises
+Body options:
 
-### MANDATORY First Call
-GET /context — Returns user context, active program, workout state, and routing instructions.
+1. Start empty session:
+   { }
 
-### Common Operations
-| Action | Endpoint |
-|--------|----------|
-| Get profile | GET /profile |
-| Update profile | PATCH /profile |
-| List exercises | GET /exercises |
-| Search exercises | GET /exercises/search |
-| Start/log workout | POST /workouts |
-| End workout | POST /workouts/end |
-| Get workout history | GET /workouts |
-| Get today's plan | GET /workouts/today |
-| Get stats | GET /stats |
-| Log measurement | POST /measurements |
+2. Log ONE exercise:
+   { "exercise": "bench press", "sets": 3, "reps": 10, "weight": 80 }
 
-### Example Calls
-\`\`\`json
-// Get context (MANDATORY first call)
-{ "method": "GET", "path": "/context" }
+3. Log with PROGRESSION (different reps/weight per set):
+   { "exercise": "squat", "sets": 4, "reps": [12,10,8,6], "weight": [80,90,100,110] }
+   → Set 1: 12 reps @ 80kg, Set 2: 10 @ 90kg, Set 3: 8 @ 100kg, Set 4: 6 @ 110kg
 
-// Update profile
-{ "method": "PATCH", "path": "/profile", "body": { "weight_kg": 82 } }
+4. Log MULTIPLE exercises:
+   { "exercises": [
+       { "exercise": "bench", "sets": 3, "reps": 10, "weight": 80 },
+       { "exercise": "squat", "sets": 4, "reps": [12,10,8,6], "weight": [80,90,100,110] }
+   ]}
 
-// Log a workout
-{ "method": "POST", "path": "/workouts", "body": { "program_day": "Push" } }
+5. Log entire PROGRAM DAY:
+   { "program_day": "Push" }
 
-// Log single exercise
-{ "method": "POST", "path": "/workouts", "body": { "exercise": "bench press", "reps": 10, "weight": 80 } }
+6. Backdate: { "date": "2025-01-28", "exercises": [...] }
 
-// End workout
-{ "method": "POST", "path": "/workouts/end" }
+POST /workouts/end → { summary }
+  Body: { notes?, tags?, force? }
 
-// Get stats
-{ "method": "GET", "path": "/stats", "body": { "exercise": "bench press", "period": "month" } }
-\`\`\`
+GET /workouts → { sessions, summary }
+  Body: { period?: "today"|"week"|"month"|"year", workout_id?, limit? }
 
-For full endpoint documentation, read the api-spec resource.`,
+DELETE /workouts/:selector → { deleted_workout }
+  Selector: ID | "today" | "last" | "yesterday" | "YYYY-MM-DD"
+
+DELETE /workouts/bulk → { deleted, deleted_count }
+  Body: { "ids": [1, 2, 3] }
+
+POST /workouts/:selector/restore → { restored_workout }
+
+══════════════════════════════════════════════════════════════
+PROFILE
+══════════════════════════════════════════════════════════════
+GET /profile → { profile }
+PATCH /profile → { profile }
+  Body: { name?, age?, weight_kg?, height_cm?, goals?, ... }
+
+══════════════════════════════════════════════════════════════
+EXERCISES
+══════════════════════════════════════════════════════════════
+GET /exercises → { exercises, total }
+GET /exercises/search → { exercises }  Body: { query }
+POST /exercises → { exercise }  Body: { name, muscle_group? }
+DELETE /exercises/:name → { deleted }
+
+══════════════════════════════════════════════════════════════
+PROGRAMS
+══════════════════════════════════════════════════════════════
+GET /programs → { programs }
+GET /programs/:id → { program }
+POST /programs → { program }
+  Body: { name, days: [{ day_label, exercises: [{ exercise, target_sets, target_reps, target_weight? }] }] }
+POST /programs/:id/activate → { activated }
+DELETE /programs/:id → { deleted }
+
+══════════════════════════════════════════════════════════════
+STATS & MEASUREMENTS
+══════════════════════════════════════════════════════════════
+GET /stats → { stats }
+  Body: { exercise | exercises[], period?: "week"|"month"|"year" }
+
+POST /measurements → { measurement }
+  Body: { type: "weight_kg"|"body_fat_pct", value }
+GET /measurements/latest → { measurements }
+
+══════════════════════════════════════════════════════════════
+EXAMPLES
+══════════════════════════════════════════════════════════════
+// Pyramid (12/10/8 reps, increasing weight)
+{ "method": "POST", "path": "/workouts", "body": {
+  "exercise": "bench", "sets": 3, "reps": [12,10,8], "weight": [60,70,80]
+}}
+
+// Drop set (same reps, decreasing weight)
+{ "method": "POST", "path": "/workouts", "body": {
+  "exercise": "lateral raise", "sets": 3, "reps": 12, "weight": [15,12,10]
+}}
+
+// Delete all workouts
+{ "method": "DELETE", "path": "/workouts/bulk", "body": { "ids": [1,2,3,4,5] }}`,
       inputSchema: {
         method: z.enum(["GET", "POST", "PATCH", "DELETE"]).describe("HTTP method"),
         path: z.string().describe("API endpoint path (e.g., '/context', '/workouts', '/exercises/bench press')"),
