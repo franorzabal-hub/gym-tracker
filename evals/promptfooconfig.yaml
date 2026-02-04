@@ -190,4 +190,69 @@ tests:
             reason: `Volumen total ${result.total_volume_kg}kg correcto`
           };
 
+      # 9. Verificar detalles de cada ejercicio (sets, reps, peso)
+      - type: javascript
+        value: |
+          // Expected values for Día 2 - Piernas y Hombros
+          const expected = {
+            'Pallof': { sets: 3, reps: 10, weight: 35 },
+            'Plancha Alta': { sets: 3, reps: 30, weight: null },
+            'Squat': { sets: 3, reps: 12, weight: 90 },
+            'Movilidad tibio-tarsiana': { sets: 3, reps: 30, weight: null },
+            'Press de hombros': { sets: 3, reps: 12, weight: 50 },
+            'Disociación de hombros': { sets: 3, reps: 30, weight: null },
+            'Curl de bíceps con barra romana': { sets: 3, reps: 10, weight: 35 },
+            'Extensión de tríceps francés': { sets: 3, reps: 10, weight: 35 },
+            'Estiramiento de cuádriceps': { sets: 2, reps: 30, weight: null },
+            'Estiramiento de flexores de cadera': { sets: 2, reps: 30, weight: null }
+          };
+
+          const tc = Array.isArray(output) ? output : (output.tool_calls || []);
+          const endCall = tc.find(c => c.name === 'end_workout');
+          if (!endCall?.result?.content?.[0]?.text) {
+            return { pass: false, score: 0, reason: 'end_workout no devolvió resultado' };
+          }
+
+          const result = JSON.parse(endCall.result.content[0].text);
+          const exercises = result.exercises || [];
+          const errors = [];
+
+          for (const ex of exercises) {
+            const exp = expected[ex.name];
+            if (!exp) continue; // Skip exercises not in our expected list
+
+            const sets = ex.sets || [];
+            const actualSets = sets.length;
+
+            // Check number of sets
+            if (actualSets !== exp.sets) {
+              errors.push(`${ex.name}: sets=${actualSets}, esperado=${exp.sets}`);
+            }
+
+            // Check reps and weight for each set
+            for (let i = 0; i < sets.length; i++) {
+              const set = sets[i];
+              if (set.reps !== exp.reps) {
+                errors.push(`${ex.name} set${i+1}: reps=${set.reps}, esperado=${exp.reps}`);
+              }
+              if (exp.weight !== null && set.weight !== exp.weight) {
+                errors.push(`${ex.name} set${i+1}: weight=${set.weight}, esperado=${exp.weight}`);
+              }
+            }
+          }
+
+          if (errors.length > 0) {
+            return {
+              pass: false,
+              score: 0,
+              reason: `Errores en ejercicios: ${errors.slice(0, 5).join('; ')}${errors.length > 5 ? ` (+${errors.length - 5} más)` : ''}`
+            };
+          }
+
+          return {
+            pass: true,
+            score: 1,
+            reason: `Todos los ejercicios con sets/reps/peso correctos`
+          };
+
 outputPath: results/eval-{{timestamp}}.json
