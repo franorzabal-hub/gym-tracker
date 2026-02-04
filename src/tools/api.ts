@@ -120,6 +120,10 @@ async function routeRequest(method: string, path: string, body: Record<string, a
     return handlers.getWorkouts(body);
   }
 
+  if (normalizedPath === "/workouts/bulk" && normalizedMethod === "DELETE") {
+    return handlers.deleteWorkoutsBulk(body.ids);
+  }
+
   if (normalizedPath === "/workouts/today" && normalizedMethod === "GET") {
     return handlers.getTodayPlan();
   }

@@ -1185,6 +1185,39 @@ export async function getWorkouts(params: {
   };
 }
 
+export async function deleteWorkoutsBulk(ids: number[]) {
+  const userId = getUserId();
+
+  if (!ids || ids.length === 0) {
+    throw new Error("No workout IDs provided");
+  }
+
+  const numericIds = ids.map(id => Number(id)).filter(id => !Number.isNaN(id));
+  if (numericIds.length === 0) {
+    throw new Error("No valid workout IDs provided");
+  }
+
+  const { rows } = await pool.query(
+    `UPDATE sessions SET deleted_at = NOW()
+     WHERE id = ANY($1::int[]) AND user_id = $2 AND deleted_at IS NULL
+     RETURNING id, started_at`,
+    [numericIds, userId]
+  );
+
+  const deleted = rows.map((r: { id: number; started_at: Date }) => ({
+    id: r.id,
+    date: r.started_at.toISOString().split("T")[0],
+  }));
+
+  const notFound = numericIds.filter(id => !deleted.some(d => d.id === id));
+
+  return {
+    deleted,
+    deleted_count: deleted.length,
+    not_found: notFound.length > 0 ? notFound : undefined,
+  };
+}
+
 export async function deleteWorkout(selector: string | number) {
   const userId = getUserId();
   const userDate = await getUserCurrentDate();
