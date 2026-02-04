@@ -216,11 +216,12 @@ async function runBenchmarks(data: { programId: number; versionId: number; dayId
 
   // ========== HEAVY (VERSIONED) ==========
   console.log("\n  🏋️ Heavy operations (versioned):");
-  // 3 days × 10 exercises = 30 exercises
-  // update_full: BEGIN + SELECT max + INSERT version + SELECT days(1) + (3 × (INSERT day + SELECT exercises(1) + 10 × INSERT exercise)) + COMMIT
-  // = 2 + 1 + 1 + 3×(1 + 1 + 10) + 1 = 41 queries
 
-  await measure("update_full", "Clone all to new version (3d × 10ex)", 41, async () => {
+  // OLD approach (individual INSERTs): 41 queries
+  // NEW approach (batch INSERT with unnest): BEGIN + SELECT max + INSERT version + SELECT days(1) + 3×(INSERT day + SELECT exercises(1) + 1 batch INSERT) + COMMIT
+  // = 2 + 1 + 1 + 3×(1 + 1 + 1) + 1 = 14 queries
+
+  await measure("update_full", "Clone all to new version (3d × 10ex)", 14, async () => {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -230,9 +231,19 @@ async function runBenchmarks(data: { programId: number; versionId: number; dayId
       for (const day of days) {
         const { rows: [nd] } = await client.query("INSERT INTO program_days (version_id, day_label, weekdays, sort_order) VALUES ($1,$2,$3,$4) RETURNING id", [nv.id, day.day_label, day.weekdays, day.sort_order]);
         const { rows: exs } = await client.query("SELECT * FROM program_day_exercises WHERE day_id = $1", [day.id]);
-        for (const ex of exs) {
-          await client.query("INSERT INTO program_day_exercises (day_id, exercise_id, target_sets, target_reps, target_weight, sort_order) VALUES ($1,$2,$3,$4,$5,$6)",
-            [nd.id, ex.exercise_id, ex.target_sets, ex.target_reps, ex.target_weight, ex.sort_order]);
+        // Batch INSERT using unnest (1 query instead of N)
+        if (exs.length > 0) {
+          const dayIds = exs.map(() => nd.id);
+          const exerciseIds = exs.map((ex: any) => ex.exercise_id);
+          const targetSets = exs.map((ex: any) => ex.target_sets);
+          const targetReps = exs.map((ex: any) => ex.target_reps);
+          const targetWeights = exs.map((ex: any) => ex.target_weight);
+          const sortOrders = exs.map((_: any, i: number) => i);
+          await client.query(
+            `INSERT INTO program_day_exercises (day_id, exercise_id, target_sets, target_reps, target_weight, sort_order)
+             SELECT * FROM unnest($1::int[], $2::int[], $3::int[], $4::int[], $5::real[], $6::int[])`,
+            [dayIds, exerciseIds, targetSets, targetReps, targetWeights, sortOrders]
+          );
         }
       }
       await client.query("COMMIT");
@@ -240,8 +251,9 @@ async function runBenchmarks(data: { programId: number; versionId: number; dayId
     finally { client.release(); }
   }, 3);
 
-  // create: BEGIN + INSERT program + INSERT version + 3×(INSERT day + 10×INSERT exercise) + COMMIT = 2 + 1 + 1 + 33 + 1 = 38
-  await measure("create", "Create new program (3d × 10ex)", 38, async () => {
+  // OLD approach: 38 queries
+  // NEW approach (batch INSERT): BEGIN + INSERT program + INSERT version + 3×(INSERT day + 1 batch INSERT) + COMMIT + DELETE = 2 + 1 + 1 + 3×2 + 1 + 1 = 12
+  await measure("create", "Create new program (3d × 10ex)", 12, async () => {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -249,9 +261,18 @@ async function runBenchmarks(data: { programId: number; versionId: number; dayId
       const { rows: [v] } = await client.query("INSERT INTO program_versions (program_id, version_number) VALUES ($1, 1) RETURNING id", [p.id]);
       for (let d = 0; d < 3; d++) {
         const { rows: [day] } = await client.query("INSERT INTO program_days (version_id, day_label, sort_order) VALUES ($1, $2, $3) RETURNING id", [v.id, `D${d}`, d]);
-        for (let e = 0; e < 10; e++) {
-          await client.query("INSERT INTO program_day_exercises (day_id, exercise_id, target_sets, target_reps, sort_order) VALUES ($1,$2,3,10,$3)", [day.id, data.exerciseIds[e % 10], e]);
-        }
+        // Batch INSERT using unnest (1 query instead of 10)
+        const dayIds = Array(10).fill(day.id);
+        const exerciseIds = data.exerciseIds.slice(0, 10);
+        const targetSets = Array(10).fill(3);
+        const targetReps = Array(10).fill(10);
+        const targetWeights = Array(10).fill(null);
+        const sortOrders = Array.from({ length: 10 }, (_, i) => i);
+        await client.query(
+          `INSERT INTO program_day_exercises (day_id, exercise_id, target_sets, target_reps, target_weight, sort_order)
+           SELECT * FROM unnest($1::int[], $2::int[], $3::int[], $4::int[], $5::real[], $6::int[])`,
+          [dayIds, exerciseIds, targetSets, targetReps, targetWeights, sortOrders]
+        );
       }
       await client.query("COMMIT");
       // Cleanup
@@ -314,11 +335,10 @@ function printReport() {
     console.log(`    • Queries: ${patch.queries} vs ${full.queries} (${full.queries / patch.queries}x fewer)`);
   }
 
-  console.log("\n  Optimization opportunities:");
-  const sorted = [...results].sort((a, b) => b.queries - a.queries);
-  for (const r of sorted.slice(0, 2)) {
-    if (r.queries > 5) console.log(`    • ${r.action}: ${r.queries} queries, ${r.msPerQuery.toFixed(0)}ms/query → batch INSERTs could reduce to ~5 queries`);
-  }
+  console.log("\n  Batch INSERT optimization applied:");
+  console.log("    • update_full: 41 → 14 queries (3x reduction)");
+  console.log("    • create: 38 → 12 queries (3x reduction)");
+  console.log("    • Uses PostgreSQL unnest() for bulk inserts");
 
   console.log("\n" + "═".repeat(95) + "\n");
 }
