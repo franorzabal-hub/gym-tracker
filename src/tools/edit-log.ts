@@ -105,39 +105,37 @@ async function resolveSetNumbers(
 
 export function registerEditLogTool(server: McpServer) {
   server.registerTool("edit_workout", {
-    description: `${APP_CONTEXT}Edit or delete previously logged sets, update session metadata, or manage entire workouts.
+    description: `${APP_CONTEXT}Edit workouts: modify sets, add sets, reorder exercises, or manage sessions.
 
-Examples:
-- "No, eran 80kg" → update weight on the last logged exercise
-- "Borrá el último set" → delete specific sets (supports negative indices: -1 = last)
-- "Corregí el press banca de hoy: 4x10 con 70kg" → update all sets of an exercise
-- "Borrá todos los warmup de press banca" → delete sets filtered by type
-- "Corregí press banca y sentadilla de hoy" → bulk edit multiple exercises
-- "Borrá el workout de hoy" → soft-delete today's workout
-- "Validá el workout de ayer" → validate yesterday's workout (recalculates PRs)
-- "Agregá una nota al workout" → update session metadata
+## DECISION GUIDE
 
-Parameters:
-- exercise: name or alias (required for single mode)
-- workout: "today" (default), "last", "yesterday", or YYYY-MM-DD date
-- action: "update" or "delete"
-- updates: { reps?, weight?, rpe?, set_type?, notes? } — fields to change
-- set_numbers: specific set numbers to edit. Supports negative indices: -1 = last set, -2 = second to last
-- set_ids: specific set IDs to edit directly (alternative to set_numbers)
-- set_type_filter: filter sets by type ("warmup", "working", "drop", "failure")
-- bulk: array of { exercise, action?, set_numbers?, set_ids?, set_type_filter?, updates? }
-- update_session: { notes?, append_notes?, tags?, add_tags?, remove_tags? } — update session metadata
-- delete_workout: workout selector ("today", "last", "yesterday", ID, or date) to soft-delete
-- restore_workout: workout ID or date to restore from soft-delete
-- delete_workouts: array of workout IDs for bulk soft-delete
-- validate_workout: workout selector ("today", "last", "yesterday", ID, or date) to validate`,
+| I want to...                              | Use                          |
+|-------------------------------------------|------------------------------|
+| Fix reps/weight/rpe on logged sets        | action: "update"             |
+| Delete specific sets                      | action: "delete"             |
+| Add more sets to an existing exercise     | action: "add_set"            |
+| Change exercise order in workout          | action: "reorder_exercises"  |
+| Edit multiple exercises at once           | bulk: [...]                  |
+| Add/change notes or tags on session       | update_session: {...}        |
+| Delete a workout (soft)                   | delete_workout: "today"      |
+| Restore deleted workout                   | restore_workout: id          |
+| Validate workout (enables PR calc)        | validate_workout: "yesterday"|
+
+## WORKOUT SELECTOR (workout param)
+"today" (default) | "last" | "yesterday" | "2025-01-28" | session_id
+
+## SET TARGETING (for update/delete)
+- set_numbers: [1,2,3] or [-1] (last set), [-2] (second to last)
+- set_ids: [123, 124] — direct IDs
+- set_type_filter: "warmup" | "working" | "drop" | "failure"
+- No filter = all sets of that exercise`,
     inputSchema: {
       exercise: z.string().optional(),
       workout: z
         .union([z.enum(["today", "last", "yesterday"]), z.string()])
         .optional()
         .default("today"),
-      action: z.enum(["update", "delete"]).optional(),
+      action: z.enum(["update", "delete", "add_set", "reorder_exercises"]).optional(),
       updates: z
         .object({
           reps: z.number().int().optional(),
@@ -175,10 +173,18 @@ Parameters:
       restore_workout: z.union([z.number().int(), z.string()]).optional().describe("Workout ID or date to restore from soft-delete"),
       delete_workouts: z.union([z.array(z.number().int()), z.string()]).optional().describe("Array of workout IDs for bulk soft-delete"),
       validate_workout: z.union([z.number().int(), z.string()]).optional().describe("Workout selector to validate: ID, 'today', 'last', 'yesterday', or YYYY-MM-DD"),
+      // add_set params
+      reps: z.number().int().min(1).optional().describe("Reps for new set (add_set action)"),
+      weight: z.number().optional().describe("Weight for new set (add_set action)"),
+      rpe: z.number().min(1).max(10).optional().describe("RPE for new set (add_set action)"),
+      set_type: z.enum(["warmup", "working", "drop", "failure"]).optional().describe("Type for new set (add_set action)"),
+      sets_to_add: z.number().int().min(1).optional().describe("Number of sets to add (add_set action, default 1)"),
+      // reorder_exercises params
+      exercise_order: z.array(z.string()).optional().describe("Exercise names in desired order (reorder_exercises action)"),
     },
     annotations: { destructiveHint: true },
   },
-    safeHandler("edit_workout", async ({ exercise, workout, action, updates, set_numbers, set_ids, set_type_filter, bulk, update_session, delete_workout, restore_workout, delete_workouts: rawDeleteWorkouts, validate_workout }) => {
+    safeHandler("edit_workout", async ({ exercise, workout, action, updates, set_numbers, set_ids, set_type_filter, bulk, update_session, delete_workout, restore_workout, delete_workouts: rawDeleteWorkouts, validate_workout, reps, weight, rpe, set_type, sets_to_add, exercise_order }) => {
       const userId = getUserId();
       const userDate = await getUserCurrentDate();
 
@@ -377,6 +383,176 @@ Parameters:
           deleted_workout: resolved.session_id,
           workout_date: resolved.started_at.toISOString().split("T")[0],
           exercises_count: countRows[0].count,
+        });
+      }
+
+      // --- Add set mode ---
+      if (action === "add_set") {
+        if (!exercise) {
+          return toolResponse({ error: "exercise is required for add_set action" }, true);
+        }
+        if (!reps) {
+          return toolResponse({ error: "reps is required for add_set action" }, true);
+        }
+
+        const resolved = await resolveWorkoutSelector(workout || "today", userId, userDate);
+        if (!resolved) {
+          return toolResponse({ error: `No workout found for "${workout || "today"}"` }, true);
+        }
+
+        // Find the exercise in this workout
+        const exerciseInfo = await findExercise(exercise);
+        if (!exerciseInfo) {
+          return toolResponse({ error: `Exercise "${exercise}" not found` }, true);
+        }
+
+        const { rows: seRows } = await pool.query(
+          `SELECT se.id, (SELECT MAX(set_number) FROM sets WHERE session_exercise_id = se.id) as max_set
+           FROM session_exercises se
+           WHERE se.session_id = $1 AND se.exercise_id = $2
+           ORDER BY se.sort_order DESC
+           LIMIT 1`,
+          [resolved.session_id, exerciseInfo.id]
+        );
+
+        if (seRows.length === 0) {
+          return toolResponse({
+            error: `Exercise "${exerciseInfo.name}" not found in this workout. Use log_workout to add it first.`,
+          }, true);
+        }
+
+        const sessionExerciseId = seRows[0].id;
+        const currentMaxSet = seRows[0].max_set || 0;
+        const numSets = sets_to_add || 1;
+        const addedSets: Array<{ set_id: number; set_number: number; reps: number; weight: number | null; rpe: number | null; set_type: string }> = [];
+
+        for (let i = 0; i < numSets; i++) {
+          const setNumber = currentMaxSet + i + 1;
+          const { rows: [newSet] } = await pool.query(
+            `INSERT INTO sets (session_exercise_id, set_number, reps, weight, rpe, set_type)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING id, set_number, reps, weight, rpe, set_type`,
+            [sessionExerciseId, setNumber, reps, weight || null, rpe || null, set_type || "working"]
+          );
+          addedSets.push({
+            set_id: newSet.id,
+            set_number: newSet.set_number,
+            reps: newSet.reps,
+            weight: newSet.weight,
+            rpe: newSet.rpe,
+            set_type: newSet.set_type,
+          });
+        }
+
+        // Check PRs if workout is validated
+        if (resolved.is_validated && exerciseInfo.exerciseType) {
+          const prs = await checkPRs(
+            exerciseInfo.id,
+            addedSets.map((s) => ({ reps: s.reps, weight: s.weight, set_id: s.set_id })),
+            exerciseInfo.exerciseType
+          );
+          if (prs.length > 0) {
+            return toolResponse({
+              exercise: exerciseInfo.name,
+              session_id: resolved.session_id,
+              workout_date: resolved.started_at.toISOString().split("T")[0],
+              sets_added: addedSets,
+              new_prs: prs,
+            });
+          }
+        }
+
+        return toolResponse({
+          exercise: exerciseInfo.name,
+          session_id: resolved.session_id,
+          workout_date: resolved.started_at.toISOString().split("T")[0],
+          sets_added: addedSets,
+        });
+      }
+
+      // --- Reorder exercises mode ---
+      if (action === "reorder_exercises") {
+        if (!exercise_order || exercise_order.length === 0) {
+          return toolResponse({ error: "exercise_order is required for reorder_exercises action" }, true);
+        }
+
+        const resolved = await resolveWorkoutSelector(workout || "today", userId, userDate);
+        if (!resolved) {
+          return toolResponse({ error: `No workout found for "${workout || "today"}"` }, true);
+        }
+
+        // Get all exercises in this workout
+        const { rows: currentExercises } = await pool.query(
+          `SELECT se.id, e.name, se.sort_order
+           FROM session_exercises se
+           JOIN exercises e ON e.id = se.exercise_id
+           WHERE se.session_id = $1
+           ORDER BY se.sort_order`,
+          [resolved.session_id]
+        );
+
+        if (currentExercises.length === 0) {
+          return toolResponse({ error: "No exercises in this workout" }, true);
+        }
+
+        // Build map of exercise name (lowercase) to session_exercise id
+        const exerciseMap = new Map<string, number>();
+        for (const ex of currentExercises) {
+          exerciseMap.set(ex.name.toLowerCase(), ex.id);
+        }
+
+        // Validate all requested exercises exist
+        const notFound: string[] = [];
+        const reorderIds: number[] = [];
+        for (const name of exercise_order) {
+          const seId = exerciseMap.get(name.toLowerCase());
+          if (seId) {
+            reorderIds.push(seId);
+          } else {
+            notFound.push(name);
+          }
+        }
+
+        if (notFound.length > 0) {
+          return toolResponse({
+            error: `Exercises not found in workout: ${notFound.join(", ")}`,
+            available: currentExercises.map((e: { name: string }) => e.name),
+          }, true);
+        }
+
+        // Update sort_order for each exercise
+        for (let i = 0; i < reorderIds.length; i++) {
+          await pool.query(
+            `UPDATE session_exercises SET sort_order = $1 WHERE id = $2`,
+            [i + 1, reorderIds[i]]
+          );
+        }
+
+        // Any exercises not in the order list get pushed to the end
+        const reorderSet = new Set(reorderIds);
+        let nextOrder = reorderIds.length + 1;
+        for (const ex of currentExercises) {
+          if (!reorderSet.has(ex.id)) {
+            await pool.query(
+              `UPDATE session_exercises SET sort_order = $1 WHERE id = $2`,
+              [nextOrder++, ex.id]
+            );
+          }
+        }
+
+        // Get final order
+        const { rows: finalOrder } = await pool.query(
+          `SELECT e.name FROM session_exercises se
+           JOIN exercises e ON e.id = se.exercise_id
+           WHERE se.session_id = $1
+           ORDER BY se.sort_order`,
+          [resolved.session_id]
+        );
+
+        return toolResponse({
+          session_id: resolved.session_id,
+          workout_date: resolved.started_at.toISOString().split("T")[0],
+          new_order: finalOrder.map((e: { name: string }) => e.name),
         });
       }
 

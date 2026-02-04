@@ -50,41 +50,33 @@ const overrideSchema = z.object({
 
 export function registerLogWorkoutTool(server: McpServer) {
   server.registerTool("log_workout", {
-    description: `${APP_CONTEXT}Unified workout tool — start a session, log exercises, or log a full routine day. Combines start_session + log_exercise + log_routine into one.
+    description: `${APP_CONTEXT}Log workouts: start sessions, log exercises, or log full program days.
 
-Modes:
-1. Session only: log_workout({}) — creates session, infers program day from weekday, returns plan + last workout.
-2. Single exercise: log_workout({ exercise: "Bench Press", reps: 10, sets: 3, weight: 80 }) — auto-creates session if needed, logs the exercise.
-3. Bulk exercises: log_workout({ exercises: [...] }) — logs multiple exercises at once.
-4. Program day: log_workout({ program_day: "Push" }) — creates session, logs all exercises from that program day.
-5. Program day with modifications: log_workout({ program_day: "Push", skip: ["curl"], overrides: [{exercise: "Bench", weight: 90}] })
+## DECISION GUIDE
 
-If a session is already active, exercises are added to it. No auto-close — use end_session to close.
+| I want to...                              | Call                                                    |
+|-------------------------------------------|---------------------------------------------------------|
+| Start a workout (see today's plan)        | log_workout({})                                         |
+| Log one exercise                          | log_workout({ exercise, reps, weight?, sets? })         |
+| Log multiple exercises at once            | log_workout({ exercises: [...] })                       |
+| Log entire program day                    | log_workout({ program_day: "Push" })                    |
+| Log program day, skip/modify some         | log_workout({ program_day, skip?, overrides? })         |
+| Backdate a workout                        | log_workout({ date: "2025-01-28", ... })                |
 
-Parameters:
-- program_day: day label to log (e.g. "Push"). If omitted and no exercises given, infers from today's weekday.
-- date: ISO date string to backdate the session (e.g. "2025-01-28")
-- tags: tags to label this session (e.g. ["deload", "morning"])
-- notes: session-level notes
-- overrides: array of { exercise, sets?, reps?, weight?, rpe? } to override program day template values
-- skip: array of exercise names to skip from the program day
-- exercise: name or alias of a single exercise to log
-- sets: number of sets (default 1)
-- reps: single number or array of numbers per set (e.g. [10, 8, 6])
-- weight: weight in kg
-- rpe: rate of perceived exertion 1-10
-- set_type: "warmup", "working" (default), "drop", or "failure"
-- exercise_notes: notes for the exercise
-- rest_seconds: rest time in seconds
-- muscle_group: muscle group for auto-created exercises
-- equipment: equipment type for auto-created exercises
-- set_notes: notes per set (string for all, or array per set)
-- drop_percent: weight decrease per set for drop sets (1-50)
-- rep_type: "reps", "seconds", "meters", or "calories"
-- exercise_type: "strength", "mobility", "cardio", or "warmup"
-- exercises: array of exercise entries for bulk logging
-- include_last_workout: include last workout comparison (default true for session-only mode)
-- minimal_response: return only success status and PRs`,
+## KEY BEHAVIORS
+- Auto-creates session if none active
+- Adds to existing active session
+- Infers program day from weekday if not specified
+- Use end_workout to close session
+
+## SINGLE EXERCISE PARAMS
+exercise, sets (default 1), reps (number or array), weight, rpe, set_type, exercise_notes, rest_seconds, muscle_group, equipment, set_notes, drop_percent, rep_type, exercise_type
+
+## PROGRAM DAY PARAMS
+program_day, skip (exercise names to skip), overrides ([{ exercise, sets?, reps?, weight?, rpe? }])
+
+## SESSION PARAMS
+date (ISO string), tags, notes, minimal_response`,
     inputSchema: {
       // Session control
       program_day: z.string().optional(),

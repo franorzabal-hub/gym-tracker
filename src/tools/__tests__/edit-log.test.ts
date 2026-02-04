@@ -9,7 +9,11 @@ vi.mock("../../db/connection.js", () => ({
 }));
 
 vi.mock("../../helpers/exercise-resolver.js", () => ({
-  findExercise: vi.fn().mockResolvedValue({ id: 1, name: "Bench Press", isNew: false }),
+  findExercise: vi.fn().mockResolvedValue({ id: 1, name: "Bench Press", isNew: false, exerciseType: "strength" }),
+}));
+
+vi.mock("../../helpers/stats-calculator.js", () => ({
+  checkPRs: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../../context/user-context.js", () => ({
@@ -370,5 +374,130 @@ describe("edit_workout tool", () => {
       exercise: "Bench Press", action: "update", updates: { weight: 100 },
     });
     expect(result.isError).toBe(true);
+  });
+
+  describe("add_set action", () => {
+    it("adds a set to an existing exercise", async () => {
+      mockQuery
+        // resolveWorkoutSelector
+        .mockResolvedValueOnce({ rows: [{ session_id: 42, started_at: new Date("2024-01-15"), is_validated: false, deleted_at: null }] })
+        // Find session_exercise with max set
+        .mockResolvedValueOnce({ rows: [{ id: 10, max_set: 3 }] })
+        // INSERT new set
+        .mockResolvedValueOnce({
+          rows: [{ id: 101, set_number: 4, reps: 8, weight: 85, rpe: 8, set_type: "working" }],
+        });
+
+      const result = await toolHandler({
+        exercise: "Bench Press", action: "add_set", reps: 8, weight: 85, rpe: 8,
+      });
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(parsed.exercise).toBe("Bench Press");
+      expect(parsed.session_id).toBe(42);
+      expect(parsed.sets_added).toHaveLength(1);
+      expect(parsed.sets_added[0].set_number).toBe(4);
+      expect(parsed.sets_added[0].reps).toBe(8);
+      expect(parsed.sets_added[0].weight).toBe(85);
+    });
+
+    it("adds multiple sets with sets_to_add", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ session_id: 42, started_at: new Date("2024-01-15"), is_validated: false, deleted_at: null }] })
+        .mockResolvedValueOnce({ rows: [{ id: 10, max_set: 2 }] })
+        .mockResolvedValueOnce({ rows: [{ id: 101, set_number: 3, reps: 10, weight: 70, rpe: null, set_type: "working" }] })
+        .mockResolvedValueOnce({ rows: [{ id: 102, set_number: 4, reps: 10, weight: 70, rpe: null, set_type: "working" }] });
+
+      const result = await toolHandler({
+        exercise: "Bench Press", action: "add_set", reps: 10, weight: 70, sets_to_add: 2,
+      });
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(parsed.sets_added).toHaveLength(2);
+      expect(parsed.sets_added[0].set_number).toBe(3);
+      expect(parsed.sets_added[1].set_number).toBe(4);
+    });
+
+    it("rejects without reps", async () => {
+      const result = await toolHandler({
+        exercise: "Bench Press", action: "add_set", weight: 85,
+      });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("reps is required");
+    });
+
+    it("rejects when exercise not in workout", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ session_id: 42, started_at: new Date("2024-01-15"), is_validated: false, deleted_at: null }] })
+        .mockResolvedValueOnce({ rows: [] }); // No session_exercise found
+
+      const result = await toolHandler({
+        exercise: "Bench Press", action: "add_set", reps: 8,
+      });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("not found in this workout");
+    });
+  });
+
+  describe("reorder_exercises action", () => {
+    it("reorders exercises in workout", async () => {
+      mockQuery
+        // resolveWorkoutSelector
+        .mockResolvedValueOnce({ rows: [{ session_id: 42, started_at: new Date("2024-01-15"), is_validated: false, deleted_at: null }] })
+        // Get current exercises
+        .mockResolvedValueOnce({
+          rows: [
+            { id: 10, name: "Bench Press", sort_order: 1 },
+            { id: 11, name: "Squat", sort_order: 2 },
+            { id: 12, name: "Deadlift", sort_order: 3 },
+          ],
+        })
+        // UPDATE sort_order for each (3 updates)
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        // Get final order
+        .mockResolvedValueOnce({
+          rows: [{ name: "Squat" }, { name: "Deadlift" }, { name: "Bench Press" }],
+        });
+
+      const result = await toolHandler({
+        action: "reorder_exercises",
+        exercise_order: ["Squat", "Deadlift", "Bench Press"],
+      });
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(parsed.session_id).toBe(42);
+      expect(parsed.new_order).toEqual(["Squat", "Deadlift", "Bench Press"]);
+    });
+
+    it("rejects without exercise_order", async () => {
+      const result = await toolHandler({ action: "reorder_exercises" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("exercise_order is required");
+    });
+
+    it("rejects when exercise not found in workout", async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ session_id: 42, started_at: new Date("2024-01-15"), is_validated: false, deleted_at: null }] })
+        .mockResolvedValueOnce({
+          rows: [
+            { id: 10, name: "Bench Press", sort_order: 1 },
+            { id: 11, name: "Squat", sort_order: 2 },
+          ],
+        });
+
+      const result = await toolHandler({
+        action: "reorder_exercises",
+        exercise_order: ["Squat", "Unknown Exercise"],
+      });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("not found in workout");
+      expect(parsed.available).toContain("Bench Press");
+    });
   });
 });
