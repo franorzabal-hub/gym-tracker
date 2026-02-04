@@ -56,6 +56,8 @@ export const en: Translations = {
     thisWeek: "This week",
     thisMonth: "This month",
     thisYear: "This year",
+    last3Months: "Last 3 months",
+    last6Months: "Last 6 months",
     lastNDays: "Last {count} days",
     latest: "Latest",
   },

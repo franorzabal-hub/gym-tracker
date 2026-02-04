@@ -3,7 +3,7 @@
  * Lightweight implementation without external dependencies.
  */
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import type { Locale, Translations, TFunction, I18nContextValue, InterpolationValues } from "./types.js";
 import { en } from "./locales/en.js";
 import { es } from "./locales/es.js";
@@ -85,6 +85,11 @@ interface I18nProviderProps {
 
 export function I18nProvider({ children, initialLocale = "en" }: I18nProviderProps) {
   const [locale, setLocaleState] = useState<Locale>(initialLocale);
+
+  // Sync locale when initialLocale prop changes (e.g., from server response)
+  useEffect(() => {
+    setLocaleState(initialLocale);
+  }, [initialLocale]);
 
   const setLocale = useCallback((newLocale: Locale) => {
     setLocaleState(newLocale);

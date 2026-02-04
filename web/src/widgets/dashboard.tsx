@@ -30,8 +30,13 @@ function usePeriodLabel() {
   return (period: string): string => {
     if (period === "week") return t("periods.thisWeek");
     if (period === "month") return t("periods.thisMonth");
+    if (period === "3months") return t("periods.last3Months");
+    if (period === "6months") return t("periods.last6Months");
     if (period === "year") return t("periods.thisYear");
-    return t("periods.lastNDays", { count: period });
+    // Handle numeric periods (e.g., "30", "90")
+    const days = parseInt(period, 10);
+    if (!isNaN(days)) return t("periods.lastNDays", { count: days });
+    return period; // Fallback to raw value
   };
 }
 

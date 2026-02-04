@@ -56,6 +56,8 @@ export const es: Translations = {
     thisWeek: "Esta semana",
     thisMonth: "Este mes",
     thisYear: "Este año",
+    last3Months: "Últimos 3 meses",
+    last6Months: "Últimos 6 meses",
     lastNDays: "Últimos {count} días",
     latest: "Más reciente",
   },
@@ -88,8 +90,8 @@ export const es: Translations = {
 
   // Dashboard widget
   dashboard: {
-    title: "Dashboard",
-    loadingDashboard: "Cargando dashboard",
+    title: "Panel de Control",
+    loadingDashboard: "Cargando panel de control",
     noTrainingData: "Aún no hay datos de entrenamiento",
     startLogging: "¡Empieza a registrar entrenamientos para ver tu dashboard!",
     streak: "Racha",
