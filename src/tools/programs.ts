@@ -121,15 +121,30 @@ async function batchInsertExercises(
     weightPerSet.push(row.target_weight_per_set);
   }
 
+  // Use JSON for 2D arrays (repsPerSet, weightPerSet) to avoid pg driver serialization issues
+  // when all elements are null. PostgreSQL's unnest with int[][] doesn't work well with all-null arrays
+  // because the driver serializes [null, null] as '{NULL,NULL}' which pg interprets as 1D, not 2D.
   await client.query(
     `INSERT INTO program_day_exercises
        (day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id, target_reps_per_set, target_weight_per_set)
-     SELECT * FROM unnest(
+     SELECT
+       d.day_id, d.exercise_id, d.target_sets, d.target_reps, d.target_weight, d.target_rpe,
+       d.sort_order, d.group_id, d.rest_seconds, d.notes, d.section_id,
+       CASE WHEN rps.elem::text = 'null' THEN NULL
+            ELSE (SELECT array_agg(x::int) FROM jsonb_array_elements_text(rps.elem) x)
+       END,
+       CASE WHEN wps.elem::text = 'null' THEN NULL
+            ELSE (SELECT array_agg(x::real) FROM jsonb_array_elements_text(wps.elem) x)
+       END
+     FROM unnest(
        $1::int[], $2::int[], $3::int[], $4::int[], $5::real[], $6::real[],
-       $7::int[], $8::int[], $9::int[], $10::text[], $11::int[], $12::int[][], $13::real[][]
-     )`,
+       $7::int[], $8::int[], $9::int[], $10::text[], $11::int[]
+     ) WITH ORDINALITY AS d(day_id, exercise_id, target_sets, target_reps, target_weight, target_rpe, sort_order, group_id, rest_seconds, notes, section_id, ord)
+     JOIN LATERAL jsonb_array_elements($12::jsonb) WITH ORDINALITY AS rps(elem, ord) ON rps.ord = d.ord
+     JOIN LATERAL jsonb_array_elements($13::jsonb) WITH ORDINALITY AS wps(elem, ord) ON wps.ord = d.ord`,
     [dayIds, exerciseIds, targetSets, targetReps, targetWeights, targetRpes,
-     sortOrders, groupIds, restSeconds, notes, sectionIds, repsPerSet, weightPerSet]
+     sortOrders, groupIds, restSeconds, notes, sectionIds,
+     JSON.stringify(repsPerSet), JSON.stringify(weightPerSet)]
   );
 }
 

@@ -1214,8 +1214,9 @@ describe("manage_program tool", () => {
       const args = batchCall![1];
       // With batch INSERT, values are arrays (even for single exercise)
       expect(args[3]).toEqual([12]); // target_reps array = [first element]
-      expect(args[11]).toEqual([[12, 10, 8]]); // target_reps_per_set = [[array]]
-      expect(args[12]).toEqual([null]); // target_weight_per_set = [null]
+      // Per-set arrays are now passed as JSON strings to avoid pg driver serialization issues with 2D arrays
+      expect(args[11]).toEqual("[[12,10,8]]"); // target_reps_per_set = JSON string
+      expect(args[12]).toEqual("[null]"); // target_weight_per_set = JSON string
     });
 
     it("stores per-set weight array on create", async () => {
@@ -1239,8 +1240,9 @@ describe("manage_program tool", () => {
       const args = batchCall![1];
       expect(args[3]).toEqual([12]); // target_reps = [first]
       expect(args[4]).toEqual([80]); // target_weight = [first]
-      expect(args[11]).toEqual([[12, 10, 8]]); // target_reps_per_set
-      expect(args[12]).toEqual([[80, 85, 90]]); // target_weight_per_set
+      // Per-set arrays are now passed as JSON strings
+      expect(args[11]).toEqual("[[12,10,8]]"); // target_reps_per_set
+      expect(args[12]).toEqual("[[80,85,90]]"); // target_weight_per_set
     });
 
     it("stores null per-set arrays for uniform reps/weight", async () => {
@@ -1264,8 +1266,9 @@ describe("manage_program tool", () => {
       const args = batchCall![1];
       expect(args[3]).toEqual([10]); // target_reps
       expect(args[4]).toEqual([80]); // target_weight
-      expect(args[11]).toEqual([null]); // target_reps_per_set
-      expect(args[12]).toEqual([null]); // target_weight_per_set
+      // Per-set arrays are now passed as JSON strings
+      expect(args[11]).toEqual("[null]"); // target_reps_per_set
+      expect(args[12]).toEqual("[null]"); // target_weight_per_set
     });
 
     it("stores only weight array when reps is uniform", async () => {
@@ -1289,8 +1292,9 @@ describe("manage_program tool", () => {
       const args = batchCall![1];
       expect(args[3]).toEqual([10]); // target_reps (scalar wrapped in array)
       expect(args[4]).toEqual([80]); // target_weight = first of array, wrapped
-      expect(args[11]).toEqual([null]); // target_reps_per_set (null, uniform)
-      expect(args[12]).toEqual([[80, 85, 90]]); // target_weight_per_set
+      // Per-set arrays are now passed as JSON strings
+      expect(args[11]).toEqual("[null]"); // target_reps_per_set (null, uniform)
+      expect(args[12]).toEqual("[[80,85,90]]"); // target_weight_per_set
     });
   });
 
