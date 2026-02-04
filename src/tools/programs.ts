@@ -344,103 +344,65 @@ export function registerProgramTool(server: McpServer) {
   server.registerTool(
     "manage_program",
     {
-      description: `${APP_CONTEXT}Manage workout programs. A program is a weekly routine (PPL, Upper/Lower, Full Body, etc.) with versioned days and exercises.
+      description: `${APP_CONTEXT}Manage workout programs (weekly routines with days and exercises).
 
-Actions:
-- "list": List programs with version and active status
-- "get": Get program by name with days and exercises
-- "create": Create program with days/exercises (auto-activates)
-- "clone": Clone a program (global template or user's). Pass source_id. Optionally pass name. Auto-activates.
-- "update": If "days" provided → new version + change_description. If only metadata (new_name/description) → no new version.
-- "patch": Save edits coming from widgets. If "days" are provided, creates a new version to preserve history. If only metadata is provided, updates in place. Pass program_id when available.
-- "activate": Set as active (deactivates others). Only one active at a time.
-- "delete": Soft delete. hard_delete=true for permanent removal.
-- "delete_bulk": Delete multiple by "names" array. Optional hard_delete=true.
-- "history": List all versions with dates and change descriptions
-- "validate": Mark a program as validated (for users with requires_validation enabled)
+## DECISION GUIDE — Which action to use?
 
-## Day structure
+| I want to...                                    | Action              |
+|-------------------------------------------------|---------------------|
+| Create a new program from scratch               | create              |
+| Copy a template or existing program             | clone               |
+| Change weight/reps/sets of ONE exercise         | patch_exercise      |
+| Move exercise to different section/day/position | move_exercise       |
+| Reorder all exercises in a day                  | reorder_exercises   |
+| Add a new exercise to existing day              | add_exercise        |
+| Remove an exercise from a day                   | remove_exercise     |
+| Change day name or weekdays                     | patch_day           |
+| Restructure entire program (new version)        | update (with days)  |
+| Change program name/description only            | update (no days)    |
+| Switch active program                           | activate            |
+| Delete program(s)                               | delete/delete_bulk  |
+| See version history                             | history             |
 
-Pass "days" array with day_label, weekdays (ISO: 1=Mon..7=Sun), and exercises.
-Exercises array accepts 3 item types (discriminator: "exercise" → solo, "group_type"+"exercises" → group, "section"+"exercises" → section):
+## Actions Reference
 
-1. Solo exercise: { exercise, sets, reps, weight?, rpe?, rest_seconds?, notes? }
-2. Group: { group_type, label?, notes?, rest_seconds?, exercises: [2+ solo exercises] }
-3. Section: { section, notes?, exercises: [solo or group items, no nesting] }
+**Read:** list, get, history
+**Create:** create, clone
+**Modify (no version):** patch_exercise, patch_day, add_exercise, remove_exercise, move_exercise, reorder_exercises
+**Modify (new version):** update (with days), patch (with days)
+**Lifecycle:** activate, delete, delete_bulk, validate
 
-## Reps and weight (per-set targets)
+## Identifying exercises for patch actions
 
-reps and weight accept number OR array. Array length must equal sets.
-- Uniform: reps: 10, weight: 80 → "3×10 · 80kg"
-- Pyramid: reps: [12, 10, 8], weight: [80, 85, 90] → "3×(12/10/8) · 80→90kg" with expandable detail
-- Mixed: reps: [12, 10, 8], weight: 80 (only reps vary) or reps: 10, weight: [80, 85, 90] (only weight varies)
+Use program_day_exercise_id (precise) OR day + exercise name (convenient).
+If multiple exercises match, returns { ambiguous: true, matches: [...] }. Ask user which one, retry with the specific ID.
 
-## Group types — CRITICAL RULES
+## Day structure (for create/update/clone)
 
-### superset: Equal-importance exercises back-to-back, rest after the round.
-USE FOR: antagonist pairs (chest+back, bicep+tricep), warmup pairs where both exercises are equivalent.
-EXAMPLE: Cable Fly 3x12 + Lateral Raise 3x15, rest 90s between rounds.
+days: [{ day_label, weekdays?, exercises: [items...] }]
 
-### paired: ONE principal exercise + ONE secondary done during its rest (active rest). Always exactly 2 exercises.
-USE FOR: heavy compound + mobility/activation between sets. The secondary must NOT fatigue the principal.
-CRITICAL: Array order is semantic — exercises[0] = principal (heavy), exercises[1] = secondary (mobility/corrective). Reversing breaks the semantics.
-EXAMPLE: Deadlift 3x[12,10,8] + Hip Mobility 3x30s, rest 180s (secondary done within that rest).
+Items can be:
+- Solo: { exercise, sets, reps, weight?, rpe?, rest_seconds?, notes? }
+- Group: { group_type: "superset"|"paired"|"circuit", rest_seconds?, exercises: [2+ solos] }
+- Section: { section: "Entrada en calor", exercises: [solos or groups] }
 
-### circuit: 2+ exercises rotated in sequence, rest only after completing the full round.
-USE FOR: accessory blocks, conditioning, finishers.
-EXAMPLE: Lat Pulldown 3x12 + Cable Row 3x12, rest 90s between rounds.
+## Group types
 
-### Choosing the right type:
-- Both exercises equal importance → superset
-- One clearly principal + one for active rest → paired
-- Block of accessories in rotation → circuit
-- If there's no heavy principal exercise with long rest → it's NOT paired
+- **superset**: Equal exercises back-to-back, rest after round. Use for antagonist pairs, warmup pairs.
+- **paired**: Principal + secondary during rest. ALWAYS 2 exercises, order matters (principal first). Use for compound + mobility.
+- **circuit**: 2+ exercises in rotation, rest after full round. Use for accessories, finishers.
 
-## Sections — standard patterns
+## Sections
 
-Sections are optional collapsible containers. Standard names:
-- "Entrada en calor": warmup. Use superset for equal pairs. Do NOT use paired (no heavy principal exercise in warmup).
-- "Trabajo principal": main work. Use paired (compound+mobility), superset (antagonists), circuit (accessories).
-- "Cierre": cooldown, stretching. Prefer solo exercises (no groups needed).
-The section defines WHEN in the workout; it does NOT imply group_type. Grouping depends on exercise relationship, not section.
+Standard names: "Entrada en calor" (warmup), "Trabajo principal" (main), "Cierre" (cooldown).
+Section defines WHEN; group_type defines HOW exercises relate.
 
-## Rest seconds
+## Reps/weight arrays
 
-- Solo exercise: rest_seconds = rest between sets.
-- Grouped exercise: rest_seconds belongs to the GROUP (rest between rounds). The server DISCARDS rest_seconds on individual exercises inside groups.
-- Superset/circuit: group rest_seconds = rest between complete rounds. No rest between exercises.
-- Paired: group rest_seconds = total rest of the principal. Secondary is done within that time.
-
-## Notes rules — avoid redundancy
-
-Exercise notes: form cues, equipment variants, rep ranges. Shown as ⓘ tooltip.
-Group notes: execution instructions that can't be expressed by structured fields.
-Section notes: objective/focus of the section.
-
-DO NOT put in notes:
-- Info already in fields: "3 series de 10" (use sets/reps), "Descanso 90s" (use rest_seconds), "reps: 12/10/8" (use reps array)
-- The definition of the group_type: "Sin descanso entre ejercicios" (= superset definition), "Movilidad durante el descanso" (= paired definition), "Circuito sin descanso entre ejercicios" (= circuit definition)
-- Info already in the section: "Esto es entrada en calor" (section label says it)
-
-## Fields NOT passed in program exercises
-
-exercise_type and rep_type are resolved automatically from the exercises DB. Do NOT pass them.
-- exercise_type (strength/mobility/cardio) describes the exercise's nature, not its position in the workout.
-- "warmup" is NOT a valid exercise_type. An exercise in "Entrada en calor" section is still strength or mobility by nature.
-- muscle_group is also resolved from the exercises DB. To set it, use manage_exercises.
-
-To see the program visually, call show_program (not manage_program "get").
-
-## Patch actions (inline updates without versioning)
-
-- "patch_exercise": Update weight/reps/sets/notes of a single exercise. Pass day + exercise name, OR program_day_exercise_id for precision.
-- "patch_day": Update label/weekdays of a day. Pass day (label) OR day_id.
-- "add_exercise": Add exercise to existing day. Pass day + exercise name + optional sets/reps/weight.
-- "remove_exercise": Remove exercise from day. Pass day + exercise name, OR program_day_exercise_id.
-
-If multiple exercises match (e.g., same exercise twice in a day), returns ambiguous=true with matches array. Ask user to choose, then retry with program_day_exercise_id.`,
+Uniform: reps: 10 → same all sets
+Pyramid: reps: [12, 10, 8] → per-set (length must equal sets)`,
       inputSchema: {
-        action: z.enum(["list", "get", "create", "clone", "update", "patch", "activate", "delete", "delete_bulk", "history", "validate", "patch_exercise", "patch_day", "add_exercise", "remove_exercise"]),
+        action: z.enum(["list", "get", "create", "clone", "update", "patch", "activate", "delete", "delete_bulk", "history", "validate", "patch_exercise", "patch_day", "add_exercise", "remove_exercise", "move_exercise", "reorder_exercises"]),
         name: z.string().optional(),
         program_id: z.number().int().optional().describe("Program ID (for patch action). Identifies which program to patch."),
         source_id: z.number().int().optional().describe("Program ID to clone (for clone action). Typically a global template program ID from show_programs."),
@@ -464,9 +426,11 @@ If multiple exercises match (e.g., same exercise twice in a day), returns ambigu
         exercise_notes: z.string().nullable().optional().describe("Notes for the exercise"),
         new_label: z.string().optional().describe("New day label for patch_day"),
         weekdays: z.union([z.array(z.number().int().min(1).max(7)), z.string()]).optional().describe("Weekdays array (ISO 1=Mon..7=Sun) for patch_day"),
-        position: z.number().int().min(0).optional().describe("Sort order position for add_exercise (default: end)"),
+        position: z.number().int().min(0).optional().describe("Sort order position for add_exercise/move_exercise (default: end)"),
         target_group_id: z.number().int().optional().describe("Group ID to add exercise into (for add_exercise)"),
-        target_section_id: z.number().int().optional().describe("Section ID to add exercise into (for add_exercise)"),
+        target_section_id: z.number().int().optional().describe("Section ID to move/add exercise into"),
+        target_day_id: z.number().int().optional().describe("Day ID to move exercise to (for move_exercise, cross-day moves)"),
+        order: z.union([z.array(z.number().int()), z.string()]).optional().describe("Array of program_day_exercise_ids in desired order (for reorder_exercises)"),
       },
       annotations: {},
     },
@@ -476,7 +440,7 @@ If multiple exercises match (e.g., same exercise twice in a day), returns ambigu
       // Patch action params
       program_day_exercise_id, day_id, day, exercise, sets, reps: rawReps, weight: rawWeight,
       rpe, rest_seconds, exercise_notes, new_label, weekdays: rawWeekdays, position,
-      target_group_id, target_section_id
+      target_group_id, target_section_id, target_day_id, order: rawOrder
     }) => {
       const userId = getUserId();
 
@@ -485,6 +449,7 @@ If multiple exercises match (e.g., same exercise twice in a day), returns ambigu
       const reps = parseJsonParam<number | number[]>(rawReps) ?? rawReps;
       const weight = parseJsonParam<number | number[] | null>(rawWeight) ?? rawWeight;
       const weekdays = parseJsonParam<number[]>(rawWeekdays) ?? rawWeekdays;
+      const order = parseJsonParam<number[]>(rawOrder) ?? rawOrder;
 
       if (action === "list") {
         // Use CTE with DISTINCT ON to avoid correlated subqueries
@@ -1389,6 +1354,155 @@ If multiple exercises match (e.g., same exercise twice in a day), returns ambigu
           removed: true,
           program_day_exercise_id: target.program_day_exercise_id,
         });
+      }
+
+      if (action === "move_exercise") {
+        // Find exercise by ID or by day+name
+        let target;
+
+        if (program_day_exercise_id) {
+          target = await getProgramExerciseById(userId, program_day_exercise_id);
+          if (!target) {
+            return toolResponse({ error: "Exercise not found in your program" }, true);
+          }
+        } else if (day && exercise) {
+          const matches = await findProgramExercises(userId, day, exercise, name);
+
+          if (matches.length === 0) {
+            return toolResponse({ error: `Exercise "${exercise}" not found in "${day}"` }, true);
+          }
+
+          if (matches.length > 1) {
+            return toolResponse({
+              ambiguous: true,
+              message: `Found ${matches.length} "${exercise}" in "${day}". Ask user which one, then retry with program_day_exercise_id.`,
+              matches: matches.map(m => ({
+                program_day_exercise_id: m.program_day_exercise_id,
+                context: formatExerciseContext(m),
+              })),
+            });
+          }
+
+          target = matches[0];
+        } else {
+          return toolResponse({ error: "Provide program_day_exercise_id OR (day + exercise)" }, true);
+        }
+
+        // Determine what to update
+        const updates: string[] = [];
+        const params: any[] = [];
+
+        // Cross-day move
+        if (target_day_id !== undefined && target_day_id !== target.day_id) {
+          // Verify target day belongs to user's program
+          const { rows: [targetDay] } = await pool.query(
+            `SELECT pd.id FROM program_days pd
+             JOIN program_versions pv ON pv.id = pd.version_id
+             JOIN programs p ON p.id = pv.program_id
+             WHERE pd.id = $1 AND p.user_id = $2`,
+            [target_day_id, userId]
+          );
+          if (!targetDay) {
+            return toolResponse({ error: "Target day not found in your program" }, true);
+          }
+          params.push(target_day_id);
+          updates.push(`day_id = $${params.length}`);
+        }
+
+        // Section change
+        if (target_section_id !== undefined) {
+          // null is valid (removes from section)
+          params.push(target_section_id);
+          updates.push(`section_id = $${params.length}`);
+        }
+
+        // Group change (null removes from group)
+        if (target_group_id !== undefined) {
+          params.push(target_group_id);
+          updates.push(`group_id = $${params.length}`);
+        }
+
+        // Position change
+        if (position !== undefined) {
+          params.push(position);
+          updates.push(`sort_order = $${params.length}`);
+        }
+
+        if (updates.length === 0) {
+          return toolResponse({ error: "No move target specified. Provide target_day_id, target_section_id, target_group_id, or position." }, true);
+        }
+
+        params.push(target.program_day_exercise_id);
+        await pool.query(
+          `UPDATE program_day_exercises SET ${updates.join(", ")} WHERE id = $${params.length}`,
+          params
+        );
+
+        return toolResponse({
+          moved: true,
+          program_day_exercise_id: target.program_day_exercise_id,
+          updates: {
+            day_id: target_day_id,
+            section_id: target_section_id,
+            group_id: target_group_id,
+            position,
+          },
+        });
+      }
+
+      if (action === "reorder_exercises") {
+        if (!order || !Array.isArray(order) || order.length === 0) {
+          return toolResponse({ error: "order array required (array of program_day_exercise_ids in desired order)" }, true);
+        }
+
+        // Verify all exercises exist and belong to user, and get their day_id
+        const { rows: exercises } = await pool.query(
+          `SELECT pde.id, pde.day_id
+           FROM program_day_exercises pde
+           JOIN program_days pd ON pd.id = pde.day_id
+           JOIN program_versions pv ON pv.id = pd.version_id
+           JOIN programs p ON p.id = pv.program_id
+           WHERE pde.id = ANY($1) AND p.user_id = $2`,
+          [order, userId]
+        );
+
+        if (exercises.length !== order.length) {
+          const foundIds = new Set(exercises.map(e => e.id));
+          const missing = order.filter(id => !foundIds.has(id));
+          return toolResponse({ error: `Some exercise IDs not found: ${missing.join(", ")}` }, true);
+        }
+
+        // Verify all exercises are from the same day
+        const dayIds = new Set(exercises.map(e => e.day_id));
+        if (dayIds.size > 1) {
+          return toolResponse({ error: "All exercises must be from the same day. Use move_exercise for cross-day moves." }, true);
+        }
+
+        // Update sort_order for each exercise based on position in order array
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+
+          for (let i = 0; i < order.length; i++) {
+            await client.query(
+              "UPDATE program_day_exercises SET sort_order = $1 WHERE id = $2",
+              [i, order[i]]
+            );
+          }
+
+          await client.query("COMMIT");
+
+          return toolResponse({
+            reordered: true,
+            count: order.length,
+            day_id: exercises[0].day_id,
+          });
+        } catch (err) {
+          await client.query("ROLLBACK");
+          throw err;
+        } finally {
+          client.release();
+        }
       }
 
       return toolResponse({ error: "Unknown action" }, true);
